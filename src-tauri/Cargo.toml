@@ -59,6 +59,9 @@ version = "0.2"
 core-foundation = "0.10"
 security-framework = "3"
 security-framework-sys = "2"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSResponder", "block2"] }
+block2 = "0.6"
 
 [[bin]]
 name = "helmor-cli"
