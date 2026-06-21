@@ -2,7 +2,9 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { AgentLoginProvider } from "@/lib/api";
+import { I18nText, useI18n } from "@/lib/i18n";
 import { AgentStatusAction } from "../components/agent-status-action";
+import { ConnectingStatus } from "../components/connecting-status";
 import { CursorApiKeyAction } from "../components/cursor-api-key-action";
 import { LoginTerminalPreview } from "../components/login-terminal-preview";
 import { ReadyStatus } from "../components/ready-status";
@@ -21,6 +23,7 @@ export function AgentLoginStep({
 	onNext: () => void;
 	onRefreshLoginItems: () => void;
 }) {
+	const { t, f } = useI18n();
 	const [primedLoginProvider, setPrimedLoginProvider] =
 		useState<AgentLoginProvider | null>(null);
 	const [activeLoginProvider, setActiveLoginProvider] =
@@ -68,9 +71,9 @@ export function AgentLoginStep({
 
 	return (
 		<section
-			aria-label="Agent login"
+			aria-label={t("agentLogin")}
 			aria-hidden={step !== "agents"}
-			className={`absolute inset-x-0 top-[calc(50vh-40px)] z-20 flex origin-top flex-col items-center px-8 pb-12 pt-8 transition-transform duration-1000 ease-[cubic-bezier(.22,.82,.2,1)] ${
+			className={`absolute inset-x-0 top-[calc(50vh-64px)] z-20 flex origin-top flex-col items-center px-8 pb-10 pt-6 transition-transform duration-1000 ease-[cubic-bezier(.22,.82,.2,1)] ${
 				step === "corner"
 					? "pointer-events-none -translate-x-[50vw] translate-y-[126vh] opacity-100"
 					: step === "agents"
@@ -86,22 +89,21 @@ export function AgentLoginStep({
 							: "ml-[230px] w-full max-w-[720px]"
 					}`}
 				>
-					<h2 className="text-3xl font-semibold tracking-normal text-foreground">
-						Log in to your agents
+					<h2 className="text-2xl font-semibold tracking-normal text-foreground">
+						<I18nText source="logAgents" />
 					</h2>
-					<p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-						Helmor uses your local Claude Code and Codex login sessions. You can
-						log in now, or continue and log in later.
+					<p className="mt-2 max-w-xl text-body leading-6 text-muted-foreground">
+						<I18nText source="helmorUsesLocalLoginSessionsCan" />
 					</p>
 
-					{/* h-13 (~52px) keeps three tiles + Back/Next inside the
-					    step container at ~720–820px laptop viewports. */}
-					<div className="mt-6 flex w-full flex-col gap-2">
+					{/* Compact rows (h-12) so all four tiles + Back/Next stay inside
+					    the fixed 810px onboarding window with margin below Next. */}
+					<div className="mt-5 flex w-full flex-col gap-1.5">
 						{loginItems.map(
 							({ icon: Icon, provider, label, description, status }) => {
 								const subLabel =
 									provider === "cursor" && cursorKeyError
-										? `Couldn't validate key: ${cursorKeyError}`
+										? f("miscCouldnTValidateKey", { error: cursorKeyError })
 										: description;
 								const subLabelTone =
 									provider === "cursor" && cursorKeyError
@@ -110,23 +112,25 @@ export function AgentLoginStep({
 								return (
 									<div
 										key={label}
-										className="flex h-13 items-center gap-3 rounded-lg border border-border/45 bg-card/80 px-3"
+										className="flex h-12 items-center gap-3 rounded-lg border border-border/45 bg-card/80 px-3"
 									>
 										<div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/40 bg-background text-foreground">
 											<Icon className="size-4" />
 										</div>
 										<div className="flex min-w-0 flex-1 items-baseline gap-2">
-											<span className="truncate text-[13px] font-medium leading-none text-foreground">
+											<span className="truncate text-ui font-medium leading-none text-foreground">
 												{label}
 											</span>
 											<span
-												className={`truncate text-[11px] leading-none ${subLabelTone}`}
+												className={`truncate text-mini leading-none ${subLabelTone}`}
 											>
 												{subLabel}
 											</span>
 										</div>
 										{provider === "cursor" ? (
-											status === "ready" ? (
+											status === "checking" ? (
+												<ConnectingStatus />
+											) : status === "ready" ? (
 												<ReadyStatus />
 											) : (
 												<CursorApiKeyAction
@@ -149,24 +153,24 @@ export function AgentLoginStep({
 						)}
 					</div>
 
-					<div className="mt-6 flex items-center gap-3">
+					<div className="mt-5 flex items-center gap-3">
 						<Button
 							type="button"
 							variant="ghost"
 							size="lg"
 							onClick={onBack}
-							className="h-10 gap-2 px-4 text-[0.95rem]"
+							className="h-10 gap-2 px-4 text-title"
 						>
 							<ArrowLeft data-icon="inline-start" className="size-4" />
-							Back
+							<I18nText source="back" />
 						</Button>
 						<Button
 							type="button"
 							size="lg"
 							onClick={onNext}
-							className="h-10 gap-2 px-4 text-[0.95rem]"
+							className="h-10 gap-2 px-4 text-title"
 						>
-							Next
+							<I18nText source="next" />
 							<ArrowRight data-icon="inline-end" className="size-4" />
 						</Button>
 					</div>

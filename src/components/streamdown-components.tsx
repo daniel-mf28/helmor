@@ -10,7 +10,6 @@
  */
 
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { DownloadIcon } from "lucide-react";
 import {
 	type ComponentType,
@@ -19,6 +18,7 @@ import {
 	type MouseEvent,
 	type ReactElement,
 	type ReactNode,
+	useContext,
 	useRef,
 } from "react";
 import {
@@ -27,7 +27,11 @@ import {
 	tableDataToCSV,
 	tableDataToMarkdown,
 } from "streamdown";
-import { CodeBlock, CodeBlockCopyButton } from "@/components/ai/code-block";
+import {
+	CodeBlock,
+	CodeBlockCopyButton,
+	CodeBlockStreamingContext,
+} from "@/components/ai/code-block";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -45,7 +49,10 @@ import {
 import { useFileLinkContext } from "@/features/panel/message-components/file-link-context";
 import { saveTextFileAs } from "@/lib/api";
 import { isPathWithinRoot } from "@/lib/editor-session";
+import { I18nText, useI18n } from "@/lib/i18n";
+import { convertFileSrc } from "@/lib/ipc";
 import { parseLocalFileLink } from "@/lib/local-file-link";
+import { openUrl } from "@/lib/platform-bridge";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -67,6 +74,7 @@ import { cn } from "@/lib/utils";
  * Tauri command.
  */
 function TableDownloadMenu() {
+	const { t } = useI18n();
 	const triggerRef = useRef<HTMLButtonElement>(null);
 
 	const downloadAs = async (format: "csv" | "markdown") => {
@@ -119,17 +127,17 @@ function TableDownloadMenu() {
 					ref={triggerRef}
 					type="button"
 					className="cursor-interactive p-1 text-muted-foreground transition-all hover:text-foreground"
-					title="Download table"
+					title={t("downloadTable")}
 				>
 					<DownloadIcon size={14} />
 				</button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
 				<DropdownMenuItem onSelect={() => void downloadAs("csv")}>
-					Download as CSV
+					<I18nText source="downloadCsv" />
 				</DropdownMenuItem>
 				<DropdownMenuItem onSelect={() => void downloadAs("markdown")}>
-					Download as Markdown
+					<I18nText source="downloadMarkdown" />
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -246,6 +254,7 @@ function childrenToText(children: ReactNode): string {
 }
 
 export function StreamdownPre({ children }: { children?: ReactNode }) {
+	const streaming = useContext(CodeBlockStreamingContext);
 	if (!isValidElement(children)) {
 		return children;
 	}
@@ -268,7 +277,7 @@ export function StreamdownPre({ children }: { children?: ReactNode }) {
 
 	const code = childrenToText(child.props.children);
 	return (
-		<CodeBlock code={code} language={language}>
+		<CodeBlock code={code} language={language} streaming={streaming}>
 			<CodeBlockCopyButton />
 		</CodeBlock>
 	);
@@ -340,12 +349,52 @@ export function StreamdownAnchor({
 	);
 }
 
+// Image override: resolves workspace-relative paths through Tauri `asset://`.
+export function StreamdownImage({
+	src,
+	alt,
+	className,
+	...props
+}: {
+	src?: string;
+	alt?: string;
+	className?: string;
+} & Record<string, unknown>) {
+	const { workspaceRootPath } = useFileLinkContext();
+	const resolved = resolveImageSrc(src, workspaceRootPath ?? null);
+	return (
+		<img
+			{...(props as Omit<
+				React.ImgHTMLAttributes<HTMLImageElement>,
+				"src" | "alt" | "className"
+			>)}
+			src={resolved}
+			alt={alt ?? ""}
+			className={cn("max-h-[480px] max-w-full rounded-md border", className)}
+		/>
+	);
+}
+
+function resolveImageSrc(
+	src: string | undefined,
+	workspaceRootPath: string | null,
+): string | undefined {
+	if (!src) return src;
+	if (/^[a-z][a-z0-9+.-]*:/i.test(src)) return src;
+	if (src.startsWith("//")) return src;
+	if (!workspaceRootPath) return src;
+	const rel = src.replace(/^\.?\/+/, "");
+	const sep = workspaceRootPath.endsWith("/") ? "" : "/";
+	return convertFileSrc(`${workspaceRootPath}${sep}${rel}`);
+}
+
 // ---------------------------------------------------------------------------
 // Aggregated components map
 // ---------------------------------------------------------------------------
 
 export const streamdownComponents = {
 	a: StreamdownAnchor,
+	img: StreamdownImage,
 	pre: StreamdownPre,
 	table: StreamdownTable,
 	thead: StreamdownTableHeader,

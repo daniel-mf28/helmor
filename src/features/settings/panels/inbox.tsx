@@ -21,6 +21,8 @@ import {
 	SlackBrandIcon,
 } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
+import { SlackConnectState } from "@/features/inbox/slack-connect-button";
+import { useSlackWorkspaces } from "@/features/inbox/use-slack-workspaces";
 import type {
 	ForgeProvider,
 	InboxKind,
@@ -32,6 +34,7 @@ import {
 	parseForgeRepoFilter,
 	parseForgeRepoHost,
 } from "@/lib/forge-repo-filter";
+import { I18nText, useI18n } from "@/lib/i18n";
 import {
 	forgeLabelsQueryOptions,
 	inboxKindLabelsQueryOptions,
@@ -56,6 +59,7 @@ const EMPTY_INBOX_CONFIG: InboxSourceConfig = { accounts: {} };
 import { useForgeAccountsAll } from "@/lib/use-forge-accounts";
 import { cn } from "@/lib/utils";
 import { SettingsGroup, SettingsRow } from "../components/settings-row";
+import type { ContextProviderTab } from "../types";
 import {
 	LabelMultiSelect,
 	type Option,
@@ -81,7 +85,7 @@ type ConfigField = keyof Omit<
 	"enabled" | "issues" | "prs" | "discussions"
 >;
 
-type ContextProviderTab = "github" | "gitlab" | "linear" | "slack" | "mobile";
+// Type lives in ../types so the shell event bus can carry it.
 
 const PROVIDER_TABS: {
 	id: ContextProviderTab;
@@ -90,8 +94,11 @@ const PROVIDER_TABS: {
 }[] = [
 	{ id: "github", label: "GitHub", icon: <GithubBrandIcon size={13} /> },
 	{ id: "gitlab", label: "GitLab", icon: <GitlabBrandIcon size={13} /> },
-	{ id: "linear", label: "Linear", icon: <LinearBrandIcon size={13} /> },
+	// Slack ships before Linear since it's the only non-forge provider
+	// with a real settings flow (connect / connected) — Linear is still
+	// "Coming Soon" copy.
 	{ id: "slack", label: "Slack", icon: <SlackBrandIcon size={13} /> },
+	{ id: "linear", label: "Linear", icon: <LinearBrandIcon size={13} /> },
 	{
 		id: "mobile",
 		label: "Mobile",
@@ -99,43 +106,44 @@ const PROVIDER_TABS: {
 	},
 ];
 
-const COMING_SOON_COPY: Record<
-	Exclude<ContextProviderTab, "github" | "gitlab">,
-	string[]
-> = {
+/** Tabs that still don't have any settings UI of their own and fall back
+ *  to the generic "Coming Soon" placeholder. Slack used to live here but
+ *  graduated: it now reuses `<SlackConnectState>` (unconnected) or shows
+ *  a connected acknowledgement, both rendered by `<SlackSettingsPanel>`. */
+type ComingSoonProvider = Exclude<
+	ContextProviderTab,
+	"github" | "gitlab" | "slack"
+>;
+
+const COMING_SOON_COPY: Record<ComingSoonProvider, string[]> = {
 	linear: [
-		"Pull in issues, specs, labels, and priorities.",
-		"Start workspaces directly from planned tasks.",
-		"Keep implementation context tied to product intent.",
-	],
-	slack: [
-		"Capture threads, decisions, and follow-up requests.",
-		"Convert discussions into actionable workspace prompts.",
-		"Preserve source context without copying long chat history.",
+		"settingsPullInIssuesSpecsLabelsPriorities",
+		"settingsStartWorkspacesDirectlyFromPlannedTasks",
+		"settingsKeepImplementationContextTiedProductIntent",
 	],
 	mobile: [
-		"Send tasks, links, and screenshots from your phone.",
-		"Keep lightweight review and triage flows in sync.",
-		"Hand off mobile-captured context to desktop agents.",
+		"settingsSendTasksLinksScreenshotsFromPhone",
+		"settingsKeepLightweightReviewTriageFlowsSync",
+		"settingsHandOffMobileCapturedContextDesktop",
 	],
 };
 
 const GITHUB_ISSUE_SCOPE_OPTIONS: Option<InboxIssueScope>[] = [
-	{ value: "all", label: "All" },
-	{ value: "involves", label: "Involves me" },
-	{ value: "assigned", label: "Assigned to me" },
-	{ value: "mentioned", label: "Mentioned me" },
-	{ value: "created", label: "Created by me" },
+	{ value: "all", label: "all" },
+	{ value: "involves", label: "involvesMe" },
+	{ value: "assigned", label: "assignedMe" },
+	{ value: "mentioned", label: "mentionedMe" },
+	{ value: "created", label: "createdByMe" },
 ];
 
 const GITHUB_PR_SCOPE_OPTIONS: Option<InboxPullRequestScope>[] = [
-	{ value: "all", label: "All" },
-	{ value: "involves", label: "Involves me" },
-	{ value: "reviewRequested", label: "Review requested" },
-	{ value: "author", label: "Created by me" },
-	{ value: "assignee", label: "Assigned to me" },
-	{ value: "mentions", label: "Mentioned me" },
-	{ value: "reviewedBy", label: "Reviewed by me" },
+	{ value: "all", label: "all" },
+	{ value: "involves", label: "involvesMe" },
+	{ value: "reviewRequested", label: "reviewRequested" },
+	{ value: "author", label: "createdByMe" },
+	{ value: "assignee", label: "assignedMe" },
+	{ value: "mentions", label: "mentionedMe" },
+	{ value: "reviewedBy", label: "reviewedByMe" },
 ];
 
 /** GitLab REST exposes a smaller scope surface than GitHub's search
@@ -145,27 +153,27 @@ const GITHUB_PR_SCOPE_OPTIONS: Option<InboxPullRequestScope>[] = [
  *  surface the supported subset here so the UI doesn't promise filters
  *  the API can't deliver. */
 const GITLAB_ISSUE_SCOPE_OPTIONS: Option<InboxIssueScope>[] = [
-	{ value: "all", label: "All" },
-	{ value: "assigned", label: "Assigned to me" },
-	{ value: "created", label: "Created by me" },
+	{ value: "all", label: "all" },
+	{ value: "assigned", label: "assignedMe" },
+	{ value: "created", label: "createdByMe" },
 ];
 
 const GITLAB_PR_SCOPE_OPTIONS: Option<InboxPullRequestScope>[] = [
-	{ value: "all", label: "All" },
-	{ value: "assignee", label: "Assigned to me" },
-	{ value: "author", label: "Created by me" },
+	{ value: "all", label: "all" },
+	{ value: "assignee", label: "assignedMe" },
+	{ value: "author", label: "createdByMe" },
 ];
 
 const SORT_OPTIONS: Option<InboxSort>[] = [
-	{ value: "updated", label: "Recently updated" },
-	{ value: "created", label: "Newest" },
-	{ value: "comments", label: "Most commented" },
+	{ value: "updated", label: "recentlyUpdated" },
+	{ value: "created", label: "newest" },
+	{ value: "comments", label: "mostCommented" },
 ];
 
 const DRAFT_OPTIONS: Option<InboxDraftFilter>[] = [
-	{ value: "exclude", label: "Exclude drafts" },
-	{ value: "include", label: "Include drafts" },
-	{ value: "only", label: "Drafts only" },
+	{ value: "exclude", label: "excludeDrafts" },
+	{ value: "include", label: "includeDrafts" },
+	{ value: "only", label: "draftsOnly" },
 ];
 
 /** Triggers App.tsx's settings-route handler to switch to the Accounts
@@ -213,13 +221,21 @@ function joinSingularsAsList(items: string[]): string {
 
 export function InboxSettingsPanel({
 	repositories,
+	initialProvider,
 }: {
 	repositories: RepositoryCreateOption[];
+	initialProvider?: ContextProviderTab;
 }) {
 	const accountsQuery = useForgeAccountsAll();
 	const { settings, updateSettings } = useSettings();
-	const [activeProvider, setActiveProvider] =
-		useState<ContextProviderTab>("github");
+	const { f } = useI18n();
+	const [activeProvider, setActiveProvider] = useState<ContextProviderTab>(
+		initialProvider ?? "github",
+	);
+	// Re-sync on reopen with a new inbox tab.
+	useEffect(() => {
+		if (initialProvider) setActiveProvider(initialProvider);
+	}, [initialProvider]);
 	const activeForgeProvider = tabToForgeProvider(activeProvider);
 	const isGithub = activeForgeProvider === "github";
 	// Provider-level labels (provider name, "Connect GitHub" CTA, …)
@@ -391,11 +407,11 @@ export function InboxSettingsPanel({
 			/>
 
 			{!activeForgeProvider ? (
-				<ProviderComingSoon
-					provider={
-						activeProvider as Exclude<ContextProviderTab, "github" | "gitlab">
-					}
-				/>
+				activeProvider === "slack" ? (
+					<SlackSettingsPanel />
+				) : (
+					<ProviderComingSoon provider={activeProvider as ComingSoonProvider} />
+				)
 			) : forgeAccounts.length === 0 ? (
 				<div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border/60 px-6 py-10 text-center">
 					<div className="flex size-9 items-center justify-center rounded-lg border border-border/50 text-muted-foreground">
@@ -405,12 +421,13 @@ export function InboxSettingsPanel({
 							<GitlabBrandIcon size={18} />
 						)}
 					</div>
-					<div className="text-[13px] font-medium text-foreground">
-						Connect a {activeForgeLabels?.providerName} account
+					<div className="text-ui font-medium text-foreground">
+						<I18nText source="connect2" /> {activeForgeLabels?.providerName}{" "}
+						<I18nText source={"account"} />
 					</div>
-					<div className="max-w-[360px] text-[12px] leading-5 text-muted-foreground">
-						You need at least one {activeForgeLabels?.providerName} account
-						before Contexts can pull{" "}
+					<div className="max-w-[360px] text-small leading-5 text-muted-foreground">
+						<I18nText source="needLeastOne" /> {activeForgeLabels?.providerName}{" "}
+						<I18nText source="accountBeforeContextsCanPull" />{" "}
 						{joinSingularsAsList(
 							kindLabels.map((entry) => `${entry.singular}s`),
 						)}
@@ -423,14 +440,14 @@ export function InboxSettingsPanel({
 						className="mt-1 cursor-interactive gap-1.5"
 					>
 						<Plus className="size-3.5" strokeWidth={2} />
-						Add account
+						<I18nText source="addAccount" />
 					</Button>
 				</div>
 			) : (
 				<SettingsGroup>
 					<SettingsRow
-						title="Repository"
-						description="Choose the repo these Contexts settings apply to."
+						title="repository"
+						description="chooseRepoTheseContextsSettingsApply"
 					>
 						<RepoPicker
 							repositories={forgeRepositories}
@@ -444,13 +461,18 @@ export function InboxSettingsPanel({
 								<ContextKindSection
 									title={issueLabels.plural}
 									icon={<CircleDot className="size-3" strokeWidth={2} />}
-									description={`Surface ${issueLabels.plural.toLowerCase()} you're assigned to or have opened.`}
+									description={f("surfaceKindReAssignedHaveOpened", {
+										kind: issueLabels.plural.toLowerCase(),
+									})}
 									enabled={currentRepoConfig.issues}
 									onEnabledChange={(next) => setToggle("issues", next)}
 								>
 									<ContextConfigRow
-										title="Scope"
-										description={`Which ${issueLabels.singular} relationship ${activeForgeLabels?.providerName} should use by default.`}
+										title="scope"
+										description={f("whichKindRelationshipProviderShouldUse", {
+											kind: issueLabels.singular,
+											provider: activeForgeLabels?.providerName ?? "",
+										})}
 									>
 										<ScopeMultiSelect
 											value={currentRepoConfig.issueScopes}
@@ -463,8 +485,8 @@ export function InboxSettingsPanel({
 										/>
 									</ContextConfigRow>
 									<ContextConfigRow
-										title="Sort"
-										description="Default ordering before any sidebar filters are applied."
+										title="sort"
+										description="defaultOrderingBeforeAnySidebarFilters"
 									>
 										<SettingsSelect
 											value={currentRepoConfig.issueSort}
@@ -473,8 +495,10 @@ export function InboxSettingsPanel({
 										/>
 									</ContextConfigRow>
 									<ContextConfigRow
-										title="Labels"
-										description={`Only include ${issueLabels.plural.toLowerCase()} with selected repository labels.`}
+										title="labels"
+										description={f("onlyIncludeKindSelectedRepositoryLabels", {
+											kind: issueLabels.plural.toLowerCase(),
+										})}
 									>
 										<LabelMultiSelect
 											value={splitLabels(currentRepoConfig.issueLabels)}
@@ -491,13 +515,18 @@ export function InboxSettingsPanel({
 								<ContextKindSection
 									title={prLabels.plural}
 									icon={<GitPullRequest className="size-3" strokeWidth={2} />}
-									description={`Surface ${prLabels.plural.toLowerCase()} you opened or are assigned to.`}
+									description={f("surfaceKindOpenedAssigned", {
+										kind: prLabels.plural.toLowerCase(),
+									})}
 									enabled={currentRepoConfig.prs}
 									onEnabledChange={(next) => setToggle("prs", next)}
 								>
 									<ContextConfigRow
-										title="Scope"
-										description={`Which ${prLabels.singular} relationship ${activeForgeLabels?.providerName} should use by default.`}
+										title="scope"
+										description={f("whichKindRelationshipProviderShouldUse", {
+											kind: prLabels.singular,
+											provider: activeForgeLabels?.providerName ?? "",
+										})}
 									>
 										<ScopeMultiSelect
 											value={currentRepoConfig.prScopes}
@@ -510,8 +539,10 @@ export function InboxSettingsPanel({
 										/>
 									</ContextConfigRow>
 									<ContextConfigRow
-										title="Drafts"
-										description={`Whether draft ${prLabels.plural.toLowerCase()} appear in the feed.`}
+										title="drafts"
+										description={f("whetherDraftKindAppearFeed", {
+											kind: prLabels.plural.toLowerCase(),
+										})}
 									>
 										<SettingsSelect
 											value={currentRepoConfig.draftPrs}
@@ -520,8 +551,8 @@ export function InboxSettingsPanel({
 										/>
 									</ContextConfigRow>
 									<ContextConfigRow
-										title="Sort"
-										description="Default ordering before any sidebar filters are applied."
+										title="sort"
+										description="defaultOrderingBeforeAnySidebarFilters"
 									>
 										<SettingsSelect
 											value={currentRepoConfig.prSort}
@@ -530,8 +561,10 @@ export function InboxSettingsPanel({
 										/>
 									</ContextConfigRow>
 									<ContextConfigRow
-										title="Labels"
-										description={`Only include ${prLabels.plural.toLowerCase()} with selected repository labels.`}
+										title="labels"
+										description={f("onlyIncludeKindSelectedRepositoryLabels", {
+											kind: prLabels.plural.toLowerCase(),
+										})}
 									>
 										<LabelMultiSelect
 											value={splitLabels(currentRepoConfig.prLabels)}
@@ -548,13 +581,15 @@ export function InboxSettingsPanel({
 								<ContextKindSection
 									title={discussionLabels.plural}
 									icon={<MessagesSquare className="size-3" strokeWidth={2} />}
-									description={`Surface ${discussionLabels.plural.toLowerCase()} in repos you have access to.`}
+									description={f("surfaceKindReposHaveAccess", {
+										kind: discussionLabels.plural.toLowerCase(),
+									})}
 									enabled={currentRepoConfig.discussions}
 									onEnabledChange={(next) => setToggle("discussions", next)}
 								>
 									<ContextConfigRow
-										title="Sort"
-										description="Default ordering before any sidebar filters are applied."
+										title="sort"
+										description="defaultOrderingBeforeAnySidebarFilters"
 									>
 										<SettingsSelect
 											value={currentRepoConfig.discussionSort}
@@ -566,9 +601,9 @@ export function InboxSettingsPanel({
 							) : null}
 						</div>
 					) : (
-						<div className="py-8 text-center text-[12px] text-muted-foreground">
-							Add or connect a {activeForgeLabels?.providerName} repository
-							before configuring Contexts.
+						<div className="py-8 text-center text-small text-muted-foreground">
+							<I18nText source="addConnect" /> {activeForgeLabels?.providerName}{" "}
+							<I18nText source="repositoryBeforeConfiguringContexts" />
 						</div>
 					)}
 				</SettingsGroup>
@@ -593,7 +628,7 @@ function ProviderTabs({
 					aria-pressed={value === tab.id}
 					onClick={() => onChange(tab.id)}
 					className={cn(
-						"flex h-8 cursor-interactive items-center justify-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-muted-foreground transition-[background-color,color,box-shadow]",
+						"flex h-8 cursor-interactive items-center justify-center gap-1.5 rounded-md px-2 text-small font-medium text-muted-foreground transition-[background-color,color,box-shadow]",
 						"hover:bg-accent/60 hover:text-foreground",
 						value === tab.id && "bg-accent text-foreground shadow-xs",
 					)}
@@ -606,11 +641,8 @@ function ProviderTabs({
 	);
 }
 
-function ProviderComingSoon({
-	provider,
-}: {
-	provider: Exclude<ContextProviderTab, "github" | "gitlab">;
-}) {
+function ProviderComingSoon({ provider }: { provider: ComingSoonProvider }) {
+	const { t } = useI18n();
 	return (
 		<div className="flex min-h-[360px] w-full items-center justify-center px-3 py-8">
 			<div className="flex w-full max-w-[380px] flex-col items-stretch text-muted-foreground/65">
@@ -619,19 +651,53 @@ function ProviderComingSoon({
 						className="inbox-coming-soon-pickaxe size-3.5 shrink-0"
 						strokeWidth={2}
 					/>
-					<span className="text-[13px] font-medium">Coming Soon</span>
+					<span className="text-ui font-medium">
+						<I18nText source="comingSoon" />
+					</span>
 				</div>
 				<div className="my-7 flex items-center gap-2 px-2">
 					<div className="h-px flex-1 bg-border" />
 					<div className="size-0.5 rounded-full bg-border" />
 					<div className="h-px flex-1 bg-border" />
 				</div>
-				<ul className="mx-auto list-disc space-y-3 pl-4 text-left text-pretty text-[11px] leading-4 marker:text-muted-foreground/35">
+				<ul className="mx-auto list-disc space-y-3 pl-4 text-left text-pretty text-mini leading-4 marker:text-muted-foreground/35">
 					{COMING_SOON_COPY[provider].map((line) => (
-						<li key={line}>{line}</li>
+						<li key={line}>{t(line)}</li>
 					))}
 				</ul>
 			</div>
+		</div>
+	);
+}
+
+/** Slack tab content inside Settings → Context.
+ *
+ *  No real settings to expose yet (filter / sort / per-channel toggles
+ *  are future work); this slot just mirrors the inbox empty-state
+ *  connect flow when zero workspaces are connected, and acknowledges
+ *  success otherwise. Reuses `<SlackConnectState>` so the import
+ *  affordance is identical on both surfaces. */
+function SlackSettingsPanel() {
+	const { f } = useI18n();
+	const workspacesQuery = useSlackWorkspaces();
+	const connectedCount = workspacesQuery.data?.length ?? 0;
+	if (connectedCount === 0) {
+		// Constrain the connect card to the settings panel slot — its
+		// default `min-h-[calc(100vh-200px)]` is sized for the inbox
+		// sidebar's full viewport and would over-stretch here.
+		return <SlackConnectState className="min-h-[360px]" />;
+	}
+	return (
+		<div className="flex min-h-[360px] w-full items-center justify-center px-6 text-center">
+			<p className="text-small text-muted-foreground/65">
+				{connectedCount === 1
+					? f("countSlackWorkspaceConnectedOpenContext", {
+							count: connectedCount,
+						})
+					: f("countSlackWorkspacesConnectedOpenContext", {
+							count: connectedCount,
+						})}
+			</p>
 		</div>
 	);
 }

@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { memo, useState } from "react";
 import type { ToolCallPart } from "@/lib/api";
+import { I18nText, useI18n } from "@/lib/i18n";
 import {
 	getSubagentIdentity,
 	type SubagentIdentity,
@@ -112,6 +113,7 @@ function SpawnAgentRow({
 	part: ToolCallPart;
 	depth?: RowDepth;
 }) {
+	const { t } = useI18n();
 	const states = readAgentsStates(part.args);
 	const prompt = typeof part.args.prompt === "string" ? part.args.prompt : null;
 	// One spawn call typically targets exactly one new sub-agent; render the
@@ -120,7 +122,7 @@ function SpawnAgentRow({
 	// identity from — fall back to a neutral "Sub-agent" placeholder.
 	const target = states[0];
 	const identity = target ? identityFor(target) : null;
-	const label = identity?.nickname ?? "Sub-agent";
+	const label = identity?.nickname ?? t("panelSubAgent");
 	const role = target?.role;
 	const [open, setOpen] = useState(false);
 	const expandable = !!prompt && prompt.length > 0;
@@ -129,7 +131,7 @@ function SpawnAgentRow({
 	const tokens = DEPTH_TOKENS[depth];
 
 	return (
-		<div className="flex flex-col gap-0.5 text-[12px]">
+		<div className="flex flex-col gap-0.5 text-small">
 			<button
 				type="button"
 				onClick={() => expandable && setOpen((v) => !v)}
@@ -144,12 +146,16 @@ function SpawnAgentRow({
 					className={cn("size-3.5 shrink-0", tokens.icon)}
 					strokeWidth={1.8}
 				/>
-				<span>Created</span>
+				<span>
+					<I18nText source="created" />
+				</span>
 				<span className="font-medium" style={accent}>
 					{label}
 				</span>
 				{role ? <span className={tokens.secondary}>({role})</span> : null}
-				<span className={tokens.secondary}>with the instructions:</span>
+				<span className={tokens.secondary}>
+					<I18nText source="instructions" />
+				</span>
 				{expandable ? (
 					<ChevronDown
 						className={cn(
@@ -162,7 +168,7 @@ function SpawnAgentRow({
 			</button>
 			{prompt ? (
 				open ? (
-					<div className="ml-5 mt-0.5 whitespace-pre-wrap break-words rounded-md bg-accent/35 px-2.5 py-1.5 text-[12px] leading-5 text-muted-foreground/85">
+					<div className="ml-5 mt-0.5 whitespace-pre-wrap break-words rounded-md bg-accent/35 px-2.5 py-1.5 text-small leading-5 text-muted-foreground/85">
 						{prompt}
 					</div>
 				) : (
@@ -204,13 +210,15 @@ export function SubAgentSpawnGroup({ parts }: { parts: ToolCallPart[] }) {
 			<button
 				type="button"
 				onClick={() => setOpen((v) => !v)}
-				className="flex w-fit cursor-interactive items-center gap-1.5 py-0.5 text-left text-[12px] text-muted-foreground"
+				className="flex w-fit cursor-interactive items-center gap-1.5 py-0.5 text-left text-small text-muted-foreground"
 			>
 				<Sparkles
 					className="size-3.5 shrink-0 text-muted-foreground"
 					strokeWidth={1.8}
 				/>
-				<span className="font-medium">Spawned {count} agents</span>
+				<span className="font-medium">
+					<I18nText source="spawned" /> {count} <I18nText source={"agents"} />
+				</span>
 				<ChevronDown
 					className={cn(
 						"size-3 shrink-0 text-muted-foreground/40 transition-transform",
@@ -255,6 +263,7 @@ function statusGlyph(status: string, isError: boolean) {
 }
 
 function SubAgentWaitRow({ part }: { part: ToolCallPart }) {
+	const { t, f } = useI18n();
 	const states = readAgentsStates(part.args);
 	const status =
 		typeof part.args.status === "string" ? part.args.status : "completed";
@@ -264,10 +273,13 @@ function SubAgentWaitRow({ part }: { part: ToolCallPart }) {
 	const completedCount = states.filter((s) => s.status === "completed").length;
 	const totalCount = states.length;
 	const headline = isLiveStatus(status)
-		? `Waiting on ${totalCount || "agents"}…`
+		? f("panelWaitingOnAgents", { count: totalCount || t("agents") })
 		: completedCount > 0
-			? `Collected ${completedCount} of ${totalCount} agent results`
-			: "Waiting complete";
+			? f("panelCollectedAgentResults", {
+					completed: completedCount,
+					total: totalCount,
+				})
+			: t("panelWaitingComplete");
 
 	const hasBodies = states.some(
 		(s) => typeof s.message === "string" && s.message.trim().length > 0,
@@ -280,7 +292,7 @@ function SubAgentWaitRow({ part }: { part: ToolCallPart }) {
 				onClick={() => hasBodies && setOpen((v) => !v)}
 				disabled={!hasBodies}
 				className={cn(
-					"flex w-fit items-center gap-1.5 py-0.5 text-left text-[12px] text-muted-foreground",
+					"flex w-fit items-center gap-1.5 py-0.5 text-left text-small text-muted-foreground",
 					hasBodies ? "cursor-interactive" : "cursor-default",
 				)}
 			>
@@ -301,7 +313,7 @@ function SubAgentWaitRow({ part }: { part: ToolCallPart }) {
 				) : null}
 			</button>
 			{open && hasBodies ? (
-				<div className="ml-[7px] mt-1 flex flex-col gap-2 border-l border-border/30 pl-3 text-[12px]">
+				<div className="ml-[7px] mt-1 flex flex-col gap-2 border-l border-border/30 pl-3 text-small">
 					{states.map((s) => {
 						const id = identityFor(s);
 						const accent = { color: id.color };
@@ -327,7 +339,7 @@ function SubAgentWaitRow({ part }: { part: ToolCallPart }) {
 									<span className={tokens.secondary}>— {s.status}</span>
 								</div>
 								{s.message ? (
-									<div className="ml-5 whitespace-pre-wrap break-words rounded-md bg-accent/35 px-2.5 py-1.5 text-[12px] leading-5 text-muted-foreground/85">
+									<div className="ml-5 whitespace-pre-wrap break-words rounded-md bg-accent/35 px-2.5 py-1.5 text-small leading-5 text-muted-foreground/85">
 										{s.message}
 									</div>
 								) : null}
@@ -341,15 +353,16 @@ function SubAgentWaitRow({ part }: { part: ToolCallPart }) {
 }
 
 function SubAgentMiscRow({ part }: { part: ToolCallPart }) {
+	const { t } = useI18n();
 	// send_input / resume / close — minimal one-liner.
 	const verb =
 		part.toolName === "subagent_send_input"
-			? "Sent input"
+			? t("panelSentInput")
 			: part.toolName === "subagent_resume"
-				? "Resumed"
+				? t("panelResumed")
 				: part.toolName === "subagent_close"
-					? "Closed"
-					: "Sub-agent action";
+					? t("panelClosed")
+					: t("panelSubAgentAction");
 	const states = readAgentsStates(part.args);
 	const target = states[0];
 	const identity = target ? identityFor(target) : null;
@@ -363,7 +376,7 @@ function SubAgentMiscRow({ part }: { part: ToolCallPart }) {
 	return (
 		<div
 			className={cn(
-				"my-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0 text-[12px]",
+				"my-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0 text-small",
 				tokens.muted,
 			)}
 		>

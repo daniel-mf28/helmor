@@ -5,9 +5,26 @@
  * any SDK-specific details.
  */
 
+import type { AgentProxySettings } from "./agent-proxy.js";
 import type { SidecarEmitter } from "./emitter.js";
 
-export type Provider = "claude" | "codex" | "cursor";
+export type Provider =
+	| "claude"
+	| "codex"
+	| "cursor"
+	| "opencode"
+	| "mimo"
+	| "kimi";
+
+/** Custom Codex provider injected per thread; never touches `~/.codex/config.toml`. */
+export interface CodexProviderConfig {
+	readonly id: string;
+	readonly baseUrl: string;
+	readonly apiKey: string;
+	readonly wireApi: string;
+	/** Wire model name, sent verbatim to the endpoint. */
+	readonly model: string;
+}
 
 export interface SendMessageParams {
 	readonly sessionId: string;
@@ -22,6 +39,9 @@ export interface SendMessageParams {
 	 *  absent, the manager falls back to its hardcoded default. */
 	readonly claudeThinkingDisplay?: "summarized" | "omitted";
 	readonly claudeEnvironment?: Readonly<Record<string, string>>;
+	/** Custom Codex provider definition; only the Codex manager reads it. */
+	readonly codexProvider?: CodexProviderConfig;
+	readonly agentProxy?: AgentProxySettings;
 	/**
 	 * Extra directories the user linked via `/add-dir`. Passed to Claude as
 	 * `additionalDirectories`; merged into Codex's per-turn `sandboxPolicy`
@@ -65,11 +85,15 @@ export interface GetContextUsageParams {
 	readonly providerSessionId: string | null;
 	readonly model: string;
 	readonly cwd: string | undefined;
+	readonly agentProxy?: AgentProxySettings;
 }
 
 export interface GenerateTitleOptions {
 	readonly model?: string;
 	readonly claudeEnvironment?: Readonly<Record<string, string>>;
+	/** Custom Codex provider; only the Codex manager reads it. */
+	readonly codexProvider?: CodexProviderConfig;
+	readonly agentProxy?: AgentProxySettings;
 	/** When false, only the title is requested — branch generation is omitted
 	 * from the prompt entirely (saves tokens for local-mode workspaces and
 	 * any other case where the caller has no intent to rename a branch). */
@@ -96,8 +120,17 @@ export interface SlashCommandInfo {
  * happens inside each manager's resolver closure.
  */
 export type UserInputResolution =
-	| { action: "submit"; content: Record<string, unknown> }
-	| { action: "decline"; content?: Record<string, unknown> }
+	| {
+			action: "submit";
+			content: Record<string, unknown>;
+			/** Provider-specific meta (e.g. Codex `{ persist: "session" | "always" }`). */
+			meta?: Record<string, unknown>;
+	  }
+	| {
+			action: "decline";
+			content?: Record<string, unknown>;
+			meta?: Record<string, unknown>;
+	  }
 	| { action: "cancel" };
 
 /** Mirrors `ModelParameterDefinition` from @cursor/sdk. Single source of
@@ -176,8 +209,12 @@ export interface SessionManager {
 
 	/** List available models. `apiKey` overrides the manager's stored key
 	 *  for one-off probes (e.g. onboarding validation); when omitted the
-	 *  manager uses whatever it has configured. */
-	listModels(opts?: { apiKey?: string }): Promise<readonly ProviderModelInfo[]>;
+	 *  manager uses whatever it has configured. `forceReload` (opencode only)
+	 *  restarts the model server to pick up a just-written config change. */
+	listModels(opts?: {
+		apiKey?: string;
+		forceReload?: boolean;
+	}): Promise<readonly ProviderModelInfo[]>;
 
 	/**
 	 * Abort an in-flight session by id. No-op if the session is not active.

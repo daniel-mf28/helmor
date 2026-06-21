@@ -2,6 +2,7 @@ import { Check, Settings2, X } from "lucide-react";
 import { useMemo } from "react";
 import { CodeBlock } from "@/components/ai/code-block";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 import { InteractionFooter, InteractionHeader } from "../interaction";
 import { UserInputCard } from "./shared";
 
@@ -16,6 +17,9 @@ import { UserInputCard } from "./shared";
 export type ToolApprovalCardProps = {
 	toolName: string;
 	toolInput: Record<string, unknown>;
+	/** Fallback resource label when `toolInput` is empty (e.g. OpenCode's
+	 *  `patterns` — the file path / command being approved). */
+	description?: string | null;
 	disabled?: boolean;
 	onResponse: (behavior: "allow" | "deny") => void;
 };
@@ -35,6 +39,7 @@ function looksLikeCommand(
 function getCodePreview(
 	toolName: string,
 	toolInput: Record<string, unknown>,
+	description?: string | null,
 ): { code: string; language: string } {
 	const command = toolInput?.command;
 	if (
@@ -43,6 +48,13 @@ function getCodePreview(
 		looksLikeCommand(toolName, toolInput)
 	) {
 		return { code: command, language: "bash" };
+	}
+	// Some agents (OpenCode read/skill/todo/shell) send an empty input object
+	// and carry the target resource in `description` (its `patterns`). Show
+	// that instead of a useless `{}`.
+	if (toolInput == null || Object.keys(toolInput).length === 0) {
+		const fallback = description?.trim();
+		if (fallback) return { code: fallback, language: "text" };
 	}
 	return {
 		code: JSON.stringify(toolInput, null, 2),
@@ -53,12 +65,14 @@ function getCodePreview(
 export function ToolApprovalCard({
 	toolName,
 	toolInput,
+	description,
 	disabled,
 	onResponse,
 }: ToolApprovalCardProps) {
+	const { t } = useI18n();
 	const preview = useMemo(
-		() => getCodePreview(toolName, toolInput),
-		[toolName, toolInput],
+		() => getCodePreview(toolName, toolInput, description),
+		[toolName, toolInput, description],
 	);
 
 	return (
@@ -66,7 +80,7 @@ export function ToolApprovalCard({
 			<InteractionHeader
 				icon={Settings2}
 				title={toolName}
-				description="This tool needs your approval before it can run."
+				description="toolNeedsApprovalBeforeCanRun"
 				truncateTitle
 			/>
 			<div className="mx-1 max-h-56 overflow-y-auto rounded-xl bg-muted/20">
@@ -86,7 +100,7 @@ export function ToolApprovalCard({
 					onClick={() => onResponse("deny")}
 				>
 					<X className="size-3.5" strokeWidth={2} />
-					<span>Deny</span>
+					<span>{t("deny")}</span>
 				</Button>
 				<Button
 					variant="default"
@@ -95,7 +109,7 @@ export function ToolApprovalCard({
 					onClick={() => onResponse("allow")}
 				>
 					<Check className="size-3.5" strokeWidth={2} />
-					<span>Allow</span>
+					<span>{t("allow")}</span>
 				</Button>
 			</InteractionFooter>
 		</UserInputCard>

@@ -1,10 +1,13 @@
-import type { QueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import {
+	findProviderCapabilities,
 	stopAgentStream,
 	type WorkspaceDetail,
 	type WorkspaceSessionSummary,
 } from "@/lib/api";
+import { translateSource } from "@/lib/i18n";
+import { providerCapabilitiesQueryOptions } from "@/lib/query-client";
 import type { PushWorkspaceToast } from "@/lib/workspace-toast-context";
 import { shouldConfirmRunningSessionClose } from "./close-guard";
 import { RunningSessionCloseDialog } from "./running-session-close-dialog";
@@ -93,7 +96,7 @@ export function useConfirmSessionClose({
 		} catch (error) {
 			pushToast(
 				error instanceof Error ? error.message : String(error),
-				"Unable to stop chat",
+				translateSource("panelUnableStopChat"),
 				"destructive",
 			);
 			setLoading(false);
@@ -105,15 +108,22 @@ export function useConfirmSessionClose({
 		await performClose(request);
 	}, [pending, performClose, pushToast]);
 
+	const capsQuery = useQuery(providerCapabilitiesQueryOptions());
+	const capsTable = capsQuery.data ?? [];
+
 	const agentLabel = useMemo(() => {
 		if (!pending) {
 			return "Claude";
 		}
-		const provider = pending.provider ?? pending.session.agentType;
-		if (provider === "codex") return "Codex";
-		if (provider === "cursor") return "Cursor";
-		return "Claude";
-	}, [pending]);
+		const provider = pending.provider ?? pending.session.agentType ?? "";
+		// Data-driven display name — single source of truth in
+		// `agents::provider_capabilities`. Falls back to "Claude" when
+		// the capability table hasn't loaded yet (cold first paint)
+		// or for an unknown provider id (matches the Rust helper's
+		// fallback to Claude defaults).
+		const caps = findProviderCapabilities(capsTable, provider);
+		return caps?.displayName ?? "Claude";
+	}, [pending, capsTable]);
 
 	const dialogNode = (
 		<RunningSessionCloseDialog

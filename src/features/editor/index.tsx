@@ -35,6 +35,7 @@ import {
 	type InspectorFileItem,
 	isMarkdownPath,
 } from "@/lib/editor-session";
+import { useI18n } from "@/lib/i18n";
 import {
 	helmorQueryKeys,
 	workspaceChangesQueryOptions,
@@ -42,12 +43,13 @@ import {
 } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 import { describeUnknownError } from "@/lib/workspace-helpers";
+import { useRouterSelectedWorkspaceId } from "@/router/use-router-selection";
 
 // Refined segmented-tab look: no tray, soft glassy pill on the active state.
 // Hover only changes text color (no bg) — otherwise hover-on-inactive sits next
 // to active-bg and the boundary blurs. Active is the ONLY trigger with a bg.
 const SEGMENT_CLASS = [
-	"h-5 gap-1 rounded-[5px] px-1.5 py-0 text-[10.5px] font-normal tracking-tight",
+	"h-5 gap-1 rounded-[5px] px-1.5 py-0 text-micro font-normal tracking-tight",
 	"border-transparent bg-transparent text-muted-foreground/70 shadow-none",
 	"hover:bg-transparent hover:text-foreground",
 	"data-active:bg-editor-tab-active data-active:text-foreground data-active:border-transparent data-active:shadow-none",
@@ -144,7 +146,7 @@ function EditorPathBreadcrumb({
 	};
 
 	return (
-		<div className="group/path flex min-w-0 items-center overflow-hidden text-[13px] font-medium tracking-normal">
+		<div className="group/path flex min-w-0 items-center overflow-hidden text-ui font-medium tracking-normal">
 			{segments.map((segment, index) => {
 				return (
 					<span
@@ -190,7 +192,7 @@ function EditorPathBreadcrumb({
 function EditorShortcutHint({ hotkey }: { hotkey: string | null }) {
 	if (!hotkey) return null;
 	return (
-		<span className="ml-0.5 inline-flex h-4 items-center rounded-[3px] bg-muted/60 px-1 text-[10.5px] font-medium leading-none text-muted-foreground/80">
+		<span className="ml-0.5 inline-flex h-4 items-center rounded-[3px] bg-muted/60 px-1 text-micro font-medium leading-none text-muted-foreground/80">
 			<InlineShortcutDisplay hotkey={hotkey} />
 		</span>
 	);
@@ -209,6 +211,7 @@ function EditorFileTabs({
 	onCloseTab: (tabId: string) => void;
 	onOpenSearch: () => void;
 }) {
+	const { t } = useI18n();
 	return (
 		<div
 			data-tauri-drag-region
@@ -224,7 +227,7 @@ function EditorFileTabs({
 					className="h-full min-w-max gap-0"
 				>
 					<TabsList
-						aria-label="Open files"
+						aria-label={t("openFiles")}
 						className="inline-flex h-full w-max justify-start self-start bg-transparent p-0"
 					>
 						{tabs.map((tab) => {
@@ -234,7 +237,7 @@ function EditorFileTabs({
 									key={tab.id}
 									value={tab.id}
 									className={cn(
-										"group/tab relative h-full w-auto min-w-[7rem] max-w-[14rem] shrink-0 flex-none justify-start gap-1.5 overflow-hidden rounded-none border-0 bg-transparent px-3 text-[13px] text-muted-foreground shadow-none data-active:bg-background data-active:text-foreground data-active:shadow-none aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-none dark:data-active:border-transparent dark:data-active:bg-background dark:aria-selected:border-transparent dark:aria-selected:bg-background",
+										"group/tab relative h-full w-auto min-w-[7rem] max-w-[14rem] shrink-0 flex-none justify-start gap-1.5 overflow-hidden rounded-none border-0 bg-transparent px-3 text-ui text-muted-foreground shadow-none data-active:bg-background data-active:text-foreground data-active:shadow-none aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-none dark:data-active:border-transparent dark:data-active:bg-background dark:aria-selected:border-transparent dark:aria-selected:bg-background",
 										active ? "font-medium" : undefined,
 									)}
 								>
@@ -249,7 +252,7 @@ function EditorFileTabs({
 										</span>
 										{tab.session.dirty ? (
 											<span
-												aria-label="Modified"
+												aria-label={t("modified")}
 												className="size-1.5 shrink-0 rounded-full bg-muted-foreground/55"
 											/>
 										) : null}
@@ -257,7 +260,9 @@ function EditorFileTabs({
 									<span className="pointer-events-none invisible absolute inset-y-0 right-0 flex items-center pr-1 group-hover/tab:pointer-events-auto group-hover/tab:visible">
 										<span
 											role="button"
-											aria-label={`Close ${getBaseName(tab.session.path)}`}
+											aria-label={`${t("close")} ${getBaseName(
+												tab.session.path,
+											)}`}
 											onPointerDown={(event) => {
 												event.preventDefault();
 												event.stopPropagation();
@@ -280,7 +285,7 @@ function EditorFileTabs({
 			</div>
 			<button
 				type="button"
-				aria-label="Open file"
+				aria-label={t("openFile")}
 				onClick={onOpenSearch}
 				className="ml-1 flex h-full w-6 shrink-0 cursor-interactive items-center justify-center self-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-0"
 			>
@@ -311,6 +316,7 @@ function FileSearchOverlay({
 	onOpen: (file: InspectorFileItem) => void;
 	onClose: () => void;
 }) {
+	const { t } = useI18n();
 	const inputRef = useRef<HTMLInputElement>(null);
 	const selectedItemRef = useRef<HTMLButtonElement | null>(null);
 
@@ -325,11 +331,11 @@ function FileSearchOverlay({
 	}, [selectedIndex]);
 
 	const statusText = loading
-		? "Loading files"
+		? t("loadingFiles")
 		: error
 			? error
 			: files.length === 0
-				? "No files found"
+				? t("noFilesFound")
 				: null;
 
 	return (
@@ -373,13 +379,13 @@ function FileSearchOverlay({
 								if (file) onOpen(file);
 							}
 						}}
-						placeholder="Search files"
-						className="h-full min-w-0 flex-1 bg-transparent text-[14px] font-medium text-foreground outline-none placeholder:text-muted-foreground/55"
+						placeholder={t("searchFiles")}
+						className="h-full min-w-0 flex-1 bg-transparent text-body font-medium text-foreground outline-none placeholder:text-muted-foreground/55"
 					/>
 				</div>
 				<div className="max-h-80 overflow-y-auto px-1.5 py-2 scroll-py-2">
 					{statusText ? (
-						<div className="px-3 py-8 text-center text-[13px] text-muted-foreground">
+						<div className="px-3 py-8 text-center text-ui text-muted-foreground">
 							{statusText}
 						</div>
 					) : (
@@ -391,7 +397,7 @@ function FileSearchOverlay({
 								onPointerMove={() => onSelectedIndexChange(index)}
 								onClick={() => onOpen(file)}
 								className={cn(
-									"flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px]",
+									"flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-ui",
 									index === selectedIndex
 										? "bg-accent text-accent-foreground"
 										: "text-muted-foreground",
@@ -423,7 +429,12 @@ export function WorkspaceEditorSurface({
 	onExit,
 	onError,
 }: WorkspaceEditorSurfaceProps) {
+	const { t } = useI18n();
 	const queryClient = useQueryClient();
+	// Read the workspace id from the ROUTER (Stage 3b: navigation intent is
+	// router-owned). Same value AppShell used to read off the store's
+	// `selectedWorkspaceId`; the delivery channel moved to the router.
+	const workspaceId = useRouterSelectedWorkspaceId();
 	const surfaceRef = useRef<HTMLElement>(null);
 	const editorHostRef = useRef<HTMLDivElement>(null);
 	const fileControllerRef = useRef<FileController | null>(null);
@@ -456,7 +467,7 @@ export function WorkspaceEditorSurface({
 		editorSession.originalText !== undefined &&
 		editorSession.modifiedText !== undefined;
 	const closeLabel =
-		editorSession.kind === "diff" ? "Close diff view" : "Close editor view";
+		editorSession.kind === "diff" ? t("closeDiffView") : t("closeEditorView");
 	const isMarkdown = isMarkdownPath(editorSession.path);
 	const viewMode: EditorViewMode = isMarkdown
 		? (editorSession.viewMode ?? "source")
@@ -832,12 +843,9 @@ export function WorkspaceEditorSurface({
 					}
 					setSurfaceStatus({ kind: "ready" });
 				} catch (error) {
-					const message = describeUnknownError(
-						error,
-						"Unable to start the editor.",
-					);
+					const message = describeUnknownError(error, t("unableStartEditor"));
 					setSurfaceStatus({ kind: "error", message });
-					onErrorRef.current?.(message, "Editor startup failed");
+					onErrorRef.current?.(message, t("editorStartupFailed"));
 				}
 			})();
 		} else {
@@ -866,10 +874,10 @@ export function WorkspaceEditorSurface({
 				} catch (error) {
 					const message = describeUnknownError(
 						error,
-						"Unable to start the review surface.",
+						t("unableStartReviewSurface"),
 					);
 					setSurfaceStatus({ kind: "error", message });
-					onErrorRef.current?.(message, "Review surface failed");
+					onErrorRef.current?.(message, t("reviewSurfaceFailed"));
 				}
 			})();
 		}
@@ -881,7 +889,7 @@ export function WorkspaceEditorSurface({
 			// changes), and the separate unmount effect handles final cleanup.
 			disposed = true;
 		};
-	}, [canRenderDiff, canRenderFile, editorSession.kind, editorSession.path]);
+	}, [canRenderDiff, canRenderFile, editorSession.kind, editorSession.path, t]);
 
 	useEffect(() => {
 		if (
@@ -990,10 +998,12 @@ export function WorkspaceEditorSurface({
 			);
 			const changes = workspaceRootPath
 				? await queryClient
-						.fetchQuery(workspaceChangesQueryOptions(workspaceRootPath))
+						.fetchQuery(
+							workspaceChangesQueryOptions(workspaceRootPath, workspaceId),
+						)
 						.catch(() => null)
 				: null;
-			const changedFile = changes?.items.find(
+			const changedFile = changes?.find(
 				(item) =>
 					normalizePath(item.absolutePath) === normalizePath(file.absolutePath),
 			);
@@ -1064,7 +1074,10 @@ export function WorkspaceEditorSurface({
 			});
 			if (workspaceRootPath) {
 				void queryClient.invalidateQueries({
-					queryKey: helmorQueryKeys.workspaceChanges(workspaceRootPath),
+					queryKey: helmorQueryKeys.workspaceChanges(
+						workspaceRootPath,
+						workspaceId,
+					),
 				});
 			}
 		} catch (error) {
@@ -1092,7 +1105,7 @@ export function WorkspaceEditorSurface({
 	return (
 		<section
 			ref={surfaceRef}
-			aria-label="Workspace editor surface"
+			aria-label={t("workspaceEditorSurface")}
 			data-focus-scope="editor"
 			tabIndex={-1}
 			className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground focus:outline-none"
@@ -1122,17 +1135,17 @@ export function WorkspaceEditorSurface({
 						<Tabs
 							value={viewMode}
 							onValueChange={handleViewModeChange}
-							aria-label="Markdown view mode"
+							aria-label={t("markdownViewMode")}
 						>
 							{/* No tray: bg-transparent + p-0. Pill highlight only on the active trigger. */}
 							<TabsList className="h-5 gap-0 bg-transparent p-0">
 								<TabsTrigger value="source" className={SEGMENT_CLASS}>
 									<FileCode strokeWidth={1.8} />
-									Source
+									{t("source")}
 								</TabsTrigger>
 								<TabsTrigger value="preview" className={SEGMENT_CLASS}>
 									<Eye strokeWidth={1.8} />
-									Preview
+									{t("preview")}
 								</TabsTrigger>
 							</TabsList>
 						</Tabs>
@@ -1145,7 +1158,7 @@ export function WorkspaceEditorSurface({
 							onClick={handleEnterEditMode}
 							className="gap-1 px-1.5 text-muted-foreground hover:text-foreground"
 						>
-							<span>Edit</span>
+							<span>{t("edit")}</span>
 							<EditorShortcutHint hotkey={editShortcut} />
 						</Button>
 					)}
@@ -1157,7 +1170,7 @@ export function WorkspaceEditorSurface({
 							onClick={handleReturnToDiffMode}
 							className="gap-1 px-1.5 text-muted-foreground hover:text-foreground"
 						>
-							<span>Diff</span>
+							<span>{t("diff")}</span>
 							<EditorShortcutHint hotkey={editShortcut} />
 						</Button>
 					)}
@@ -1169,7 +1182,7 @@ export function WorkspaceEditorSurface({
 						aria-label={closeLabel}
 						className="gap-1 px-1.5 text-muted-foreground hover:text-foreground"
 					>
-						<span>Close</span>
+						<span>{t("close")}</span>
 						<EditorShortcutHint hotkey="Escape" />
 					</Button>
 				</div>
@@ -1198,7 +1211,7 @@ export function WorkspaceEditorSurface({
 							workspaceFilesQuery.isError
 								? describeUnknownError(
 										workspaceFilesQuery.error,
-										"Unable to list workspace files.",
+										t("unableListWorkspaceFiles"),
 									)
 								: null
 						}
@@ -1211,7 +1224,7 @@ export function WorkspaceEditorSurface({
 				{/* Monaco host stays mounted in preview mode so model + dirty state survive toggling. */}
 				<div
 					ref={editorHostRef}
-					aria-label="Editor canvas"
+					aria-label={t("editorCanvas")}
 					className="h-full min-h-0 flex-1"
 					aria-hidden={showPreview}
 					style={showPreview ? { visibility: "hidden" } : undefined}
@@ -1219,10 +1232,10 @@ export function WorkspaceEditorSurface({
 
 				{showPreview && (
 					<div
-						aria-label="Markdown preview"
+						aria-label={t("markdownPreview")}
 						className="absolute inset-0 overflow-y-auto bg-background"
 					>
-						<div className="conversation-markdown mx-auto max-w-3xl break-words px-8 py-6 text-[13px] leading-6 text-foreground">
+						<div className="conversation-markdown mx-auto max-w-3xl break-words px-8 py-6 text-ui leading-6 text-foreground">
 							<Suspense
 								fallback={
 									<pre className="whitespace-pre-wrap break-words font-mono text-muted-foreground">
@@ -1252,9 +1265,7 @@ export function WorkspaceEditorSurface({
 }
 
 function SurfaceMessage({ message }: { message: string }) {
-	return (
-		<p className="text-[13px] leading-5 text-muted-foreground">{message}</p>
-	);
+	return <p className="text-ui leading-5 text-muted-foreground">{message}</p>;
 }
 
 function disposeControllers({

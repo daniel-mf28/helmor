@@ -5,6 +5,7 @@ import cssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
 import htmlWorker from "monaco-editor/esm/vs/language/html/html.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
 import tsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
+import { resolveCssColor } from "@/lib/css-color";
 
 type MonacoModule = typeof Monaco;
 type StandaloneEditor = Monaco.editor.IStandaloneCodeEditor;
@@ -85,6 +86,11 @@ let runtimePromise: Promise<MonacoRuntime> | null = null;
 
 /** Content cache for pre-fetched files — avoids IPC on first switch. */
 const fileContentCache = new Map<string, string>();
+const activeFileEditors = new Set<StandaloneEditor>();
+const activeDiffEditors = new Set<StandaloneDiffEditor>();
+const DEFAULT_MONACO_FONT_FAMILY =
+	'"Geist Mono Variable","SF Mono","Monaco","Menlo",monospace';
+let cssFontProbe: HTMLDivElement | null = null;
 
 type EditorTheme = "light" | "dark";
 
@@ -100,6 +106,41 @@ function detectInitialTheme(): EditorTheme {
 
 function themeId(theme: EditorTheme): string {
 	return theme === "dark" ? "helmor-editor-dark" : "helmor-editor-light";
+}
+
+function resolveEditorFontFamily(): string {
+	if (
+		typeof document === "undefined" ||
+		typeof window === "undefined" ||
+		!document.body
+	) {
+		return DEFAULT_MONACO_FONT_FAMILY;
+	}
+
+	const probe = getCssFontProbe();
+	probe.style.fontFamily = "var(--font-mono)";
+	const resolved = window.getComputedStyle(probe).fontFamily.trim();
+	return resolved || DEFAULT_MONACO_FONT_FAMILY;
+}
+
+function getCssFontProbe(): HTMLDivElement {
+	if (!cssFontProbe) {
+		cssFontProbe = document.createElement("div");
+		cssFontProbe.style.cssText =
+			"position:absolute;visibility:hidden;pointer-events:none;width:0;height:0;";
+		document.body.appendChild(cssFontProbe);
+	}
+	return cssFontProbe;
+}
+
+function updateActiveEditorFonts() {
+	const fontFamily = resolveEditorFontFamily();
+	for (const editor of activeFileEditors) {
+		editor.updateOptions({ fontFamily });
+	}
+	for (const editor of activeDiffEditors) {
+		editor.updateOptions({ fontFamily });
+	}
 }
 
 export async function createFileEditor(options: {
@@ -128,8 +169,7 @@ export async function createFileEditor(options: {
 		codeLens: false,
 		colorDecorators: false,
 		contextmenu: false,
-		fontFamily:
-			'"SF Mono","Monaco","Cascadia Mono","Roboto Mono","Menlo",monospace',
+		fontFamily: resolveEditorFontFamily(),
 		fontLigatures: true,
 		fontSize: 13,
 		folding: false,
@@ -155,6 +195,7 @@ export async function createFileEditor(options: {
 		theme: themeId(desiredTheme),
 		wordWrap: "on",
 	});
+	activeFileEditors.add(editor);
 	const findWidgetTooltipPatch = suppressFindWidgetCloseTooltip(
 		options.container,
 	);
@@ -167,7 +208,11 @@ export async function createFileEditor(options: {
 		editor,
 		dispose() {
 			findWidgetTooltipPatch.dispose();
+			activeFileEditors.delete(editor);
 			editor.dispose();
+			// editor.dispose() does NOT release the bound model — leaking it
+			// keeps the file text + tokenization state alive across opens.
+			currentModel.dispose();
 		},
 		getValue() {
 			return currentModel.getValue();
@@ -255,8 +300,7 @@ export async function createDiffEditor(options: {
 		colorDecorators: false,
 		contextmenu: false,
 		enableSplitViewResizing: true,
-		fontFamily:
-			'"SF Mono","Monaco","Cascadia Mono","Roboto Mono","Menlo",monospace',
+		fontFamily: resolveEditorFontFamily(),
 		fontLigatures: true,
 		fontSize: 13,
 		folding: false,
@@ -288,6 +332,7 @@ export async function createDiffEditor(options: {
 		suggestOnTriggerCharacters: false,
 		theme: themeId(desiredTheme),
 	});
+	activeDiffEditors.add(editor);
 
 	editor.setModel({
 		original: originalModel,
@@ -301,6 +346,7 @@ export async function createDiffEditor(options: {
 		editor,
 		dispose() {
 			findWidgetTooltipPatch.dispose();
+			activeDiffEditors.delete(editor);
 			editor.dispose();
 			originalModel.dispose();
 			modifiedModel.dispose();
@@ -320,15 +366,6 @@ export async function createDiffEditor(options: {
 			editor.getModifiedEditor().focus();
 		},
 	};
-}
-
-/** Cache file contents so future switchFile calls resolve instantly (no IPC). */
-export function preWarmFileContents(
-	files: ReadonlyArray<{ absolutePath: string; content: string }>,
-) {
-	for (const file of files) {
-		fileContentCache.set(file.absolutePath, file.content);
-	}
 }
 
 export function syncVirtualFile(path: string, content: string) {
@@ -395,7 +432,7 @@ async function ensureRuntime(): Promise<MonacoRuntime> {
 
 			installMonacoEnvironment();
 			installEditorTheme(monaco);
-			installThemeObserver(monaco);
+			installAppearanceObserver(monaco);
 			disableLanguageDiagnostics(monaco);
 
 			return { monaco };
@@ -405,26 +442,33 @@ async function ensureRuntime(): Promise<MonacoRuntime> {
 	return runtimePromise;
 }
 
-// Sync Monaco theme with `<html>` class changes. Re-defines both themes on
-// every class mutation — light/dark toggle AND preset theme switch both flip
-// CSS variables, so the editor `colors` map must be recomputed.
-function installThemeObserver(monaco: MonacoModule) {
+// Sync Monaco with `<html>` appearance changes. Re-defines both themes on
+// class mutations — light/dark toggle AND preset theme switch both flip CSS
+// variables. Style mutations cover font overrides written by settings. Updates
+// are rAF-coalesced because one user-visible switch flips multiple attrs.
+function installAppearanceObserver(monaco: MonacoModule) {
 	if (
 		typeof document === "undefined" ||
 		typeof MutationObserver === "undefined"
 	) {
 		return;
 	}
-	const syncTheme = () => {
+	let scheduled = 0;
+	const syncAppearance = () => {
+		scheduled = 0;
 		const nextTheme = detectInitialTheme();
 		defineHelmorThemes(monaco);
 		desiredTheme = nextTheme;
 		monaco.editor.setTheme(themeId(nextTheme));
+		updateActiveEditorFonts();
 	};
-	const observer = new MutationObserver(syncTheme);
+	const observer = new MutationObserver(() => {
+		if (scheduled) return;
+		scheduled = requestAnimationFrame(syncAppearance);
+	});
 	observer.observe(document.documentElement, {
 		attributes: true,
-		attributeFilter: ["class"],
+		attributeFilter: ["class", "style"],
 	});
 }
 
@@ -516,111 +560,42 @@ const SYNTAX_RULES_LIGHT = [
 	{ token: "delimiter", foreground: "5a5857" },
 ];
 
-// Hidden div used to resolve `var(--x)` to a computed background-color
-// string. We can't put `var()` directly into a canvas fillStyle, so we ask
-// the engine to cascade the variable here first.
-let cssColorProbe: HTMLDivElement | null = null;
-function getCssColorProbe(): HTMLDivElement {
-	if (!cssColorProbe) {
-		cssColorProbe = document.createElement("div");
-		cssColorProbe.style.cssText =
-			"position:absolute;visibility:hidden;pointer-events:none;width:0;height:0;";
-		document.body.appendChild(cssColorProbe);
-	}
-	return cssColorProbe;
-}
-
-// 2D canvas used to normalize any CSS color (rgb / oklch / oklab / color()
-// / hex) to plain sRGB bytes. WebKit returns `oklch(...)` literals from
-// `getComputedStyle` instead of `rgb(...)`, so a regex on the computed
-// string isn't enough — canvas does the heavy lifting via the engine's
-// color pipeline.
-let cssColorCanvasCtx: CanvasRenderingContext2D | null = null;
-function getCssColorCanvas(): CanvasRenderingContext2D {
-	if (!cssColorCanvasCtx) {
-		const canvas = document.createElement("canvas");
-		canvas.width = 1;
-		canvas.height = 1;
-		const ctx = canvas.getContext("2d", { willReadFrequently: true });
-		if (!ctx) {
-			throw new Error("Failed to get 2D context for color resolver");
-		}
-		cssColorCanvasCtx = ctx;
-	}
-	return cssColorCanvasCtx;
-}
-
-function toHexByte(n: number): string {
-	return Math.max(0, Math.min(255, Math.round(n)))
-		.toString(16)
-		.padStart(2, "0");
-}
-
-/**
- * Resolve a CSS variable to a hex Monaco accepts.
- * `alphaOverride` (0–1) lets callers stamp a custom transparency without
- * defining a new --var (useful for soft overlays like inactive selection).
- */
-function resolveCssColor(varName: string, alphaOverride?: number): string {
-	const probe = getCssColorProbe();
-	probe.style.backgroundColor = `var(${varName})`;
-	const computed = window.getComputedStyle(probe).backgroundColor;
-
-	const ctx = getCssColorCanvas();
-	// Reset to a sentinel then assign — if the engine rejects `computed`
-	// (e.g. unknown function), fillStyle stays as the sentinel and we know
-	// resolution failed.
-	ctx.fillStyle = "rgba(0,0,0,0)";
-	ctx.fillStyle = computed;
-	ctx.clearRect(0, 0, 1, 1);
-	ctx.fillRect(0, 0, 1, 1);
-	const data = ctx.getImageData(0, 0, 1, 1).data;
-
-	const baseAlpha = data[3] / 255;
-	const alpha = alphaOverride !== undefined ? alphaOverride : baseAlpha;
-	const aHex = alpha >= 1 ? "" : toHexByte(alpha * 255);
-	return `#${toHexByte(data[0])}${toHexByte(data[1])}${toHexByte(data[2])}${aHex}`;
-}
+const cssVarColor = (name: string, alphaOverride?: number) =>
+	resolveCssColor(`var(${name})`, alphaOverride);
 
 function buildHelmorTheme(isDark: boolean) {
-	const editorBg = resolveCssColor("--editor-content-bg");
-	const editorFg = resolveCssColor("--editor-content-fg");
-	const lineActive = resolveCssColor("--editor-line-active-bg");
-	const selection = resolveCssColor("--editor-selection-bg");
-	const cursor = resolveCssColor("--editor-cursor");
-	const gutterBg = resolveCssColor("--editor-gutter-bg");
-	const gutterFg = resolveCssColor("--editor-gutter-fg");
-	const widgetBg = resolveCssColor("--bg-overlay");
-	const widgetBorder = resolveCssColor("--border-default");
-	const scrollbarBase = resolveCssColor("--fg-default", 0.15);
-	const scrollbarHover = resolveCssColor("--fg-default", 0.25);
-	const scrollbarActive = resolveCssColor("--fg-default", 0.35);
-	const indentGuide = resolveCssColor("--border-subtle");
-	const indentGuideActive = resolveCssColor("--border-strong");
+	const editorBg = cssVarColor("--editor-content-bg");
+	const editorFg = cssVarColor("--editor-content-fg");
+	const lineActive = cssVarColor("--editor-line-active-bg");
+	const selection = cssVarColor("--editor-selection-bg");
+	const cursor = cssVarColor("--editor-cursor");
+	const gutterBg = cssVarColor("--editor-gutter-bg");
+	const gutterFg = cssVarColor("--editor-gutter-fg");
+	const widgetBg = cssVarColor("--bg-overlay");
+	const widgetBorder = cssVarColor("--border-default");
+	const scrollbarBase = cssVarColor("--fg-default", 0.15);
+	const scrollbarHover = cssVarColor("--fg-default", 0.25);
+	const scrollbarActive = cssVarColor("--fg-default", 0.35);
+	const indentGuide = cssVarColor("--border-subtle");
+	const indentGuideActive = cssVarColor("--border-strong");
 	// Diff colors come from the workspace status palette — semantic and locked,
 	// so they match the sidebar PR badges across every theme. Alpha is layered
 	// on top to dim them into editor-overlay use.
-	const diffInsertLine = resolveCssColor("--workspace-pr-open-accent", 0.09);
-	const diffInsertText = resolveCssColor(
+	const diffInsertLine = cssVarColor("--workspace-pr-open-accent", 0.09);
+	const diffInsertText = cssVarColor(
 		"--workspace-pr-open-accent",
 		isDark ? 0.25 : 0.2,
 	);
-	const diffRemoveLine = resolveCssColor("--workspace-pr-closed-accent", 0.09);
-	const diffRemoveText = resolveCssColor(
+	const diffRemoveLine = cssVarColor("--workspace-pr-closed-accent", 0.09);
+	const diffRemoveText = cssVarColor(
 		"--workspace-pr-closed-accent",
 		isDark ? 0.25 : 0.2,
 	);
-	const diffGutterInsert = resolveCssColor("--workspace-pr-open-accent", 0.15);
-	const diffGutterRemove = resolveCssColor(
-		"--workspace-pr-closed-accent",
-		0.15,
-	);
-	const diffOverviewInsert = resolveCssColor("--workspace-pr-open-accent", 0.6);
-	const diffOverviewRemove = resolveCssColor(
-		"--workspace-pr-closed-accent",
-		0.6,
-	);
-	const diffDiagonal = resolveCssColor("--fg-default", isDark ? 0.03 : 0.04);
+	const diffGutterInsert = cssVarColor("--workspace-pr-open-accent", 0.15);
+	const diffGutterRemove = cssVarColor("--workspace-pr-closed-accent", 0.15);
+	const diffOverviewInsert = cssVarColor("--workspace-pr-open-accent", 0.6);
+	const diffOverviewRemove = cssVarColor("--workspace-pr-closed-accent", 0.6);
+	const diffDiagonal = cssVarColor("--fg-default", isDark ? 0.03 : 0.04);
 
 	return {
 		base: (isDark ? "vs-dark" : "vs") as "vs" | "vs-dark",
@@ -632,20 +607,20 @@ function buildHelmorTheme(isDark: boolean) {
 			"editor.lineHighlightBackground": lineActive,
 			"editor.lineHighlightBorder": "#00000000",
 			"editor.selectionBackground": selection,
-			"editor.inactiveSelectionBackground": resolveCssColor(
+			"editor.inactiveSelectionBackground": cssVarColor(
 				"--editor-selection-bg",
 				0.5,
 			),
-			"editor.wordHighlightBackground": resolveCssColor(
+			"editor.wordHighlightBackground": cssVarColor(
 				"--editor-selection-bg",
 				0.4,
 			),
-			"editor.wordHighlightStrongBackground": resolveCssColor(
+			"editor.wordHighlightStrongBackground": cssVarColor(
 				"--editor-selection-bg",
 				0.55,
 			),
 			"editorCursor.foreground": cursor,
-			"editorWhitespace.foreground": resolveCssColor("--fg-disabled"),
+			"editorWhitespace.foreground": cssVarColor("--fg-disabled"),
 			"editorIndentGuide.background1": indentGuide,
 			"editorIndentGuide.activeBackground1": indentGuideActive,
 			"editorLineNumber.foreground": gutterFg,

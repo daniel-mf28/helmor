@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import type { InspectorFileItem } from "@/lib/editor-session";
 import { extractError, isRecoverableByPurge } from "@/lib/errors";
+import { formatSource, translateSource } from "@/lib/i18n";
 import { helmorQueryKeys } from "@/lib/query-client";
 import { requestSidebarReconcile } from "@/lib/sidebar-mutation-gate";
 import { showWorkspaceBrokenToast } from "@/lib/workspace-broken-toast";
@@ -53,7 +54,10 @@ export function useGitMutations({
 	const invalidateChanges = useCallback(() => {
 		if (!workspaceRootPath) return;
 		queryClient.invalidateQueries({
-			queryKey: helmorQueryKeys.workspaceChanges(workspaceRootPath),
+			queryKey: helmorQueryKeys.workspaceChanges(
+				workspaceRootPath,
+				workspaceId,
+			),
 		});
 		if (workspaceId) {
 			queryClient.invalidateQueries({
@@ -63,8 +67,12 @@ export function useGitMutations({
 	}, [queryClient, workspaceId, workspaceRootPath]);
 
 	const surfaceChangeError = useCallback(
-		(action: string, error: unknown) => {
-			const { code, message } = extractError(error, `Failed to ${action}.`);
+		(actionKey: string, error: unknown) => {
+			const action = translateSource(actionKey);
+			const { code, message } = extractError(
+				error,
+				formatSource("inspectorFailedToAction", { action }),
+			);
 			if (isRecoverableByPurge(code) && workspaceId) {
 				showWorkspaceBrokenToast({
 					workspaceId,
@@ -73,7 +81,11 @@ export function useGitMutations({
 				});
 				return;
 			}
-			pushToast(message, `Unable to ${action}`, "destructive");
+			pushToast(
+				message,
+				formatSource("inspectorUnableToAction", { action }),
+				"destructive",
+			);
 		},
 		[pushToast, queryClient, workspaceId],
 	);
@@ -84,7 +96,7 @@ export function useGitMutations({
 			try {
 				await stageWorkspaceFile(workspaceRootPath, relativePath);
 			} catch (error) {
-				surfaceChangeError("stage file", error);
+				surfaceChangeError("inspectorActionStageFile", error);
 			} finally {
 				invalidateChanges();
 			}
@@ -98,7 +110,7 @@ export function useGitMutations({
 			try {
 				await unstageWorkspaceFile(workspaceRootPath, relativePath);
 			} catch (error) {
-				surfaceChangeError("unstage file", error);
+				surfaceChangeError("inspectorActionUnstageFile", error);
 			} finally {
 				invalidateChanges();
 			}
@@ -114,7 +126,7 @@ export function useGitMutations({
 				await stageWorkspaceFile(workspaceRootPath, path);
 			}
 		} catch (error) {
-			surfaceChangeError("stage files", error);
+			surfaceChangeError("inspectorActionStageFiles", error);
 		} finally {
 			invalidateChanges();
 		}
@@ -133,7 +145,7 @@ export function useGitMutations({
 				await unstageWorkspaceFile(workspaceRootPath, path);
 			}
 		} catch (error) {
-			surfaceChangeError("unstage files", error);
+			surfaceChangeError("inspectorActionUnstageFiles", error);
 		} finally {
 			invalidateChanges();
 		}
@@ -145,7 +157,7 @@ export function useGitMutations({
 			try {
 				await discardWorkspaceFile(workspaceRootPath, relativePath);
 			} catch (error) {
-				surfaceChangeError("discard changes", error);
+				surfaceChangeError("inspectorActionDiscardChanges", error);
 			} finally {
 				invalidateChanges();
 			}
@@ -158,7 +170,11 @@ export function useGitMutations({
 		setIsContinuingWorkspace(true);
 		try {
 			const result = await continueWorkspaceFromTargetBranch(workspaceId);
-			pushToast(`Workspace moved to ${result.branch}.`, "Continued", "default");
+			pushToast(
+				formatSource("inspectorWorkspaceMovedTo", { branch: result.branch }),
+				translateSource("inspectorContinued"),
+				"default",
+			);
 			requestSidebarReconcile(queryClient);
 			await Promise.all([
 				queryClient.invalidateQueries({
@@ -176,7 +192,7 @@ export function useGitMutations({
 			]);
 			invalidateChanges();
 		} catch (error) {
-			surfaceChangeError("continue workspace", error);
+			surfaceChangeError("inspectorActionContinueWorkspace", error);
 		} finally {
 			setIsContinuingWorkspace(false);
 		}

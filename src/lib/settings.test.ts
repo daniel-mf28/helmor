@@ -61,6 +61,46 @@ describe("settings", () => {
 			sourceBranchByRepoId: { "repo-1": "release/next" },
 			modeByRepoId: { "repo-1": "local" },
 			branchIntentByRepoId: { "repo-1": "use_branch" },
+			chatModeActive: false,
+			terminalModeActive: false,
+		});
+	});
+
+	it("migrates legacy chat entries in modeByRepoId into chatModeActive", async () => {
+		invokeMock.mockResolvedValue({
+			"app.start_surface_preferences": JSON.stringify({
+				repoId: "repo-1",
+				modeByRepoId: {
+					"repo-1": "chat",
+					"repo-2": "worktree",
+				},
+			}),
+		});
+
+		const settings = await loadSettings();
+
+		// chat must be stripped from the repo record (it's no longer
+		// repo-bound), and the top-level toggle must capture the user's
+		// last intent so re-entering the start surface is unsurprising.
+		expect(settings.startSurfacePreferences.modeByRepoId).toEqual({
+			"repo-2": "worktree",
+		});
+		expect(settings.startSurfacePreferences.chatModeActive).toBe(true);
+	});
+
+	it("respects an explicit chatModeActive when present", async () => {
+		invokeMock.mockResolvedValue({
+			"app.start_surface_preferences": JSON.stringify({
+				repoId: "repo-1",
+				modeByRepoId: { "repo-1": "worktree" },
+				chatModeActive: true,
+			}),
+		});
+
+		const settings = await loadSettings();
+		expect(settings.startSurfacePreferences.chatModeActive).toBe(true);
+		expect(settings.startSurfacePreferences.modeByRepoId).toEqual({
+			"repo-1": "worktree",
 		});
 	});
 
@@ -121,6 +161,8 @@ describe("settings", () => {
 			sourceBranchByRepoId: { "repo-1": "main" },
 			modeByRepoId: { "repo-1": "local" },
 			branchIntentByRepoId: { "repo-1": "use_branch" },
+			chatModeActive: false,
+			terminalModeActive: false,
 		});
 
 		const writeCall = invokeMock.mock.calls.find(
@@ -166,6 +208,42 @@ describe("settings", () => {
 					"app.start_surface_preferences": expect.stringContaining(
 						"sourceBranchByRepoId",
 					),
+				}),
+			}),
+		);
+	});
+
+	it("hydrates and saves agent proxy settings", async () => {
+		invokeMock.mockResolvedValue({
+			"app.agent_proxy": JSON.stringify({
+				mode: "custom",
+				customUrl: "http://127.0.0.1:7890",
+			}),
+		});
+
+		const settings = await loadSettings();
+
+		expect(settings.agentProxy).toEqual({
+			mode: "custom",
+			customUrl: "http://127.0.0.1:7890",
+		});
+
+		invokeMock.mockResolvedValue(undefined);
+		await saveSettings({
+			agentProxy: {
+				mode: "system",
+				customUrl: "",
+			},
+		});
+
+		expect(invokeMock).toHaveBeenLastCalledWith(
+			"update_app_settings",
+			expect.objectContaining({
+				settingsMap: expect.objectContaining({
+					"app.agent_proxy": JSON.stringify({
+						mode: "system",
+						customUrl: "",
+					}),
 				}),
 			}),
 		);
@@ -297,7 +375,7 @@ describe("settings", () => {
 		);
 	});
 
-	it("keeps default as a valid model id", async () => {
+	it("parses legacy bare model ids as provider-less ModelRefs", async () => {
 		invokeMock.mockResolvedValue({
 			"app.default_model_id": "gpt-5.5",
 			"app.review_model_id": "default",
@@ -306,8 +384,149 @@ describe("settings", () => {
 
 		const settings = await loadSettings();
 
-		expect(settings.defaultModelId).toBe("gpt-5.5");
-		expect(settings.reviewModelId).toBe("default");
-		expect(settings.prModelId).toBe("default");
+		expect(settings.defaultModel).toEqual({
+			provider: null,
+			modelId: "gpt-5.5",
+		});
+		expect(settings.reviewModel).toEqual({
+			provider: null,
+			modelId: "default",
+		});
+		expect(settings.prModel).toEqual({ provider: null, modelId: "default" });
+	});
+
+	it("parses the JSON {provider, modelId} form", async () => {
+		invokeMock.mockResolvedValue({
+			"app.default_model_id": JSON.stringify({
+				provider: "mimo",
+				modelId: "xiaomi/mimo-v2.5-pro",
+			}),
+		});
+
+		const settings = await loadSettings();
+
+		expect(settings.defaultModel).toEqual({
+			provider: "mimo",
+			modelId: "xiaomi/mimo-v2.5-pro",
+		});
+		expect(settings.reviewModel).toBeNull();
+	});
+
+	it("serializes a ModelRef pref as JSON and clears on null", async () => {
+		invokeMock.mockResolvedValue({});
+
+		await saveSettings({
+			defaultModel: { provider: "mimo", modelId: "xiaomi/mimo-v2.5-pro" },
+			reviewModel: null,
+		});
+
+		const writeCall = invokeMock.mock.calls.find(
+			([command]) => command === "update_app_settings",
+		);
+		const writtenMap = (
+			writeCall?.[1] as { settingsMap: Record<string, string> } | undefined
+		)?.settingsMap;
+		expect(writtenMap?.["app.default_model_id"]).toBe(
+			JSON.stringify({ provider: "mimo", modelId: "xiaomi/mimo-v2.5-pro" }),
+		);
+		expect(writtenMap?.["app.review_model_id"]).toBe("");
+	});
+
+	it("parses official enabled model ids", async () => {
+		invokeMock.mockResolvedValue({
+			"app.claude_enabled_model_ids": JSON.stringify(["default"]),
+			"app.codex_enabled_model_ids": JSON.stringify([]),
+		});
+
+		const settings = await loadSettings();
+
+		expect(settings.claudeEnabledModelIds).toEqual(["default"]);
+		expect(settings.codexEnabledModelIds).toEqual([]);
+	});
+
+	it("defaults enabled model ids to null when unset", async () => {
+		invokeMock.mockResolvedValue({});
+
+		const settings = await loadSettings();
+
+		expect(settings.claudeEnabledModelIds).toBeNull();
+		expect(settings.codexEnabledModelIds).toBeNull();
+	});
+
+	it("flags an opencode cache without cacheVersion as stale (→ migration)", async () => {
+		invokeMock.mockResolvedValue({
+			"app.opencode_provider": JSON.stringify({
+				status: "ready",
+				connected: ["openai"],
+				cachedModels: [{ slug: "openai/gpt-5.5", label: "OpenAI · GPT-5.5" }],
+				enabledModelIds: ["openai/gpt-5.5"],
+			}),
+		});
+
+		const settings = await loadSettings();
+
+		expect(settings.opencodeProvider.cacheVersion).toBe(0);
+		expect(
+			settings.opencodeProvider.cachedModels?.[0]?.effortLevels,
+		).toBeUndefined();
+	});
+
+	it("parses a current opencode cache with cacheVersion + effortLevels", async () => {
+		invokeMock.mockResolvedValue({
+			"app.opencode_provider": JSON.stringify({
+				status: "ready",
+				connected: ["openai"],
+				cachedModels: [
+					{
+						slug: "openai/gpt-5.5",
+						label: "OpenAI · GPT-5.5",
+						effortLevels: ["none", "low", "medium", "high", "xhigh"],
+					},
+				],
+				enabledModelIds: ["openai/gpt-5.5"],
+				cacheVersion: 1,
+			}),
+		});
+
+		const settings = await loadSettings();
+
+		expect(settings.opencodeProvider.cacheVersion).toBe(1);
+		expect(settings.opencodeProvider.cachedModels?.[0]?.effortLevels).toEqual([
+			"none",
+			"low",
+			"medium",
+			"high",
+			"xhigh",
+		]);
+	});
+
+	it("round-trips mimoProvider the same way as opencodeProvider", async () => {
+		invokeMock.mockResolvedValue({
+			"app.mimo_provider": JSON.stringify({
+				status: "ready",
+				connected: ["xiaomi"],
+				cachedModels: [
+					{
+						slug: "xiaomi/mimo-1",
+						label: "Xiaomi · MiMo 1",
+						effortLevels: ["low", "medium", "high"],
+					},
+				],
+				enabledModelIds: ["xiaomi/mimo-1"],
+				cacheVersion: 1,
+			}),
+		});
+
+		const settings = await loadSettings();
+
+		expect(settings.mimoProvider.status).toBe("ready");
+		expect(settings.mimoProvider.connected).toEqual(["xiaomi"]);
+		expect(settings.mimoProvider.enabledModelIds).toEqual(["xiaomi/mimo-1"]);
+		expect(settings.mimoProvider.cacheVersion).toBe(1);
+		expect(settings.mimoProvider.cachedModels?.[0]?.effortLevels).toEqual([
+			"low",
+			"medium",
+			"high",
+		]);
 	});
 });

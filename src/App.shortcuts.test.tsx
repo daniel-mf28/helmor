@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
 	cleanup,
+	configure,
 	fireEvent,
 	render,
 	screen,
@@ -9,6 +10,14 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceDetail } from "./lib/api";
+
+// Heavy full-App integration suite: every test renders <App /> and awaits
+// many async queries. The default vitest 5s test-timeout and 1s waitFor
+// flake on slow/loaded CI runners (a 244s run tripped renderAppReady's
+// mount wait). Generous CI headroom -- these never slow a passing run
+// (waitFor resolves as soon as the condition holds).
+vi.setConfig({ testTimeout: 30000 });
+configure({ asyncUtilTimeout: 8000 });
 
 const apiMocks = vi.hoisted(() => ({
 	createSession: vi.fn(),
@@ -31,6 +40,7 @@ const apiMocks = vi.hoisted(() => ({
 	loadWorkspaceForgeActionStatus: vi.fn(),
 	stopAgentStream: vi.fn(),
 	requestQuit: vi.fn(),
+	closeMainWindow: vi.fn(),
 }));
 
 const eventApiMocks = vi.hoisted(() => ({
@@ -56,15 +66,16 @@ vi.mock("./App.css", () => ({}));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
 	open: vi.fn(),
 }));
-// Helmor is macOS-only; `./lib/platform` already returns `isMac: () => true`
-// unconditionally. No mock needed, but keep this vi.mock stub to document the
-// shortcut suite's dependency on that assumption.
+// This shortcut suite exercises the Mac shortcut mapping, so keep the platform
+// mock explicit even when the runtime helper changes.
 vi.mock("./lib/platform", () => ({
 	isMac: () => true,
+	isTauriRuntime: () => true,
 }));
 vi.mock("@tauri-apps/api/window", () => ({
 	getCurrentWindow: () => ({
 		setBadgeCount: vi.fn(async () => {}),
+		close: vi.fn(async () => {}),
 	}),
 }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -97,10 +108,12 @@ vi.mock("./lib/api", async (importOriginal) => {
 		loadWorkspaceForgeActionStatus: apiMocks.loadWorkspaceForgeActionStatus,
 		requestQuit: apiMocks.requestQuit,
 		stopAgentStream: apiMocks.stopAgentStream,
+		closeMainWindow: apiMocks.closeMainWindow,
 	};
 });
 
 import App from "./App";
+import { router } from "./router";
 
 const WORKSPACE_IDS = {
 	done: "workspace-done",
@@ -119,6 +132,9 @@ type SessionFixture = {
 	unreadCount?: number;
 	updatedAt?: string;
 	actionKind?: string | null;
+	// When true, the session is rendered as an empty/untitled session (no
+	// agentType, no last message) so `isNewSession` returns true.
+	isNew?: boolean;
 };
 
 const SESSION_FIXTURES: Record<WorkspaceFixtureId, readonly SessionFixture[]> =
@@ -275,7 +291,7 @@ function createWorkspaceSessions(workspaceId: WorkspaceFixtureId) {
 		id: session.id,
 		workspaceId,
 		title: session.title,
-		agentType: "claude",
+		agentType: session.isNew ? null : "claude",
 		status: session.status ?? "idle",
 		model: "opus-1m",
 		permissionMode: "default",
@@ -320,12 +336,12 @@ const UNAVAILABLE_FORGE_ACTION_STATUS = {
 
 const EMPTY_REPO_SCRIPTS = {
 	setupScript: null,
-	runScript: null,
 	archiveScript: null,
 	setupFromProject: false,
 	runFromProject: false,
 	archiveFromProject: false,
 	autoRunSetup: true,
+	runActions: [],
 };
 
 function getSessionTab(title: string) {
@@ -417,12 +433,18 @@ async function renderAppReady(expectedSessionTitle = "Done session 1") {
 			expectSelectedWorkspace("Done workspace");
 			expectSelectedSession(expectedSessionTitle);
 		},
-		{ timeout: 5000 },
+		{ timeout: 15000 },
 	);
 }
 
 describe("App global navigation shortcuts", () => {
 	beforeEach(() => {
+		// Stage 3b: the router is a module-scope singleton that now OWNS the
+		// selected workspace/session. Each test renders a fresh <App/>, so reset
+		// the router to the boot index between tests (the previous App is already
+		// unmounted by afterEach(cleanup)) — otherwise a stale location from the
+		// prior test leaks in and breaks boot auto-select restore.
+		router.history.replace("/");
 		runtimeSessionFixtures = createRuntimeSessionFixtures();
 		apiMocks.createSession.mockReset();
 		apiMocks.deleteSession.mockReset();
@@ -443,6 +465,7 @@ describe("App global navigation shortcuts", () => {
 		apiMocks.refreshWorkspaceChangeRequest.mockReset();
 		apiMocks.loadWorkspaceForgeActionStatus.mockReset();
 		apiMocks.stopAgentStream.mockReset();
+		apiMocks.closeMainWindow.mockReset();
 		eventApiMocks.listen.mockClear();
 		eventApiMocks.handlers.clear();
 		apiMocks.createSession.mockImplementation(async (workspaceId: string) => {
@@ -659,12 +682,15 @@ describe("App global navigation shortcuts", () => {
 		pressCreateSessionShortcut();
 
 		await waitFor(() => {
-			expect(apiMocks.createSession).toHaveBeenCalledWith(WORKSPACE_IDS.done);
+			expect(apiMocks.createSession).toHaveBeenCalledWith(
+				WORKSPACE_IDS.done,
+				expect.objectContaining({ sessionKind: "gui" }),
+			);
 			expectSelectedSession("Untitled");
 		});
 	});
 
-	it("opens the workspace start composer on Command+N", async () => {
+	it("opens the workspace start composer in worktree mode on Command+N", async () => {
 		await renderAppReady();
 
 		fireEvent.keyDown(window, {
@@ -677,6 +703,8 @@ describe("App global navigation shortcuts", () => {
 		expect(
 			screen.getByRole("button", { name: "New Workspace" }),
 		).toBeDisabled();
+		// Mode picker trigger reflects the forced worktree mode.
+		expect(await screen.findByText("New worktree")).toBeInTheDocument();
 	});
 
 	it("focuses the start composer on Command+L", async () => {
@@ -699,7 +727,7 @@ describe("App global navigation shortcuts", () => {
 		});
 	});
 
-	it("opens the add repository menu on Command+Shift+N", async () => {
+	it("opens the workspace start composer in Just-chat mode on Command+Shift+N", async () => {
 		await renderAppReady();
 
 		fireEvent.keyDown(window, {
@@ -709,20 +737,76 @@ describe("App global navigation shortcuts", () => {
 			shiftKey: true,
 		});
 
-		await screen.findByRole("menuitem", { name: /Open project/i });
+		expect(await screen.findByLabelText("Workspace input")).toBeInTheDocument();
+		// Default persisted mode is `worktree`; the trigger label flipping to
+		// "Just chat" proves the Cmd+Shift+N transient override applied.
+		expect(await screen.findByText("Just chat")).toBeInTheDocument();
 	});
 
-	it("toggles the context panel on Option+Command+C", async () => {
+	it("Command+N flips back to worktree even after a prior Command+Shift+N", async () => {
+		await renderAppReady();
+
+		fireEvent.keyDown(window, {
+			key: "n",
+			code: "KeyN",
+			metaKey: true,
+			shiftKey: true,
+		});
+		expect(await screen.findByText("Just chat")).toBeInTheDocument();
+
+		fireEvent.keyDown(window, {
+			key: "n",
+			code: "KeyN",
+			metaKey: true,
+		});
+		// Pressing Cmd+N while the start surface is already up replaces the
+		// transient override; the trigger label flips back to worktree.
+		expect(await screen.findByText("New worktree")).toBeInTheDocument();
+	});
+
+	it("toggles the context panel on Command+Shift+C", async () => {
 		await renderAppReady();
 
 		fireEvent.keyDown(window, {
 			key: "c",
 			code: "KeyC",
 			metaKey: true,
-			altKey: true,
+			shiftKey: true,
 		});
 
 		await screen.findByRole("heading", { name: "Contexts" });
+	});
+
+	it("resizes the window on Command+Control+M", async () => {
+		const invokeMock = vi.mocked(invoke);
+		await renderAppReady();
+		invokeMock.mockClear();
+
+		fireEvent.keyDown(window, {
+			key: "m",
+			code: "KeyM",
+			metaKey: true,
+			ctrlKey: true,
+		});
+
+		await waitFor(() => {
+			expect(invokeMock).toHaveBeenCalledWith("toggle_mini_window_mode");
+		});
+
+		fireEvent.keyDown(window, {
+			key: "m",
+			code: "KeyM",
+			metaKey: true,
+			ctrlKey: true,
+		});
+
+		await waitFor(() => {
+			expect(
+				invokeMock.mock.calls.filter(
+					([command]) => command === "toggle_mini_window_mode",
+				),
+			).toHaveLength(2);
+		});
 	});
 
 	it("does not wrap session navigation on Option+Command+Left from the first session", async () => {
@@ -746,6 +830,26 @@ describe("App global navigation shortcuts", () => {
 
 		await waitFor(() => {
 			expectSelectedWorkspace("Review workspace");
+			expectSelectedSession("Review session 1");
+		});
+	});
+
+	it("moves the sidebar highlight inside the keydown task while the displayed pane flips one frame later", async () => {
+		await renderAppReady();
+
+		pressGlobalShortcut("l");
+
+		// Highlight is synchronous: the keyboard path applies the imperative
+		// `workspace-row-selected` class (and the router commit re-renders the
+		// sidebar) inside the keydown task…
+		expectSelectedWorkspace("Review workspace");
+		// …while the displayed paint track still shows the previous workspace's
+		// tab strip for one frame (the flip is deferred via scheduleDisplayFlip):
+		// the old tab is still mounted, the new workspace's isn't yet.
+		getSessionTab("Done session 1");
+		expect(screen.queryByText("Review session 1")).toBeNull();
+
+		await waitFor(() => {
 			expectSelectedSession("Review session 1");
 		});
 	});
@@ -881,6 +985,72 @@ describe("App global navigation shortcuts", () => {
 		});
 		expect(apiMocks.hideSession).toHaveBeenCalledWith("session-done-1");
 		expect(apiMocks.deleteSession).not.toHaveBeenCalled();
+	});
+
+	it("closes the window on Command+W when the only session is already empty", async () => {
+		runtimeSessionFixtures[WORKSPACE_IDS.done] = [
+			{
+				id: "session-done-1",
+				title: "Done session 1",
+				active: true,
+				isNew: true,
+			},
+		];
+
+		await renderAppReady();
+
+		fireEvent.keyDown(window, {
+			key: "w",
+			metaKey: true,
+		});
+
+		await waitFor(() => {
+			expect(apiMocks.closeMainWindow).toHaveBeenCalled();
+		});
+		// The empty session is preserved (not hidden/deleted) and no new
+		// replacement session is spawned.
+		expect(apiMocks.hideSession).not.toHaveBeenCalled();
+		expect(apiMocks.deleteSession).not.toHaveBeenCalled();
+		expect(apiMocks.createSession).not.toHaveBeenCalled();
+	});
+
+	it("spawns a fresh untitled session on Command+W when the only session has content", async () => {
+		runtimeSessionFixtures[WORKSPACE_IDS.done] = [
+			{
+				id: "session-done-1",
+				title: "Done session 1",
+				active: true,
+			},
+		];
+
+		await renderAppReady();
+
+		fireEvent.keyDown(window, {
+			key: "w",
+			metaKey: true,
+		});
+
+		await waitFor(() => {
+			expect(apiMocks.createSession).toHaveBeenCalled();
+		});
+		// The window stays open; the non-empty session is hidden and replaced
+		// by a new untitled session.
+		expect(apiMocks.closeMainWindow).not.toHaveBeenCalled();
+		expect(apiMocks.hideSession).toHaveBeenCalledWith("session-done-1");
+	});
+
+	it("closes the window on Command+Shift+W", async () => {
+		await renderAppReady();
+
+		fireEvent.keyDown(window, {
+			key: "w",
+			metaKey: true,
+			shiftKey: true,
+		});
+
+		await waitFor(() => {
+			expect(apiMocks.closeMainWindow).toHaveBeenCalled();
+		});
 	});
 
 	it("selects the right session after closing a middle session", async () => {

@@ -42,6 +42,7 @@ import {
 	type WorkspaceDetail,
 	writeForgeCliAuthTerminalStdin,
 } from "@/lib/api";
+import { I18nText } from "@/lib/i18n";
 import { helmorQueryKeys } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 
@@ -208,13 +209,6 @@ export function ForgeConnectDialog({
 			host,
 			baselineRef.current,
 		);
-		// Always invalidate the per-host login set so the lightweight
-		// `useForgeLoginsHealth` probes in the inspector / settings
-		// pick up the change immediately, no focus required.
-		void queryClient.invalidateQueries({
-			queryKey: helmorQueryKeys.forgeLogins(provider, host),
-		});
-
 		let connectedLogin = probe.login;
 		if (probe.login) {
 			// Resolve the repo to rebind: explicit prop wins, otherwise
@@ -247,14 +241,23 @@ export function ForgeConnectDialog({
 			void queryClient.invalidateQueries({
 				queryKey: helmorQueryKeys.forgeAccountsAll,
 			});
-			// Match BOTH `workspaceForge` (detection) and
-			// `workspaceForgeActionStatus` (the inspector header's
-			// remote-state source).
+			// Refresh the workspace-scoped identity views: `workspaceForge`
+			// (detection), `workspaceForgeActionStatus` (remote-state), and
+			// `workspaceAccountProfile` (chip avatar/login, staleTime:Infinity
+			// — without this the chip keeps the old account until next focus).
 			void queryClient.invalidateQueries({
 				predicate: (q) => {
 					const head = q.queryKey[0];
-					return typeof head === "string" && head.startsWith("workspaceForge");
+					return (
+						typeof head === "string" &&
+						(head.startsWith("workspaceForge") ||
+							head === "workspaceAccountProfile")
+					);
 				},
+				// Refetch inactive siblings too: otherwise switching to another
+				// same-account workspace after login flashes the stale Connect
+				// CTA before the refetch settles it to the normal button.
+				refetchType: "all",
 			});
 			if (workspaceId) {
 				void queryClient.invalidateQueries({
@@ -393,12 +396,14 @@ export function ForgeConnectDialog({
 				className="w-[640px] max-w-[calc(100vw-4rem)] gap-0 overflow-hidden p-0 sm:max-w-[640px]"
 			>
 				<DialogTitle className="sr-only">
-					Connect {providerLabel(provider)}
+					<I18nText source="connect" /> {providerLabel(provider)}
 				</DialogTitle>
 				<header className="flex h-10 items-center gap-2 border-b border-border/55 px-3">
-					<div className="flex items-center gap-1.5 text-[12px] font-medium text-foreground">
+					<div className="flex items-center gap-1.5 text-small font-medium text-foreground">
 						{providerIcon(provider)}
-						<span>Connect {providerLabel(provider)}</span>
+						<span>
+							<I18nText source="connect" /> {providerLabel(provider)}
+						</span>
 						{provider === "gitlab" ? (
 							<span className="ml-1 text-muted-foreground/80">· {host}</span>
 						) : null}
@@ -409,7 +414,7 @@ export function ForgeConnectDialog({
 							variant="ghost"
 							size="sm"
 							onClick={() => handleOpenChange(false)}
-							aria-label="Close"
+							aria-label="close"
 							className={cn(
 								"gap-1.5 px-2 text-muted-foreground hover:text-foreground",
 							)}

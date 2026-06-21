@@ -24,8 +24,16 @@ import {
 } from "@/components/account-hover-card-content";
 import { BranchPickerPopover } from "@/components/branch-picker";
 import { CachedAvatar } from "@/components/cached-avatar";
+import { TrafficLightSpacer } from "@/components/chrome/traffic-light-spacer";
 import { HelmorThinkingIndicator } from "@/components/helmor-thinking-indicator";
-import { ClaudeIcon, CursorIcon, OpenAIIcon } from "@/components/icons";
+import {
+	ClaudeIcon,
+	CursorIcon,
+	KimiIcon,
+	MiMoCodeIcon,
+	OpenAIIcon,
+	OpenCodeIcon,
+} from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -49,16 +57,19 @@ import { InlineShortcutDisplay } from "@/features/shortcuts/shortcut-display";
 import {
 	type AgentProvider,
 	type ChangeRequestInfo,
+	isCodexProvider,
 	listRemoteBranches,
 	prefetchRemoteRefs,
 	updateIntendedTargetBranch,
 	type WorkspaceDetail,
 	type WorkspaceSessionSummary,
 } from "@/lib/api";
+import { I18nText, useI18n } from "@/lib/i18n";
 import { initialsFor } from "@/lib/initials";
 import {
 	helmorQueryKeys,
 	workspaceAccountProfileQueryOptions,
+	workspaceDetailQueryOptions,
 	workspaceForgeActionStatusQueryOptions,
 } from "@/lib/query-client";
 import type { ContextCard } from "@/lib/sources/types";
@@ -96,8 +107,17 @@ type WorkspacePanelHeaderProps = {
 	onSessionRenamed?: (sessionId: string, title: string) => void;
 	onWorkspaceChanged?: () => void;
 	onRequestCloseSession?: (request: SessionCloseRequest) => void;
+	/** Navigate to another workspace by id (used by the stacked-PR parent
+	 *  chip). Wired from the shell's selection controller. */
+	onSelectWorkspace?: (workspaceId: string) => void;
 	newSessionShortcut?: string | null;
 };
+
+const SESSION_TITLE_TOOLTIP_MAX_CHARS = 240;
+const SESSION_TITLE_TOOLTIP_CLASS =
+	"pointer-events-none max-w-[22rem] whitespace-normal rounded-md px-2 py-1.5 text-left text-mini leading-snug";
+const SESSION_TITLE_TOOLTIP_TEXT_CLASS =
+	"block max-w-full whitespace-normal break-words [overflow-wrap:anywhere]";
 
 export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 	workspace,
@@ -121,8 +141,10 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 	onSessionRenamed,
 	onWorkspaceChanged,
 	onRequestCloseSession,
+	onSelectWorkspace,
 	newSessionShortcut,
 }: WorkspacePanelHeaderProps) {
+	const { t, f } = useI18n();
 	const branchTone = getWorkspaceBranchTone({
 		workspaceState: workspace?.state,
 		status: workspace?.status,
@@ -214,14 +236,19 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 	return (
 		<header className="relative z-20">
 			<div
-				aria-label="Workspace header"
+				aria-label={t("workspaceHeader")}
 				className="flex h-9 items-center justify-between gap-3 px-[18px]"
 				data-tauri-drag-region
 			>
 				<div
 					data-tauri-drag-region
-					className="relative z-0 flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-[12.5px]"
+					className="relative z-0 flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-small"
 				>
+					<TrafficLightSpacer
+						side="left"
+						width={48}
+						className="hidden max-[960px]:block"
+					/>
 					{headerLeading}
 					{workspace?.mode === "chat" ? (
 						<span className="inline-flex items-center gap-1.5 overflow-hidden px-1 py-0.5 font-medium text-foreground">
@@ -272,7 +299,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 														src={accountProfile?.avatarUrl}
 														alt={accountLogin ?? ""}
 														fallback={initialsFor(accountDisplayName)}
-														fallbackClassName="bg-muted text-[8px] font-semibold uppercase text-muted-foreground"
+														fallbackClassName="bg-muted text-nano font-semibold uppercase text-muted-foreground"
 													/>
 												</span>
 											</HoverCardTrigger>
@@ -304,20 +331,20 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 										}}
 										onBlur={() => void branchRename.commitBranchRename()}
 										onClick={(event) => event.stopPropagation()}
-										className="h-5 w-32 truncate rounded-md border-border bg-background px-1.5 py-0 text-[12.5px] font-medium text-foreground"
+										className="h-5 w-32 truncate rounded-md border-border bg-background px-1.5 py-0 text-small font-medium text-foreground"
 									/>
 								) : (
 									<>
 										<HyperText
 											key={workspace?.id}
-											text={workspace?.branch ?? "No branch"}
+											text={workspace?.branch ?? t("panelNoBranch")}
 											className="truncate"
 										/>
 										{workspace?.branch && workspace.state !== "archived" ? (
 											<span className="pointer-events-none invisible absolute inset-y-0 right-0 flex items-center gap-0.5 bg-[linear-gradient(to_right,transparent_0%,var(--background)_35%,var(--background)_100%)] pl-5 pr-1 group-hover/branch:pointer-events-auto group-hover/branch:visible">
 												<span
 													role="button"
-													aria-label="Rename branch"
+													aria-label={t("renameBranch")}
 													onClick={branchRename.startBranchRename}
 													className="flex cursor-interactive items-center justify-center rounded-sm p-0.5 text-muted-foreground hover:bg-accent/60 hover:text-foreground"
 												>
@@ -325,7 +352,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 												</span>
 												<span
 													role="button"
-													aria-label="Copy branch name"
+													aria-label={t("copyBranchName")}
 													onClick={branchRename.copyBranchName}
 													className="flex cursor-interactive items-center justify-center rounded-sm p-0.5 text-muted-foreground hover:bg-accent/60 hover:text-foreground"
 												>
@@ -343,7 +370,15 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 									</>
 								)}
 							</span>
-							{workspace?.intendedTargetBranch ? (
+							{workspace?.parentWorkspaceId ? (
+								<StackParentChip
+									parentWorkspaceId={workspace.parentWorkspaceId}
+									fallbackBranch={workspace.intendedTargetBranch}
+									displayRemote={workspace.remote ?? "origin"}
+									archived={workspace.state === "archived"}
+									onSelectWorkspace={onSelectWorkspace}
+								/>
+							) : workspace?.intendedTargetBranch ? (
 								<>
 									<ArrowRight
 										className="relative top-px size-3 shrink-0 self-center text-muted-foreground"
@@ -384,10 +419,10 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 												if (previousDetail) {
 													queryClient.setQueryData<WorkspaceDetail | null>(
 														detailKey,
-														{
+														() => ({
 															...previousDetail,
 															intendedTargetBranch: branch,
-														},
+														}),
 													);
 												}
 
@@ -396,6 +431,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 													void queryClient.invalidateQueries({
 														queryKey: helmorQueryKeys.workspaceChanges(
 															workspace.rootPath,
+															workspace.id,
 														),
 													});
 												}
@@ -414,19 +450,23 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 															void queryClient.invalidateQueries({
 																queryKey: helmorQueryKeys.workspaceChanges(
 																	workspace.rootPath,
+																	workspace.id,
 																),
 															});
 														}
 														if (reset) {
 															pushToast(
-																`Local branch reset to ${workspace.remote ?? "origin"}/${branch}`,
-																`Switched to ${branch}`,
+																f("panelLocalBranchReset", {
+																	remote: workspace.remote ?? "origin",
+																	branch,
+																}),
+																f("panelSwitchedToBranch", { branch }),
 																"default",
 															);
 														} else {
 															pushToast(
-																"Target branch updated",
-																`Switched to ${branch}`,
+																t("panelTargetBranchUpdated"),
+																f("panelSwitchedToBranch", { branch }),
 																"default",
 															);
 														}
@@ -442,7 +482,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 															error instanceof Error
 																? error.message
 																: String(error),
-															"Branch switch failed",
+															t("panelBranchSwitchFailed"),
 															"destructive",
 														);
 													});
@@ -472,9 +512,9 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 						className="scrollbar-none min-w-0 flex-1 overflow-x-auto"
 					>
 						{loadingWorkspace ? (
-							<div className="flex h-[1.85rem] items-center gap-1.5 px-2 text-[12px] text-muted-foreground">
+							<div className="flex h-[1.85rem] items-center gap-1.5 px-2 text-small text-muted-foreground">
 								<Clock3 className="size-3 animate-pulse" strokeWidth={1.8} />
-								Loading
+								<I18nText source="loading" />
 							</div>
 						) : sessions.length > 0 || contextPreviewCard ? (
 							<Tabs
@@ -489,7 +529,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 								className="min-w-max gap-0"
 							>
 								<TabsList
-									aria-label="Sessions"
+									aria-label={t("sessions")}
 									className="inline-flex min-w-full w-max justify-start self-start"
 								>
 									{contextPreviewCard ? (
@@ -497,7 +537,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 											<TooltipTrigger asChild>
 												<TabsTrigger
 													value={contextTabValue}
-													aria-label="Context preview"
+													aria-label={t("contextPreview")}
 													onKeyDownCapture={(event) => {
 														if (
 															event.key.toLowerCase() !== "w" ||
@@ -509,7 +549,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 														event.stopPropagation();
 														onCloseContextPreview?.();
 													}}
-													className="group/tab relative h-full w-auto min-w-[6.5rem] max-w-[14rem] shrink-0 flex-none justify-start gap-1.5 overflow-hidden pr-5 text-[13px] text-muted-foreground data-[state=active]:text-foreground"
+													className="group/tab relative h-full w-auto min-w-[6.5rem] max-w-[14rem] shrink-0 flex-none justify-start gap-1.5 overflow-hidden pr-5 text-ui text-muted-foreground data-[state=active]:text-foreground"
 												>
 													<span className="tab-content-fade flex min-w-0 flex-1 items-center gap-1.5">
 														<Layers className="size-3.5" strokeWidth={1.8} />
@@ -520,7 +560,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 													<span className="pointer-events-none invisible absolute inset-y-0 right-0 flex items-center pr-1 group-hover/tab:pointer-events-auto group-hover/tab:visible">
 														<span
 															role="button"
-															aria-label="Close context preview"
+															aria-label={t("closeContextPreview")}
 															onPointerDown={stopTabActionPointerDown}
 															onClick={(event) => {
 																event.preventDefault();
@@ -537,9 +577,11 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 											<TooltipContent
 												side="bottom"
 												sideOffset={4}
-												className="flex h-[22px] items-center rounded-md px-1.5 text-[11px] leading-none"
+												className={SESSION_TITLE_TOOLTIP_CLASS}
 											>
-												<span>{contextPreviewCard.title}</span>
+												<span className={SESSION_TITLE_TOOLTIP_TEXT_CLASS}>
+													{displayTooltipTitle(contextPreviewCard.title)}
+												</span>
 											</TooltipContent>
 										</Tooltip>
 									) : null}
@@ -570,7 +612,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 														onFocus={() => {
 															onPrefetchSession?.(session.id);
 														}}
-														className="group/tab relative h-full w-auto min-w-[6.5rem] max-w-[14rem] shrink-0 flex-none justify-start gap-1.5 overflow-hidden pr-5 text-[13px] text-muted-foreground data-[state=active]:text-foreground"
+														className="group/tab relative h-full w-auto min-w-[6.5rem] max-w-[14rem] shrink-0 flex-none justify-start gap-1.5 overflow-hidden pr-5 text-ui text-muted-foreground data-[state=active]:text-foreground"
 													>
 														{/* Content wrapper: text fades out on the right when hovered so
 														    the action icons can sit on the tab's own background. */}
@@ -603,7 +645,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 																		void sessionActions.commitRename()
 																	}
 																	onClick={(event) => event.stopPropagation()}
-																	className="h-auto min-w-0 flex-1 truncate border-0 bg-transparent px-0 py-0 text-[13px] font-medium text-inherit shadow-none outline-none focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none"
+																	className="h-auto min-w-0 flex-1 truncate border-0 bg-transparent px-0 py-0 text-ui font-medium text-inherit shadow-none outline-none focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none"
 																/>
 															) : (
 																<span
@@ -621,8 +663,8 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 																<span
 																	aria-label={
 																		isInteractionRequired
-																			? "Interaction required"
-																			: "Unread session"
+																			? t("interactionRequired")
+																			: t("unreadSession")
 																	}
 																	className={cn(
 																		"size-1.5 shrink-0 rounded-full",
@@ -637,7 +679,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 															<span className="pointer-events-none invisible absolute inset-y-0 right-0 flex items-center gap-0.5 pr-1 group-hover/tab:pointer-events-auto group-hover/tab:visible">
 																<span
 																	role="button"
-																	aria-label="Rename session"
+																	aria-label={t("renameSession")}
 																	onPointerDown={stopTabActionPointerDown}
 																	onClick={(event) =>
 																		sessionActions.startRename(session, event)
@@ -648,7 +690,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 																</span>
 																<span
 																	role="button"
-																	aria-label="Close session"
+																	aria-label={t("closeSession")}
 																	onPointerDown={stopTabActionPointerDown}
 																	onClick={(event) =>
 																		sessionActions.hideSession(
@@ -664,22 +706,28 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 														) : null}
 													</TabsTrigger>
 												</TooltipTrigger>
-												<TooltipContent
-													side="bottom"
-													sideOffset={4}
-													className="flex h-[22px] items-center rounded-md px-1.5 text-[11px] leading-none"
-												>
-													<span>{displaySessionTitle(session)}</span>
-												</TooltipContent>
+												{!isEditing ? (
+													<TooltipContent
+														side="bottom"
+														sideOffset={4}
+														className={SESSION_TITLE_TOOLTIP_CLASS}
+													>
+														<span className={SESSION_TITLE_TOOLTIP_TEXT_CLASS}>
+															{displayTooltipTitle(
+																displaySessionTitle(session),
+															)}
+														</span>
+													</TooltipContent>
+												) : null}
 											</Tooltip>
 										);
 									})}
 								</TabsList>
 							</Tabs>
 						) : (
-							<div className="flex h-[1.85rem] items-center gap-1.5 px-2 text-[12px] text-muted-foreground">
+							<div className="flex h-[1.85rem] items-center gap-1.5 px-2 text-small text-muted-foreground">
 								<AlertCircle className="size-3" strokeWidth={1.8} />
-								No sessions
+								<I18nText source="noSessions" />
 							</div>
 						)}
 					</div>
@@ -688,8 +736,8 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<Button
-							aria-label="New session"
-							onClick={sessionActions.createSession}
+							aria-label="newSession"
+							onClick={() => void sessionActions.createSession()}
 							variant="ghost"
 							size="icon-sm"
 							className="ml-0.5 shrink-0 text-muted-foreground hover:bg-accent/60 hover:text-foreground"
@@ -700,9 +748,11 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 					<TooltipContent
 						side="bottom"
 						sideOffset={4}
-						className="flex h-[24px] items-center gap-2 rounded-md px-2 text-[12px] leading-none"
+						className="flex h-[24px] items-center gap-2 rounded-md px-2 text-small leading-none"
 					>
-						<span>New session</span>
+						<span>
+							<I18nText source="newSession" />
+						</span>
 						{newSessionShortcut ? (
 							<InlineShortcutDisplay
 								hotkey={newSessionShortcut}
@@ -718,7 +768,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 				>
 					<DropdownMenuTrigger asChild>
 						<Button
-							aria-label="Session history"
+							aria-label="sessionHistory"
 							variant="ghost"
 							size="icon-sm"
 							className={cn(
@@ -737,7 +787,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 							hiddenHistory.hiddenSessions.map((session) => (
 								<Tooltip key={session.id}>
 									<TooltipTrigger asChild>
-										<div className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-[12px] text-muted-foreground hover:bg-accent/60">
+										<div className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-small text-muted-foreground hover:bg-accent/60">
 											<div className="flex min-w-0 items-center gap-1.5">
 												<SessionProviderIcon
 													agentType={session.agentType}
@@ -749,7 +799,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 											</div>
 											<div className="flex shrink-0 items-center gap-0.5">
 												<Button
-													aria-label="Restore session"
+													aria-label="restoreSession"
 													onClick={() => hiddenHistory.unhide(session.id)}
 													variant="ghost"
 													size="icon-xs"
@@ -758,7 +808,7 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 													<RotateCcw className="size-3" strokeWidth={1.8} />
 												</Button>
 												<Button
-													aria-label="Delete session permanently"
+													aria-label="deleteSessionPermanently"
 													onClick={() =>
 														sessionActions.deleteHiddenSession(session.id)
 													}
@@ -774,15 +824,17 @@ export const WorkspacePanelHeader = memo(function WorkspacePanelHeader({
 									<TooltipContent
 										side="left"
 										sideOffset={4}
-										className="flex h-[22px] items-center rounded-md px-1.5 text-[11px] leading-none"
+										className={SESSION_TITLE_TOOLTIP_CLASS}
 									>
-										<span>{displaySessionTitle(session)}</span>
+										<span className={SESSION_TITLE_TOOLTIP_TEXT_CLASS}>
+											{displayTooltipTitle(displaySessionTitle(session))}
+										</span>
 									</TooltipContent>
 								</Tooltip>
 							))
 						) : (
-							<div className="px-2.5 py-1.5 text-[11px] text-muted-foreground">
-								No hidden sessions
+							<div className="px-2.5 py-1.5 text-mini text-muted-foreground">
+								<I18nText source="noHiddenSessions" />
 							</div>
 						)}
 					</DropdownMenuContent>
@@ -817,11 +869,20 @@ function SessionProviderIcon({
 	if (active) {
 		return <HelmorThinkingIndicator size={14} />;
 	}
-	if (agentType === "codex") {
+	if (isCodexProvider(agentType)) {
 		return <OpenAIIcon className="size-3 shrink-0 text-muted-foreground" />;
 	}
 	if (agentType === "cursor") {
 		return <CursorIcon className="size-3 shrink-0 text-muted-foreground" />;
+	}
+	if (agentType === "opencode") {
+		return <OpenCodeIcon className="size-3 shrink-0 text-muted-foreground" />;
+	}
+	if (agentType === "kimi") {
+		return <KimiIcon className="size-3 shrink-0 text-muted-foreground" />;
+	}
+	if (agentType === "mimo") {
+		return <MiMoCodeIcon className="size-3 shrink-0 text-muted-foreground" />;
 	}
 	return <ClaudeIcon className="size-3 shrink-0 text-muted-foreground" />;
 }
@@ -831,6 +892,88 @@ function displaySessionTitle(session: WorkspaceSessionSummary): string {
 		return session.title;
 	}
 	return "Untitled";
+}
+
+function displayTooltipTitle(title: string): string {
+	const normalized = title.trim().replace(/\s+/g, " ");
+	const chars = Array.from(normalized);
+	if (chars.length <= SESSION_TITLE_TOOLTIP_MAX_CHARS) {
+		return normalized;
+	}
+	return `${chars
+		.slice(0, SESSION_TITLE_TOOLTIP_MAX_CHARS - 3)
+		.join("")
+		.trimEnd()}...`;
+}
+
+// StackParentChip: for a stacked-PR child, replaces the target-branch picker
+// with a live "→ <parent workspace title>" chip that navigates to the parent.
+// The parent's title comes from its own (cached, auto-invalidated) detail
+// query, so renaming the parent updates this chip in place — and the click
+// never points at a stale branch string the way the raw target name could.
+function StackParentChip({
+	parentWorkspaceId,
+	fallbackBranch,
+	displayRemote,
+	archived,
+	onSelectWorkspace,
+}: {
+	parentWorkspaceId: string;
+	fallbackBranch?: string | null;
+	displayRemote: string;
+	archived: boolean;
+	onSelectWorkspace?: (workspaceId: string) => void;
+}) {
+	const parentQuery = useQuery(workspaceDetailQueryOptions(parentWorkspaceId));
+	const parent = parentQuery.data ?? null;
+	const label = parent?.title?.trim() || fallbackBranch || "base";
+	const branchHint = parent?.branch ?? fallbackBranch ?? null;
+	const chipInner = (
+		<>
+			<Layers className="size-3 shrink-0" strokeWidth={1.8} />
+			<span className="block min-w-0 truncate">{label}</span>
+		</>
+	);
+	return (
+		<>
+			<ArrowRight
+				className="relative top-px size-3 shrink-0 self-center text-muted-foreground"
+				strokeWidth={1.8}
+			/>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					{archived ? (
+						<span className="inline-flex min-w-0 max-w-[200px] items-center gap-1 px-1 py-0.5 font-medium text-muted-foreground">
+							{chipInner}
+						</span>
+					) : (
+						<Button
+							type="button"
+							variant="ghost"
+							size="xs"
+							onClick={() => onSelectWorkspace?.(parentWorkspaceId)}
+							className="h-6 min-w-0 max-w-[200px] gap-1 rounded-md px-1.5 text-ui font-medium text-muted-foreground hover:text-foreground"
+						>
+							{chipInner}
+						</Button>
+					)}
+				</TooltipTrigger>
+				<TooltipContent
+					side="bottom"
+					sideOffset={4}
+					className="max-w-[260px] flex-col items-start rounded-md px-2 py-1.5 text-left text-mini leading-snug"
+				>
+					{branchHint ? (
+						<span className="block text-background/70">
+							Base branch {displayRemote}/{branchHint}
+						</span>
+					) : (
+						<span className="block text-background/70">Stacked on {label}</span>
+					)}
+				</TooltipContent>
+			</Tooltip>
+		</>
+	);
 }
 
 // BranchPicker: thin wrapper around shared BranchPickerPopover with header trigger styling.
@@ -861,7 +1004,7 @@ function BranchPicker({
 				type="button"
 				variant="ghost"
 				size="xs"
-				className="h-6 min-w-0 max-w-[180px] gap-1 rounded-md px-1.5 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+				className="h-6 min-w-0 max-w-[180px] gap-1 rounded-md px-1.5 text-ui font-medium text-muted-foreground hover:text-foreground"
 			>
 				<span className="block min-w-0 truncate">
 					{displayRemote}/{currentBranch}

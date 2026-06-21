@@ -48,11 +48,16 @@ const DEAD_COLUMNS: &[(&str, &str)] = &[
     ("repos", "conductor_config"),
     ("repos", "custom_prompt_code_review"),
     ("repos", "icon"),
-    // `branch_prefix_type` and `run_script_mode` were once stubs here.
-    // Both have since been revived as real per-repo columns (multi-account
-    // refactor and non-concurrent run mode respectively) — keep them OUT
-    // of this list so they survive startup.
+    // `branch_prefix_type` was once a stub here. It has since been
+    // revived as a real per-repo column (multi-account refactor) — keep
+    // it OUT of this list so it survives startup.
     ("repos", "storage_version"),
+    // Retired with the multi run-action migration. Each repo now stores
+    // its run scripts as rows in `repo_run_actions`; the legacy single
+    // `run_script` + `run_script_mode` columns are backfilled in
+    // `run_migrations` and then dropped here.
+    ("repos", "run_script"),
+    ("repos", "run_script_mode"),
     // workspaces: legacy fields with no read path in production.
     ("workspaces", "big_terminal_mode"),
     ("workspaces", "initialization_files_copied"),
@@ -162,6 +167,36 @@ pub fn ensure_schema(connection: &Connection) -> Result<()> {
 }
 
 /// Incremental migrations for schema changes to existing databases.
+/// Re-point every stacked child's `intended_target_branch` at its parent's
+/// current branch. Idempotent: only rows whose cached target differs from the
+/// parent's live branch are touched (dangling parents are skipped). Mirrors
+/// the write-layer cascade in `models::workspaces::update_workspace_branch`
+/// so rows that predate it self-heal on startup.
+fn backfill_stacked_target_branches(connection: &Connection) -> Result<()> {
+    if !has_table(connection, "workspaces")
+        || !has_column(connection, "workspaces", "parent_workspace_id")
+        || !has_column(connection, "workspaces", "branch")
+        || !has_column(connection, "workspaces", "intended_target_branch")
+    {
+        return Ok(());
+    }
+    connection
+        .execute(
+            "UPDATE workspaces
+             SET intended_target_branch = (
+                 SELECT p.branch FROM workspaces p WHERE p.id = workspaces.parent_workspace_id
+             )
+             WHERE parent_workspace_id IS NOT NULL
+               AND (SELECT p.branch FROM workspaces p WHERE p.id = workspaces.parent_workspace_id) IS NOT NULL
+               AND intended_target_branch IS NOT (
+                   SELECT p.branch FROM workspaces p WHERE p.id = workspaces.parent_workspace_id
+               )",
+            [],
+        )
+        .context("Failed to re-point stacked target branches")?;
+    Ok(())
+}
+
 fn run_migrations(connection: &Connection) -> Result<()> {
     // Migration: rename claude_session_id → provider_session_id (supports any agent provider)
     let has_old_column: bool = connection
@@ -460,17 +495,6 @@ fn run_migrations(connection: &Connection) -> Result<()> {
             .context("Failed to add branch_prefix_type column")?;
     }
 
-    // Migration: per-repo run-script mode. 'concurrent' (default) preserves
-    // the historical behavior of allowing multiple workspaces in the same
-    // repo to run their scripts at once. 'non-concurrent' makes a new run
-    // stop any other run script in the same repo first — convenient when
-    // the script binds a fixed port.
-    if has_table(connection, "repos") && !has_column(connection, "repos", "run_script_mode") {
-        connection
-            .execute_batch("ALTER TABLE repos ADD COLUMN run_script_mode TEXT DEFAULT 'concurrent'")
-            .context("Failed to add run_script_mode column")?;
-    }
-
     if has_table(connection, "workspaces") && !has_column(connection, "workspaces", "pr_sync_state")
     {
         connection
@@ -499,6 +523,28 @@ fn run_migrations(connection: &Connection) -> Result<()> {
             .execute_batch("ALTER TABLE workspaces ADD COLUMN pr_url TEXT")
             .context("Failed to add pr_url column")?;
     }
+
+    // Migration: stacked PRs. `parent_workspace_id` links a workspace to the
+    // one below it in a PR stack (its base). NULL = bottom of stack or a
+    // non-stacked workspace. No SQL foreign key — consistent with
+    // `repository_id` (and SQLite can't ALTER ADD CONSTRAINT); integrity is
+    // enforced in the Rust write layer. No back-fill — existing rows are
+    // non-stacked.
+    if has_table(connection, "workspaces")
+        && !has_column(connection, "workspaces", "parent_workspace_id")
+    {
+        connection
+            .execute_batch("ALTER TABLE workspaces ADD COLUMN parent_workspace_id TEXT")
+            .context("Failed to add workspaces.parent_workspace_id column")?;
+    }
+
+    // Stacked-PR invariant: a child's `intended_target_branch` caches its
+    // parent's branch. Re-assert it so rows that predate the write-layer
+    // cascade (or drifted when a parent was renamed before the cascade
+    // existed) self-heal. Idempotent + cheap — only mismatched linked
+    // children are touched.
+    backfill_stacked_target_branches(connection)
+        .context("Failed to backfill stacked-PR target branches")?;
 
     let had_workspace_status =
         has_table(connection, "workspaces") && has_column(connection, "workspaces", "status");
@@ -554,12 +600,148 @@ fn run_migrations(connection: &Connection) -> Result<()> {
             .context("Failed to normalize workspace status values")?;
     }
 
+    // Multi run-action support: each repo gets a list of named run scripts
+    // instead of a single `run_script`. The migration must run BEFORE
+    // `drop_dead_schema` so the backfill can still read the legacy
+    // `repos.run_script` / `run_script_mode` columns — `drop_dead_schema`
+    // is what actually retires them (see `DEAD_COLUMNS`).
+    if has_table(connection, "workspaces")
+        && !has_column(connection, "workspaces", "active_run_action_id")
+    {
+        connection
+            .execute_batch("ALTER TABLE workspaces ADD COLUMN active_run_action_id TEXT")
+            .context("Failed to add workspaces.active_run_action_id column")?;
+    }
+
+    connection
+        .execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS repo_run_actions (
+                id TEXT PRIMARY KEY,
+                repo_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                command TEXT NOT NULL,
+                mode TEXT NOT NULL DEFAULT 'concurrent',
+                display_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (repo_id) REFERENCES repos(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_repo_run_actions_repo
+                ON repo_run_actions(repo_id, display_order);
+            CREATE TRIGGER IF NOT EXISTS update_repo_run_actions_updated_at
+                AFTER UPDATE ON repo_run_actions
+                BEGIN
+                    UPDATE repo_run_actions SET updated_at = datetime('now')
+                    WHERE id = NEW.id;
+                END;
+            "#,
+        )
+        .context("Failed to create repo_run_actions table")?;
+
+    // Optional graceful-stop command per run action. `stop_command` is a
+    // shell snippet helmor runs when the user clicks Stop, blocking the
+    // SIGTERM/SIGKILL of the main process until it exits (Force Stop
+    // re-click short-circuits). Nullable — existing rows are unaffected
+    // and continue to use today's `escalating_kill` flow.
+    if has_table(connection, "repo_run_actions")
+        && !has_column(connection, "repo_run_actions", "stop_command")
+    {
+        connection
+            .execute_batch("ALTER TABLE repo_run_actions ADD COLUMN stop_command TEXT")
+            .context("Failed to add repo_run_actions.stop_command column")?;
+    }
+
+    // Backfill: every repo that has a non-empty `run_script` but no row in
+    // `repo_run_actions` yet gets a single migrated action carrying the old
+    // command + mode. Deterministic id (`legacy:<repo_id>`) keeps the
+    // migration idempotent across restarts and stable for any active-id
+    // references we later add. After this block both legacy columns are
+    // listed in `DEAD_COLUMNS` and get dropped by `drop_dead_schema` below.
+    if has_table(connection, "repos")
+        && has_table(connection, "repo_run_actions")
+        && has_column(connection, "repos", "run_script")
+    {
+        let has_mode = has_column(connection, "repos", "run_script_mode");
+        let mode_expr = if has_mode {
+            "COALESCE(NULLIF(run_script_mode, ''), 'concurrent')"
+        } else {
+            "'concurrent'"
+        };
+        connection
+            .execute_batch(&format!(
+                r#"
+                INSERT INTO repo_run_actions (id, repo_id, name, command, mode, display_order)
+                SELECT
+                    'legacy:' || id,
+                    id,
+                    'Default',
+                    run_script,
+                    {mode_expr},
+                    0
+                FROM repos
+                WHERE run_script IS NOT NULL
+                  AND TRIM(run_script) != ''
+                  AND NOT EXISTS (
+                    SELECT 1 FROM repo_run_actions WHERE repo_run_actions.repo_id = repos.id
+                  );
+                "#
+            ))
+            .context("Failed to backfill repo_run_actions from repos.run_script")?;
+
+        // One-shot rename for installs that backfilled with the earlier
+        // label ("Run"). Targeted by id pattern + exact-match name so it
+        // never touches a row the user manually renamed.
+        connection
+            .execute_batch(
+                r#"
+                UPDATE repo_run_actions
+                SET name = 'Default'
+                WHERE id LIKE 'legacy:%' AND name = 'Run';
+                "#,
+            )
+            .context("Failed to rename legacy run actions to 'Default'")?;
+    }
+
     drop_dead_schema(connection)?;
 
     // Migration: remap legacy "opus-1m" model ID — the CLI no longer accepts it.
     // "opus" still works as an alias, so only "opus-1m" needs remapping.
     connection
         .execute_batch("UPDATE sessions SET model = 'default' WHERE model = 'opus-1m'")
+        .ok();
+
+    // Migration: claude retired the floating `default` sentinel — every model
+    // is now pinned to its explicit wire id, and the app default is
+    // `claude-opus-4-8[1m]` (same Opus 4.8 1M the CLI's `default` resolved to,
+    // so historical users see no change). This block is the ONE place that
+    // knows about the legacy id; runtime code never special-cases it. Three
+    // storage surfaces, all idempotent:
+    //
+    //   1. sessions.model — the pinned model of past runs.
+    //   2. The "Models" settings (`default`/`review`/`pr` model) — stored as
+    //      either a `{provider,modelId}` JSON object or a bare legacy id.
+    //   3. The provider "enabled models" list (`claude_enabled_model_ids`,
+    //      a JSON array) — else the picker drops Opus / shows a stale chip.
+    //
+    // Scoped to claude: cursor's `default` is its real "Auto" id (and appears
+    // only as the quote-safe `cursor-default`), so it is never touched. The
+    // `"default"` substring is precise — no other claude id contains it.
+    connection
+        .execute_batch(
+            "UPDATE sessions SET model = 'claude-opus-4-8[1m]' \
+             WHERE model = 'default' \
+             AND (agent_type IS NULL OR agent_type = '' OR agent_type = 'claude');\n\
+             UPDATE settings \
+             SET value = REPLACE(value, '\"default\"', '\"claude-opus-4-8[1m]\"') \
+             WHERE key IN ('app.claude_enabled_model_ids', 'app.default_model_id', \
+                           'app.review_model_id', 'app.pr_model_id') \
+             AND value LIKE '%\"default\"%';\n\
+             UPDATE settings SET value = 'claude-opus-4-8[1m]' \
+             WHERE key IN ('app.default_model_id', 'app.review_model_id', \
+                           'app.pr_model_id') \
+             AND value = 'default';",
+        )
         .ok();
 
     // Migration: drop the old OAuth identity rows. The device-flow login
@@ -620,6 +802,17 @@ fn run_migrations(connection: &Connection) -> Result<()> {
             .context("Failed to add workspaces.port_count column")?;
     }
 
+    // Runtime process registry. Tracks every PTY-backed script /
+    // terminal Helmor spawns so a crash recovery sweep on next launch
+    // can detect rows whose process is still alive and report them.
+    // `ended_at` IS NULL while a process is live; the post-exit code
+    // path in `workspace::scripts::run_script_with_shell` stamps it
+    // on natural completion / kill / graceful quit. Idempotent
+    // CREATE TABLE so legacy DBs pick it up on next startup.
+    connection
+        .execute_batch(RUNTIME_PROCESSES_DDL)
+        .context("Failed to create runtime_processes table")?;
+
     // 'from_branch' = fork a new branch; 'use_branch' = attach as-is.
     if has_table(connection, "workspaces") && !has_column(connection, "workspaces", "branch_intent")
     {
@@ -630,7 +823,176 @@ fn run_migrations(connection: &Connection) -> Result<()> {
             .context("Failed to add workspaces.branch_intent column")?;
     }
 
+    materialize_review_pr_model_defaults(connection)?;
+
+    // Smart Triage columns (idempotent ALTERs for pre-triage upgrades).
+    if has_table(connection, "workspaces") {
+        // Match the fresh schema so a manual INSERT (which omits `kind`)
+        // resolves to 'manual' on upgraded and fresh DBs alike.
+        add_column_if_missing(
+            connection,
+            "workspaces",
+            "kind",
+            "TEXT NOT NULL DEFAULT 'manual'",
+        )?;
+        // Backfill rows the earlier nullable-`TEXT` migration left as NULL.
+        connection
+            .execute_batch("UPDATE workspaces SET kind = 'manual' WHERE kind IS NULL")
+            .context("Failed to backfill workspaces.kind NULLs")?;
+        add_column_if_missing(
+            connection,
+            "workspaces",
+            "ai_priming_consumed",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        // Triage source provenance: `(source_type, source_ref)` dedups across ticks.
+        add_column_if_missing(connection, "workspaces", "triage_source_type", "TEXT")?;
+        add_column_if_missing(connection, "workspaces", "triage_source_ref", "TEXT")?;
+        // Index goes after the ALTER above — else old DBs would index a missing column.
+        connection
+            .execute_batch("CREATE INDEX IF NOT EXISTS idx_workspaces_kind ON workspaces(kind)")
+            .context("Failed to create idx_workspaces_kind")?;
+        connection
+            .execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_workspaces_triage_source
+                 ON workspaces(triage_source_type, triage_source_ref)
+                 WHERE triage_source_type IS NOT NULL",
+            )
+            .context("Failed to create idx_workspaces_triage_source")?;
+    }
+    if has_table(connection, "session_messages") {
+        add_column_if_missing(
+            connection,
+            "session_messages",
+            "is_ai_priming",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+    }
+    if has_table(connection, "sessions") {
+        // Terminal sessions render a live PTY in the message area instead of an
+        // SDK chat thread. 'gui' = existing SDK sessions.
+        add_column_if_missing(
+            connection,
+            "sessions",
+            "session_kind",
+            "TEXT NOT NULL DEFAULT 'gui'",
+        )?;
+    }
+    if has_table(connection, "triage_candidate") {
+        // Why an item surfaced for the user (review_requested / assigned /
+        // mentioned / author / owned_issue). Nullable — older rows + sources
+        // that don't stamp a reason stay NULL.
+        add_column_if_missing(connection, "triage_candidate", "involvement_reason", "TEXT")?;
+    }
+
+    // Per-session "active plan" projection. Provider plan/todo events
+    // (Codex `turn/plan/updated`, Claude `ExitPlanMode`) are normalised
+    // by `agents::session_plan` into a typed plan and upserted here so
+    // the frontend can render a pinned plan without scanning scrollback.
+    // Idempotent: re-running creates a no-op when the table exists.
+    connection
+        .execute_batch(SESSION_PLAN_STATE_DDL)
+        .context("Failed to create session_plan_state table")?;
+
     Ok(())
+}
+
+const RUNTIME_PROCESSES_DDL: &str = r#"
+CREATE TABLE IF NOT EXISTS runtime_processes (
+    id TEXT PRIMARY KEY,
+    repo_id TEXT NOT NULL,
+    workspace_id TEXT,
+    script_type TEXT NOT NULL,
+    pid INTEGER NOT NULL,
+    pgid INTEGER NOT NULL,
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    ended_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_runtime_processes_ended_at
+    ON runtime_processes(ended_at);
+"#;
+
+const SESSION_PLAN_STATE_DDL: &str = r#"
+CREATE TABLE IF NOT EXISTS session_plan_state (
+    session_id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    source_message_id TEXT,
+    plan_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"#;
+
+// Idempotent `ALTER TABLE ... ADD COLUMN`; no-op when the column already exists.
+fn add_column_if_missing(
+    connection: &Connection,
+    table: &str,
+    column: &str,
+    column_def: &str,
+) -> Result<()> {
+    let exists: bool = connection
+        .prepare(&format!(
+            "SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?1"
+        ))
+        .and_then(|mut stmt| stmt.exists([column]))
+        .unwrap_or(false);
+    if !exists {
+        connection
+            .execute_batch(&format!(
+                "ALTER TABLE {table} ADD COLUMN {column} {column_def}"
+            ))
+            .with_context(|| format!("Failed to add {table}.{column} column"))?;
+    }
+    Ok(())
+}
+
+/// Promote NULL review_*/pr_* rows to explicit copies of the current
+/// defaults, so changing the default later doesn't drag them along.
+/// Idempotent via anti-join; gated on `app.default_model_id` being set.
+fn materialize_review_pr_model_defaults(connection: &Connection) -> Result<()> {
+    if !has_table(connection, "settings") {
+        return Ok(());
+    }
+    connection
+        .execute_batch(
+            r#"
+            INSERT INTO settings (key, value)
+            SELECT 'app.review_model_id', value FROM settings
+            WHERE key = 'app.default_model_id' AND value != ''
+              AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'app.review_model_id');
+
+            INSERT INTO settings (key, value)
+            SELECT 'app.pr_model_id', value FROM settings
+            WHERE key = 'app.default_model_id' AND value != ''
+              AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'app.pr_model_id');
+
+            INSERT INTO settings (key, value)
+            SELECT 'app.review_effort', value FROM settings
+            WHERE key = 'app.default_effort' AND value != ''
+              AND EXISTS (SELECT 1 FROM settings WHERE key = 'app.default_model_id' AND value != '')
+              AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'app.review_effort');
+
+            INSERT INTO settings (key, value)
+            SELECT 'app.pr_effort', value FROM settings
+            WHERE key = 'app.default_effort' AND value != ''
+              AND EXISTS (SELECT 1 FROM settings WHERE key = 'app.default_model_id' AND value != '')
+              AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'app.pr_effort');
+
+            INSERT INTO settings (key, value)
+            SELECT 'app.review_fast_mode', value FROM settings
+            WHERE key = 'app.default_fast_mode'
+              AND EXISTS (SELECT 1 FROM settings WHERE key = 'app.default_model_id' AND value != '')
+              AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'app.review_fast_mode');
+
+            INSERT INTO settings (key, value)
+            SELECT 'app.pr_fast_mode', value FROM settings
+            WHERE key = 'app.default_fast_mode'
+              AND EXISTS (SELECT 1 FROM settings WHERE key = 'app.default_model_id' AND value != '')
+              AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'app.pr_fast_mode');
+            "#,
+        )
+        .context("Failed to materialize review/pr model defaults")
 }
 
 /// One-shot init for rows that still carry `display_order = 0` — the column
@@ -694,7 +1056,6 @@ CREATE TABLE IF NOT EXISTS repos (
     setup_script TEXT,
     archive_script TEXT,
     display_order INTEGER DEFAULT 0,
-    run_script TEXT,
     remote TEXT,
     custom_prompt_create_pr TEXT,
     custom_prompt_review TEXT,
@@ -708,7 +1069,6 @@ CREATE TABLE IF NOT EXISTS repos (
     forge_login TEXT,
     branch_prefix_type TEXT,
     branch_prefix_custom TEXT,
-    run_script_mode TEXT DEFAULT 'concurrent',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -753,9 +1113,29 @@ CREATE TABLE IF NOT EXISTS workspaces (
     port_base INTEGER,
     port_count INTEGER,
     branch_intent TEXT DEFAULT 'from_branch',
+    active_run_action_id TEXT,
+    kind TEXT NOT NULL DEFAULT 'manual',
+    ai_priming_consumed INTEGER NOT NULL DEFAULT 0,
+    triage_source_type TEXT,
+    triage_source_ref TEXT,
+    parent_workspace_id TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS repo_run_actions (
+    id TEXT PRIMARY KEY,
+    repo_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    command TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'concurrent',
+    display_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (repo_id) REFERENCES repos(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_repo_run_actions_repo
+    ON repo_run_actions(repo_id, display_order);
 
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -775,6 +1155,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     context_usage_meta TEXT,
     codex_goal_meta TEXT,
     draft_state TEXT,
+    session_kind TEXT NOT NULL DEFAULT 'gui',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -785,13 +1166,94 @@ CREATE TABLE IF NOT EXISTS session_messages (
     role TEXT,
     content TEXT,
     sent_at TEXT,
+    is_ai_priming INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS session_plan_state (
+    session_id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    source_message_id TEXT,
+    plan_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS runtime_processes (
+    id TEXT PRIMARY KEY,
+    repo_id TEXT NOT NULL,
+    workspace_id TEXT,
+    script_type TEXT NOT NULL,
+    pid INTEGER NOT NULL,
+    pgid INTEGER NOT NULL,
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    ended_at TEXT
+);
+
+-- Connected Slack workspaces (one row per workspace the user has
+-- imported). Credentials (xoxc + xoxd) live in the macOS Keychain via
+-- `crate::slack::credentials`, never here. This table is just
+-- non-secret metadata so the sidebar can list "which workspaces am I
+-- connected to" without doing a keychain probe per render.
+CREATE TABLE IF NOT EXISTS slack_workspaces (
+    team_id TEXT PRIMARY KEY,
+    team_name TEXT NOT NULL,
+    team_domain TEXT NOT NULL,
+    my_user_id TEXT NOT NULL,
+    added_at INTEGER NOT NULL
+);
+
+-- AI triage fetcher: pre-computed candidate index.
+-- Background fetchers write rows here. The local-LLM Layer-2 tick reads
+-- `decision IS NULL` rows in batches. Heavy payloads live on disk under
+-- `cache/triage/`, only `payload_path` is stored here.
+CREATE TABLE IF NOT EXISTS triage_candidate (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    source_kind TEXT NOT NULL,
+    source_ref TEXT NOT NULL,
+    source_time TEXT NOT NULL,
+    sender TEXT,
+    title TEXT,
+    preview TEXT,
+    external_url TEXT,
+    involvement_reason TEXT,
+    payload_path TEXT NOT NULL,
+    payload_bytes INTEGER NOT NULL DEFAULT 0,
+    decision TEXT,
+    UNIQUE(source, source_ref)
+);
+
+-- Per-(source, source_parent) fetch checkpoint. Only IM-class fetchers
+-- write rows here; forge fetchers don't use the cursor (gh/glab inbox
+-- APIs do their own "what's new" filtering server-side).
+CREATE TABLE IF NOT EXISTS triage_fetch_cursor (
+    source TEXT NOT NULL,
+    source_parent TEXT NOT NULL,
+    last_source_time TEXT,
+    PRIMARY KEY (source, source_parent)
+);
+
+-- Mobile browser companion: paired phones. Stores only a SHA-256 of the PAT,
+-- never the plaintext. Survives desktop restarts so a phone never re-scans.
+CREATE TABLE IF NOT EXISTS paired_devices (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    pat_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT,
+    revoked_at TEXT
 );
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_session_messages_sent_at ON session_messages(session_id, sent_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_workspace_id ON sessions(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_workspaces_repository_id ON workspaces(repository_id);
+CREATE INDEX IF NOT EXISTS idx_runtime_processes_ended_at ON runtime_processes(ended_at);
+CREATE INDEX IF NOT EXISTS idx_triage_candidate_open ON triage_candidate(source_time DESC) WHERE decision IS NULL;
+CREATE INDEX IF NOT EXISTS idx_triage_candidate_source ON triage_candidate(source, source_time DESC);
+-- idx_workspaces_kind + idx_workspaces_triage_source are created in
+-- `run_migrations` (after the ALTERs on upgraded DBs).
 
 -- Triggers (use CREATE TRIGGER IF NOT EXISTS where supported, otherwise wrapped)
 CREATE TRIGGER IF NOT EXISTS update_repos_updated_at
@@ -812,6 +1274,13 @@ CREATE TRIGGER IF NOT EXISTS update_sessions_updated_at
     AFTER UPDATE ON sessions
     BEGIN
         UPDATE sessions SET updated_at = datetime('now')
+        WHERE id = NEW.id;
+    END;
+
+CREATE TRIGGER IF NOT EXISTS update_repo_run_actions_updated_at
+    AFTER UPDATE ON repo_run_actions
+    BEGIN
+        UPDATE repo_run_actions SET updated_at = datetime('now')
         WHERE id = NEW.id;
     END;
 
@@ -847,6 +1316,7 @@ mod tests {
         assert!(tables.contains(&"sessions".to_string()));
         assert!(tables.contains(&"session_messages".to_string()));
         assert!(tables.contains(&"settings".to_string()));
+        assert!(tables.contains(&"slack_workspaces".to_string()));
     }
 
     #[test]
@@ -855,6 +1325,87 @@ mod tests {
         ensure_schema(&connection).unwrap();
         // Call again — should not error
         ensure_schema(&connection).unwrap();
+    }
+
+    fn insert_ws(
+        connection: &Connection,
+        id: &str,
+        branch: &str,
+        target: Option<&str>,
+        parent: Option<&str>,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO workspaces (id, repository_id, directory_name, state, status, branch, intended_target_branch, parent_workspace_id, display_order)
+                 VALUES (?1, 'repo', ?1, 'ready', 'in-progress', ?2, ?3, ?4, 0)",
+                rusqlite::params![id, branch, target, parent],
+            )
+            .unwrap();
+    }
+
+    fn target_of(connection: &Connection, id: &str) -> Option<String> {
+        connection
+            .query_row(
+                "SELECT intended_target_branch FROM workspaces WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn backfill_repoints_stale_child_targets_at_parent_branch() {
+        let (connection, _dir) = open_test_db();
+        ensure_schema(&connection).unwrap();
+
+        // child's target is a stale snapshot of the parent's old branch name.
+        insert_ws(&connection, "root", "feat/root", Some("main"), None);
+        insert_ws(
+            &connection,
+            "child",
+            "feat/child",
+            Some("feat/root-OLD"),
+            Some("root"),
+        );
+        insert_ws(&connection, "solo", "feat/solo", Some("main"), None);
+
+        backfill_stacked_target_branches(&connection).unwrap();
+
+        // Child now tracks the parent's LIVE branch; root + non-stacked untouched.
+        assert_eq!(
+            target_of(&connection, "child").as_deref(),
+            Some("feat/root")
+        );
+        assert_eq!(target_of(&connection, "root").as_deref(), Some("main"));
+        assert_eq!(target_of(&connection, "solo").as_deref(), Some("main"));
+
+        // Idempotent: a second pass is a no-op.
+        backfill_stacked_target_branches(&connection).unwrap();
+        assert_eq!(
+            target_of(&connection, "child").as_deref(),
+            Some("feat/root")
+        );
+    }
+
+    #[test]
+    fn backfill_leaves_dangling_parent_targets_untouched() {
+        let (connection, _dir) = open_test_db();
+        ensure_schema(&connection).unwrap();
+        // parent id 'gone' does not exist — must NOT null out the target.
+        insert_ws(
+            &connection,
+            "orphan",
+            "feat/x",
+            Some("stale-base"),
+            Some("gone"),
+        );
+
+        backfill_stacked_target_branches(&connection).unwrap();
+
+        assert_eq!(
+            target_of(&connection, "orphan").as_deref(),
+            Some("stale-base")
+        );
     }
 
     #[test]
@@ -1038,6 +1589,94 @@ mod tests {
     }
 
     #[test]
+    fn migration_remaps_claude_default_sentinel_to_pinned_opus_id() {
+        let (connection, _dir) = open_test_db();
+        ensure_schema(&connection).unwrap();
+
+        connection
+            .execute_batch(
+                r#"
+                -- Claude session pinned to the legacy "default" sentinel.
+                INSERT INTO sessions (id, model, agent_type) VALUES
+                  ('claude-sess', 'default', 'claude');
+                -- Legacy claude session with no agent_type (infers to claude).
+                INSERT INTO sessions (id, model, agent_type) VALUES
+                  ('legacy-sess', 'default', NULL);
+                -- Cursor's "default" is its real Auto id — must stay put.
+                INSERT INTO sessions (id, model, agent_type) VALUES
+                  ('cursor-sess', 'default', 'cursor');
+                -- Provider "enabled models" list still holding the sentinel.
+                INSERT INTO settings (key, value) VALUES
+                  ('app.claude_enabled_model_ids',
+                   '["claude-fable-5[1m]","default","sonnet"]');
+                -- "Models" settings: new JSON form, legacy bare form, and a
+                -- cursor value that must survive ("cursor-default" has no
+                -- quote-adjacent "default" substring).
+                INSERT INTO settings (key, value) VALUES
+                  ('app.default_model_id',
+                   '{"provider":"claude","modelId":"default"}'),
+                  ('app.review_model_id', 'default'),
+                  ('app.pr_model_id',
+                   '{"provider":"cursor","modelId":"cursor-default"}');
+                "#,
+            )
+            .unwrap();
+
+        run_migrations(&connection).unwrap();
+
+        let model = |id: &str| -> String {
+            connection
+                .query_row("SELECT model FROM sessions WHERE id = ?1", [id], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+        let setting = |key: &str| -> String {
+            connection
+                .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+
+        assert_eq!(model("claude-sess"), "claude-opus-4-8[1m]");
+        assert_eq!(model("legacy-sess"), "claude-opus-4-8[1m]");
+        assert_eq!(model("cursor-sess"), "default", "cursor Auto untouched");
+
+        assert_eq!(
+            setting("app.claude_enabled_model_ids"),
+            r#"["claude-fable-5[1m]","claude-opus-4-8[1m]","sonnet"]"#
+        );
+        assert_eq!(
+            setting("app.default_model_id"),
+            r#"{"provider":"claude","modelId":"claude-opus-4-8[1m]"}"#,
+            "JSON modelId rewritten"
+        );
+        assert_eq!(
+            setting("app.review_model_id"),
+            "claude-opus-4-8[1m]",
+            "bare legacy id rewritten"
+        );
+        assert_eq!(
+            setting("app.pr_model_id"),
+            r#"{"provider":"cursor","modelId":"cursor-default"}"#,
+            "cursor model preference untouched"
+        );
+
+        // Idempotent: re-running is a no-op on already-migrated rows.
+        run_migrations(&connection).unwrap();
+        assert_eq!(model("claude-sess"), "claude-opus-4-8[1m]");
+        assert_eq!(
+            setting("app.claude_enabled_model_ids"),
+            r#"["claude-fable-5[1m]","claude-opus-4-8[1m]","sonnet"]"#
+        );
+        assert_eq!(
+            setting("app.default_model_id"),
+            r#"{"provider":"claude","modelId":"claude-opus-4-8[1m]"}"#
+        );
+    }
+
+    #[test]
     fn migration_drops_full_message_column() {
         let (connection, _dir) = open_test_db();
 
@@ -1180,6 +1819,7 @@ mod tests {
                     root_path TEXT,
                     created_at TEXT DEFAULT (datetime('now')),
                     storage_version INTEGER DEFAULT 1,
+                    run_script TEXT,
                     run_script_mode TEXT DEFAULT 'concurrent',
                     custom_prompt_code_review TEXT,
                     conductor_config TEXT,
@@ -1455,35 +2095,44 @@ mod tests {
     }
 
     #[test]
-    fn run_script_mode_present_on_fresh_install() {
+    fn legacy_run_script_columns_are_dropped_on_fresh_install() {
+        // New installs never carry the retired columns. SCHEMA_SQL omits
+        // them and `drop_dead_schema` would clean them up anyway.
         let (connection, _dir) = open_test_db();
         ensure_schema(&connection).unwrap();
-        assert!(column_exists(&connection, "repos", "run_script_mode"));
+        assert!(!column_exists(&connection, "repos", "run_script"));
+        assert!(!column_exists(&connection, "repos", "run_script_mode"));
     }
 
     #[test]
-    fn run_script_mode_retained_from_legacy_schema() {
-        // Conductor DBs already carry this column. Migration must keep it
-        // (and any persisted value) rather than dropping it.
+    fn legacy_run_script_columns_backfill_into_repo_run_actions_then_drop() {
+        // Legacy DBs carry `run_script` + `run_script_mode`. Migration
+        // must move their values into `repo_run_actions` before
+        // `drop_dead_schema` retires the columns.
         let (connection, _dir) = open_test_db();
         create_legacy_schema(&connection);
         connection
             .execute(
-                "INSERT INTO repos (id, name, run_script_mode) VALUES ('r1', 'x', 'non-concurrent')",
+                "INSERT INTO repos (id, name, run_script, run_script_mode) VALUES ('r1', 'x', 'npm dev', 'non-concurrent')",
                 [],
             )
             .unwrap();
 
         run_migrations(&connection).unwrap();
-        assert!(column_exists(&connection, "repos", "run_script_mode"));
 
-        let mode: String = connection
+        assert!(!column_exists(&connection, "repos", "run_script"));
+        assert!(!column_exists(&connection, "repos", "run_script_mode"));
+
+        let (id, name, command, mode): (String, String, String, String) = connection
             .query_row(
-                "SELECT run_script_mode FROM repos WHERE id = 'r1'",
+                "SELECT id, name, command, mode FROM repo_run_actions WHERE repo_id = 'r1'",
                 [],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .unwrap();
+        assert_eq!(id, "legacy:r1");
+        assert_eq!(name, "Default");
+        assert_eq!(command, "npm dev");
         assert_eq!(mode, "non-concurrent");
     }
 
@@ -1508,5 +2157,129 @@ mod tests {
             stored.as_deref(),
             Some(r#"{"totalTokens":12,"maxTokens":100}"#)
         );
+    }
+
+    fn read_setting(conn: &Connection, key: &str) -> Option<String> {
+        conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+            r.get(0)
+        })
+        .ok()
+    }
+
+    fn insert_setting(conn: &Connection, key: &str, value: &str) {
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+            [key, value],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn review_pr_defaults_materialized_when_default_model_set() {
+        let (conn, _dir) = open_test_db();
+        ensure_schema(&conn).unwrap();
+        insert_setting(&conn, "app.default_model_id", "claude-sonnet-4");
+        insert_setting(&conn, "app.default_effort", "high");
+        insert_setting(&conn, "app.default_fast_mode", "false");
+
+        run_migrations(&conn).unwrap();
+
+        assert_eq!(
+            read_setting(&conn, "app.review_model_id").as_deref(),
+            Some("claude-sonnet-4")
+        );
+        assert_eq!(
+            read_setting(&conn, "app.pr_model_id").as_deref(),
+            Some("claude-sonnet-4")
+        );
+        assert_eq!(
+            read_setting(&conn, "app.review_effort").as_deref(),
+            Some("high")
+        );
+        assert_eq!(
+            read_setting(&conn, "app.pr_effort").as_deref(),
+            Some("high")
+        );
+        assert_eq!(
+            read_setting(&conn, "app.review_fast_mode").as_deref(),
+            Some("false")
+        );
+        assert_eq!(
+            read_setting(&conn, "app.pr_fast_mode").as_deref(),
+            Some("false")
+        );
+
+        // Idempotent — second run is a no-op.
+        run_migrations(&conn).unwrap();
+        assert_eq!(
+            read_setting(&conn, "app.review_model_id").as_deref(),
+            Some("claude-sonnet-4")
+        );
+    }
+
+    #[test]
+    fn review_pr_defaults_skip_when_default_model_absent() {
+        // No default_model_id → no promotion (consumers handle the fallback).
+        let (conn, _dir) = open_test_db();
+        ensure_schema(&conn).unwrap();
+        insert_setting(&conn, "app.default_effort", "high");
+        insert_setting(&conn, "app.default_fast_mode", "true");
+
+        run_migrations(&conn).unwrap();
+
+        assert!(read_setting(&conn, "app.review_model_id").is_none());
+        assert!(read_setting(&conn, "app.pr_model_id").is_none());
+        assert!(read_setting(&conn, "app.review_effort").is_none());
+        assert!(read_setting(&conn, "app.pr_effort").is_none());
+        assert!(read_setting(&conn, "app.review_fast_mode").is_none());
+        assert!(read_setting(&conn, "app.pr_fast_mode").is_none());
+    }
+
+    #[test]
+    fn review_pr_defaults_preserve_existing_user_overrides() {
+        let (conn, _dir) = open_test_db();
+        ensure_schema(&conn).unwrap();
+        insert_setting(&conn, "app.default_model_id", "claude-sonnet-4");
+        insert_setting(&conn, "app.default_effort", "high");
+        insert_setting(&conn, "app.default_fast_mode", "false");
+        // User already decoupled review_model_id explicitly.
+        insert_setting(&conn, "app.review_model_id", "gpt-5");
+        insert_setting(&conn, "app.review_effort", "low");
+
+        run_migrations(&conn).unwrap();
+
+        // User overrides untouched.
+        assert_eq!(
+            read_setting(&conn, "app.review_model_id").as_deref(),
+            Some("gpt-5")
+        );
+        assert_eq!(
+            read_setting(&conn, "app.review_effort").as_deref(),
+            Some("low")
+        );
+        // Other unset fields still get materialized.
+        assert_eq!(
+            read_setting(&conn, "app.pr_model_id").as_deref(),
+            Some("claude-sonnet-4")
+        );
+        assert_eq!(
+            read_setting(&conn, "app.pr_effort").as_deref(),
+            Some("high")
+        );
+    }
+
+    #[test]
+    fn review_pr_defaults_skip_empty_default_model_id() {
+        // Empty string == null sentinel.
+        let (conn, _dir) = open_test_db();
+        ensure_schema(&conn).unwrap();
+        insert_setting(&conn, "app.default_model_id", "");
+        insert_setting(&conn, "app.default_effort", "high");
+
+        run_migrations(&conn).unwrap();
+
+        assert!(read_setting(&conn, "app.review_model_id").is_none());
+        assert!(read_setting(&conn, "app.pr_model_id").is_none());
+        assert!(read_setting(&conn, "app.review_effort").is_none());
     }
 }

@@ -5,17 +5,20 @@ import { cn } from "@/lib/utils";
 
 function Label({
 	className,
+	children,
 	...props
 }: React.ComponentProps<typeof LabelPrimitive.Root>) {
 	return (
 		<LabelPrimitive.Root
 			data-slot="label"
 			className={cn(
-				"flex cursor-interactive items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50",
+				"flex cursor-interactive items-center gap-2 text-body leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50",
 				className,
 			)}
 			{...props}
-		/>
+		>
+			{children}
+		</LabelPrimitive.Root>
 	);
 }
 

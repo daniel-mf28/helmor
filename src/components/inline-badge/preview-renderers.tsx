@@ -1,7 +1,8 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { CodeBlock } from "@/components/ai/code-block";
 import type { ComposerPreviewPayload } from "@/lib/composer-insert";
+import { I18nText } from "@/lib/i18n";
+import { convertFileSrc } from "@/lib/ipc";
 
 export type { ComposerPreviewPayload } from "@/lib/composer-insert";
 
@@ -10,9 +11,13 @@ export type InlineBadgePreviewEditHandlers = {
 	onEditBlur: (nextText: string) => void;
 };
 
+// `--radix-popover-content-available-height` lets the body shrink when neither
+// side fits the fixed 520px (e.g. composer centered on the start surface).
+// Subtract 2.5rem for the title row. Fallback keeps the original 520px cap.
 const PREVIEW_VIEWPORT_CLASS =
-	"h-[min(60vh,520px)] overflow-y-auto overflow-x-hidden";
-const EDITOR_VIEWPORT_CLASS = "h-[min(60vh,520px)]";
+	"h-[min(60vh,520px,calc(var(--radix-popover-content-available-height,100vh)-2.5rem))] overflow-y-auto overflow-x-hidden";
+const EDITOR_VIEWPORT_CLASS =
+	"h-[min(60vh,520px,calc(var(--radix-popover-content-available-height,100vh)-2.5rem))]";
 
 function resolveLocalPreviewSrc(path: string) {
 	try {
@@ -34,7 +39,7 @@ function PreviewFrame({
 	return (
 		<div className="flex w-full min-w-0 flex-col">
 			<div className="flex w-full min-w-0 items-center border-b border-border/40 px-3 py-2">
-				<span className="block w-full min-w-0 truncate text-[12px] font-medium text-foreground">
+				<span className="block w-full min-w-0 truncate text-small font-medium text-foreground">
 					{title}
 				</span>
 			</div>
@@ -75,7 +80,7 @@ function EditableTextPreview({
 				onKeyDown={(e) => e.stopPropagation()}
 				onKeyUp={(e) => e.stopPropagation()}
 				onPointerDown={(e) => e.stopPropagation()}
-				className="block h-full w-full resize-none whitespace-pre-wrap break-words border-0 bg-transparent px-3 py-3 font-mono text-[12px] leading-5 text-foreground/88 outline-none focus:outline-none"
+				className="block h-full w-full resize-none whitespace-pre-wrap break-words border-0 bg-transparent px-3 py-3 font-mono text-small leading-5 text-foreground/88 outline-none focus:outline-none"
 				spellCheck={false}
 			/>
 		</PreviewFrame>
@@ -115,7 +120,7 @@ export function renderInlineBadgePreview(
 					title={payload.title}
 					bodyClassName={`${PREVIEW_VIEWPORT_CLASS} bg-[linear-gradient(180deg,color-mix(in_oklch,var(--sidebar)_84%,black_16%)_0%,var(--popover)_100%)] px-3 py-3`}
 				>
-					<pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-foreground/88">
+					<pre className="whitespace-pre-wrap break-words font-mono text-small leading-5 text-foreground/88">
 						{payload.text}
 					</pre>
 				</PreviewFrame>
@@ -145,8 +150,8 @@ export function PreviewErrorFrame({ title }: { title: string }) {
 			title={title}
 			bodyClassName="flex items-center justify-center px-4 py-6"
 		>
-			<span className="text-[12px] text-muted-foreground">
-				Unable to preview
+			<span className="text-small text-muted-foreground">
+				<I18nText source="unablePreview" />
 			</span>
 		</PreviewFrame>
 	);
@@ -159,7 +164,9 @@ export function PreviewLoadingFrame({ title }: { title: string }) {
 			title={title}
 			bodyClassName="flex items-center justify-center px-4 py-6"
 		>
-			<span className="text-[12px] text-muted-foreground">Loading…</span>
+			<span className="text-small text-muted-foreground">
+				<I18nText source="loading2" />
+			</span>
 		</PreviewFrame>
 	);
 }

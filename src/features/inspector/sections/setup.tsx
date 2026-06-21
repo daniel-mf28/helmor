@@ -6,6 +6,7 @@ import {
 	TerminalOutput,
 } from "@/components/terminal-output";
 import { Button } from "@/components/ui/button";
+import { I18nText, useI18n } from "@/lib/i18n";
 import { helmorQueryKeys } from "@/lib/query-client";
 import { useSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,7 @@ export function SetupTab({
 	isActive,
 	onOpenSettings,
 }: SetupTabProps) {
+	const { t } = useI18n();
 	const termRef = useRef<TerminalHandle | null>(null);
 	const [status, setStatus] = useState<ScriptStatus>("idle");
 	const [hasRun, setHasRun] = useState(false);
@@ -164,14 +166,17 @@ export function SetupTab({
 						<TerminalOutput
 							terminalRef={termRef}
 							className="h-full"
+							detectLinks="modifier-click"
+							fontSize={13}
 							onData={handleData}
 							onResize={handleResize}
 						/>
 					</div>
 
 					{showFloatingAction && (
+						// z-20 keeps the button above xterm's link-layer canvas (z:2).
 						<div
-							className="absolute bottom-3 right-4"
+							className="absolute right-4 bottom-3 z-20"
 							style={
 								autoExpandEnabled
 									? {
@@ -185,7 +190,7 @@ export function SetupTab({
 							<Button
 								variant={status === "running" ? "destructive" : "secondary"}
 								size="sm"
-								className="text-[12px] shadow-sm backdrop-blur-sm transition-none"
+								className="text-small shadow-sm backdrop-blur-sm transition-none"
 								onClick={status === "running" ? handleStop : handleRun}
 								disabled={status === "exited" && !hasScript}
 							>
@@ -201,58 +206,58 @@ export function SetupTab({
 				</>
 			) : !hasScript ? (
 				<div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-					<p className="text-[13px] font-medium text-muted-foreground">
-						No setup script configured
+					<p className="text-ui font-medium text-muted-foreground">
+						<I18nText source="noSetupScriptConfigured" />
 					</p>
-					<p className="text-[12px] text-muted-foreground/70">
-						Add a setup script in repository settings to run it here.
+					<p className="text-small text-muted-foreground/70">
+						<I18nText source="addSetupScriptRepositorySettingsRun" />
 					</p>
 					<Button
 						variant="outline"
 						size="sm"
-						className="mt-1 gap-1.5 text-[12px]"
+						className="mt-1 gap-1.5 text-small"
 						onClick={onOpenSettings}
 					>
 						<Settings2 className="size-3.5" strokeWidth={1.8} />
-						Open settings
+						<I18nText source="openSettings" />
 					</Button>
 				</div>
 			) : setupCompletedAt ? (
 				<div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
 					<CircleCheck
-						aria-label="Setup completed"
+						aria-label={t("setupCompleted")}
 						className="size-8 text-[var(--workspace-pr-open-accent)]"
 						strokeWidth={1.75}
 					/>
-					<p className="text-[13px] font-medium text-muted-foreground">
-						Setup completed
+					<p className="text-ui font-medium text-muted-foreground">
+						<I18nText source="setupCompleted" />
 					</p>
 					<Button
 						variant="outline"
 						size="sm"
-						className="mt-1 gap-1.5 text-[12px]"
+						className="mt-1 gap-1.5 text-small"
 						onClick={handleRun}
 					>
 						<RotateCcw className="size-3" strokeWidth={2} />
-						Rerun setup
+						<I18nText source="rerunSetup" />
 					</Button>
 				</div>
 			) : (
 				<div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-					<p className="text-[13px] text-muted-foreground">
-						No setup script output
+					<p className="text-ui text-muted-foreground">
+						<I18nText source="noSetupScriptOutput" />
 					</p>
-					<p className="text-[12px] text-muted-foreground/70">
-						Setup script output will appear here after running setup.
+					<p className="text-small text-muted-foreground/70">
+						<I18nText source="setupScriptOutputWillAppearHere" />
 					</p>
 					<Button
 						variant="outline"
 						size="sm"
-						className="mt-1 gap-1.5 text-[12px]"
+						className="mt-1 gap-1.5 text-small"
 						onClick={handleRun}
 					>
 						<Play className="size-3" strokeWidth={2} />
-						Run setup
+						<I18nText source="runSetup" />
 					</Button>
 				</div>
 			)}

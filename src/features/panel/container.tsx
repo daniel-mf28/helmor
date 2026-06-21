@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { enqueueComposerPrefill } from "@/features/composer/prefill-queue";
 import { getShortcut } from "@/features/shortcuts/registry";
 import type {
 	AgentModelSection,
@@ -17,7 +18,7 @@ import {
 	workspaceDetailQueryOptions,
 	workspaceSessionsQueryOptions,
 } from "@/lib/query-client";
-import { useSettings } from "@/lib/settings";
+import { type ModelRef, useSettings } from "@/lib/settings";
 import { requestSidebarReconcile } from "@/lib/sidebar-mutation-gate";
 import type { ContextCard } from "@/lib/sources/types";
 import { resolveSessionDisplayProvider } from "@/lib/workspace-helpers";
@@ -29,6 +30,7 @@ import { WorkspacePanel } from "./index";
 import type { SessionCloseRequest } from "./use-confirm-session-close";
 
 const EMPTY_MESSAGES: ThreadMessageLike[] = [];
+const EMPTY_SESSIONS: WorkspaceSessionSummary[] = [];
 
 /** Minimal shape the panel needs to render an optimistic user bubble for a
  *  freshly-created workspace whose first send is still queued behind
@@ -51,9 +53,10 @@ type WorkspacePanelContainerProps = {
 	sending: boolean;
 	busySessionIds?: Set<string>;
 	interactionRequiredSessionIds?: Set<string>;
-	modelSelections?: Record<string, string>;
+	modelSelections?: Record<string, ModelRef>;
 	workspaceChangeRequest?: ChangeRequestInfo | null;
 	onSelectSession: (sessionId: string | null) => void;
+	onSelectWorkspace?: (workspaceId: string) => void;
 	onResolveDisplayedSession: (sessionId: string | null) => void;
 	onQueuePendingPromptForSession?: (request: {
 		sessionId: string;
@@ -86,6 +89,7 @@ export const WorkspacePanelContainer = memo(function WorkspacePanelContainer({
 	modelSelections = {},
 	workspaceChangeRequest = null,
 	onSelectSession,
+	onSelectWorkspace,
 	onResolveDisplayedSession,
 	onQueuePendingPromptForSession,
 	onRequestCloseSession,
@@ -110,7 +114,7 @@ export const WorkspacePanelContainer = memo(function WorkspacePanelContainer({
 	});
 
 	const workspace = detailQuery.data ?? null;
-	const sessions = sessionsQuery.data ?? [];
+	const sessions = sessionsQuery.data ?? EMPTY_SESSIONS;
 	const rememberedSessionId = useMemo(() => {
 		if (sessionSelectionHistory.length === 0 || sessions.length === 0) {
 			return null;
@@ -331,15 +335,21 @@ export const WorkspacePanelContainer = memo(function WorkspacePanelContainer({
 						session,
 						modelSelections,
 						modelSections,
-						settingsDefaultModelId: settings.defaultModelId,
+						settingsDefaultModel: settings.defaultModel,
 					});
 					return provider ? [session.id, provider] : null;
 				})
 				.filter((entry): entry is [string, AgentProvider] => entry !== null),
 		);
-	}, [modelSelections, queryClient, sessions, settings.defaultModelId]);
+	}, [modelSelections, queryClient, sessions, settings.defaultModel]);
 
-	const preferredPaneSessionId = selectedSessionId ?? threadSessionId;
+	// The router's session intent only applies once the workspace selection
+	// has converged onto the paint track. During a deferred flip / cold hold
+	// the router already points at the incoming workspace, whose session
+	// intent must not blank the still-displayed pane of the old one.
+	const sessionIntentId =
+		selectedWorkspaceId === displayedWorkspaceId ? selectedSessionId : null;
+	const preferredPaneSessionId = sessionIntentId ?? threadSessionId;
 	const sessionPanes = useMemo(() => {
 		if (!preferredPaneSessionId) {
 			return [];
@@ -526,13 +536,18 @@ export const WorkspacePanelContainer = memo(function WorkspacePanelContainer({
 	const handleSelectSession = useCallback((sessionId: string) => {
 		onSelectSessionRef.current(sessionId);
 	}, []);
+	const onSelectWorkspaceRef = useRef(onSelectWorkspace);
+	onSelectWorkspaceRef.current = onSelectWorkspace;
+	const handleSelectWorkspace = useCallback((workspaceId: string) => {
+		onSelectWorkspaceRef.current?.(workspaceId);
+	}, []);
 	const handleSessionsChanged = useCallback(() => {
 		void invalidateSessionQueries();
 	}, [invalidateSessionQueries]);
 	const handleWorkspaceChanged = useCallback(() => {
 		void invalidateWorkspaceQueries();
 	}, [invalidateWorkspaceQueries]);
-	const selectedSessionIdForPanel = selectedSessionId ?? threadSessionId;
+	const selectedSessionIdForPanel = sessionIntentId ?? threadSessionId;
 	const selectedSession =
 		sessions.find((session) => session.id === selectedSessionIdForPanel) ??
 		null;
@@ -556,7 +571,7 @@ export const WorkspacePanelContainer = memo(function WorkspacePanelContainer({
 		if (!scripts.setupScript?.trim()) {
 			missing.push("setup");
 		}
-		if (!scripts.runScript?.trim()) {
+		if (!scripts.runActions.some((a) => a.command.trim())) {
 			missing.push("run");
 		}
 		if (!scripts.archiveScript?.trim()) {
@@ -578,6 +593,60 @@ export const WorkspacePanelContainer = memo(function WorkspacePanelContainer({
 		[onQueuePendingPromptForSession, selectedSessionIdForPanel],
 	);
 
+	// Inspector dropdowns sometimes want to "open a fresh session with a
+	// starter prompt already in the composer" — distinct from the
+	// onboarding `handleInitializeScript` path, which auto-sends into the
+	// currently-selected session. We create a fresh session, queue the
+	// prefill so the next composer mount picks it up, optimistically
+	// switch the workspace's active session pointer, and invalidate the
+	// sessions list. The composer then mounts, consumes the prefill,
+	// drops the caret right at the end of the intro line, and waits for
+	// the user to finish the thought before submitting.
+	const onSelectSessionLatest = useRef(onSelectSession);
+	onSelectSessionLatest.current = onSelectSession;
+	useEffect(() => {
+		const targetWorkspaceId = displayedWorkspaceId;
+		if (!targetWorkspaceId) return;
+		const handler = (event: Event) => {
+			const detail = (event as CustomEvent).detail as
+				| { workspaceId: string; intro: string; body: string }
+				| undefined;
+			if (!detail) return;
+			if (detail.workspaceId !== targetWorkspaceId) return;
+			void createSession(targetWorkspaceId).then(({ sessionId }) => {
+				enqueueComposerPrefill(sessionId, {
+					intro: detail.intro,
+					body: detail.body,
+				});
+				// Mirror the optimistic-update pattern used by the auto-
+				// create-session flow above: bump active_session_id on the
+				// cached workspace detail so the chat panel re-renders
+				// against the new session right away.
+				queryClient.setQueryData(
+					helmorQueryKeys.workspaceDetail(targetWorkspaceId),
+					(current: WorkspaceDetail | null | undefined) => {
+						if (!current) return current;
+						return {
+							...current,
+							activeSessionId: sessionId,
+							activeSessionTitle: "Untitled",
+							activeSessionAgentType: null,
+							activeSessionStatus: "idle",
+							sessionCount: Math.max(current.sessionCount, 1),
+						};
+					},
+				);
+				void queryClient.invalidateQueries({
+					queryKey: workspaceSessionsQueryOptions(targetWorkspaceId).queryKey,
+				});
+				onSelectSessionLatest.current(sessionId);
+			});
+		};
+		window.addEventListener("helmor:create-prefilled-session", handler);
+		return () =>
+			window.removeEventListener("helmor:create-prefilled-session", handler);
+	}, [displayedWorkspaceId, queryClient]);
+
 	return (
 		<WorkspacePanel
 			workspace={workspace}
@@ -595,6 +664,7 @@ export const WorkspacePanelContainer = memo(function WorkspacePanelContainer({
 			contextPreviewCard={contextPreviewCard}
 			contextPreviewActive={contextPreviewActive}
 			onSelectSession={handleSelectSession}
+			onSelectWorkspace={handleSelectWorkspace}
 			onSelectContextPreview={onSelectContextPreview}
 			onCloseContextPreview={onCloseContextPreview}
 			onPrefetchSession={handlePrefetchSession}

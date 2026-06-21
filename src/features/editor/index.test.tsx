@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterContextProvider } from "@tanstack/react-router";
 import {
 	cleanup,
 	fireEvent,
@@ -11,9 +12,10 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { EditorSessionState } from "@/lib/editor-session";
+import { router } from "@/router";
 
 const apiMocks = vi.hoisted(() => ({
-	listWorkspaceChangesWithContent: vi.fn(),
+	listWorkspaceChanges: vi.fn(),
 	listWorkspaceFiles: vi.fn(),
 	readEditorFile: vi.fn(),
 	readFileAtRef: vi.fn(),
@@ -91,7 +93,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
 
 	return {
 		...actual,
-		listWorkspaceChangesWithContent: apiMocks.listWorkspaceChangesWithContent,
+		listWorkspaceChanges: apiMocks.listWorkspaceChanges,
 		listWorkspaceFiles: apiMocks.listWorkspaceFiles,
 		readEditorFile: apiMocks.readEditorFile,
 		readFileAtRef: apiMocks.readFileAtRef,
@@ -135,30 +137,37 @@ function EditorSurfaceHarness({
 			}),
 	);
 
+	// Stage 3b: WorkspaceEditorSurface reads `selectedWorkspaceId` from the
+	// ROUTER. The `beforeEach` resets the module router to `/`, so the editor
+	// reads `workspaceId = null` — the prior default these tests were written
+	// against. A bare RouterContextProvider is enough (the editor only reads;
+	// it never navigates).
 	return (
 		<QueryClientProvider client={queryClient}>
-			<WorkspaceEditorSurface
-				editorSession={session}
-				workspaceRootPath="/tmp/helmor-workspace"
-				onChangeSession={(next) => {
-					onChangeSpy(next);
-					setSession(next);
-				}}
-				onError={onError}
-				onExit={vi.fn()}
-			/>
+			<RouterContextProvider router={router}>
+				<WorkspaceEditorSurface
+					editorSession={session}
+					workspaceRootPath="/tmp/helmor-workspace"
+					onChangeSession={(next) => {
+						onChangeSpy(next);
+						setSession(next);
+					}}
+					onError={onError}
+					onExit={vi.fn()}
+				/>
+			</RouterContextProvider>
 		</QueryClientProvider>
 	);
 }
 
 describe("WorkspaceEditorSurface", () => {
 	beforeEach(() => {
+		// Stage 3b: the editor reads the selected workspace from the module-scope
+		// router. Reset it to `/` so each test starts with `workspaceId = null`.
+		router.history.replace("/");
 		runtimeMocks.reset();
-		apiMocks.listWorkspaceChangesWithContent.mockReset();
-		apiMocks.listWorkspaceChangesWithContent.mockResolvedValue({
-			items: [],
-			prefetched: [],
-		});
+		apiMocks.listWorkspaceChanges.mockReset();
+		apiMocks.listWorkspaceChanges.mockResolvedValue([]);
 		apiMocks.listWorkspaceFiles.mockReset();
 		apiMocks.readEditorFile.mockReset();
 		apiMocks.readFileAtRef.mockReset();
@@ -406,23 +415,20 @@ describe("WorkspaceEditorSurface", () => {
 				committedDeletions: 0,
 			},
 		]);
-		apiMocks.listWorkspaceChangesWithContent.mockResolvedValue({
-			items: [
-				{
-					path: "src/utils.ts",
-					absolutePath: "/tmp/helmor-workspace/src/utils.ts",
-					name: "utils.ts",
-					status: "M",
-					stagedInsertions: 0,
-					stagedDeletions: 0,
-					unstagedInsertions: 3,
-					unstagedDeletions: 1,
-					committedInsertions: 0,
-					committedDeletions: 0,
-				},
-			],
-			prefetched: [],
-		});
+		apiMocks.listWorkspaceChanges.mockResolvedValue([
+			{
+				path: "src/utils.ts",
+				absolutePath: "/tmp/helmor-workspace/src/utils.ts",
+				name: "utils.ts",
+				status: "M",
+				stagedInsertions: 0,
+				stagedDeletions: 0,
+				unstagedInsertions: 3,
+				unstagedDeletions: 1,
+				committedInsertions: 0,
+				committedDeletions: 0,
+			},
+		]);
 
 		render(
 			<TooltipProvider delayDuration={0}>
@@ -712,23 +718,20 @@ describe("WorkspaceEditorSurface", () => {
 				committedDeletions: 0,
 			},
 		]);
-		apiMocks.listWorkspaceChangesWithContent.mockResolvedValue({
-			items: [
-				{
-					path: "src/utils.ts",
-					absolutePath: "/tmp/helmor-workspace/src/utils.ts",
-					name: "utils.ts",
-					status: "M",
-					stagedInsertions: 0,
-					stagedDeletions: 0,
-					unstagedInsertions: 3,
-					unstagedDeletions: 1,
-					committedInsertions: 0,
-					committedDeletions: 0,
-				},
-			],
-			prefetched: [],
-		});
+		apiMocks.listWorkspaceChanges.mockResolvedValue([
+			{
+				path: "src/utils.ts",
+				absolutePath: "/tmp/helmor-workspace/src/utils.ts",
+				name: "utils.ts",
+				status: "M",
+				stagedInsertions: 0,
+				stagedDeletions: 0,
+				unstagedInsertions: 3,
+				unstagedDeletions: 1,
+				committedInsertions: 0,
+				committedDeletions: 0,
+			},
+		]);
 		apiMocks.readFileAtRef.mockResolvedValue("export const value = 0;\n");
 		apiMocks.readEditorFile.mockResolvedValue({
 			path: "/tmp/helmor-workspace/src/utils.ts",

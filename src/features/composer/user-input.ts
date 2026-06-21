@@ -4,11 +4,12 @@ import type { PendingUserInput } from "@/features/conversation/pending-user-inpu
  * Generic options the frontend can attach when resolving a parked
  * `userInputRequest`. The `content` field carries whatever the matching
  * sub-renderer produced — its shape is per-kind (AUQ updatedInput, MCP
- * elicitation content map, or empty for url-mode). The sidecar's
- * resolver closure knows what to do with it.
+ * elicitation content map, or empty for url-mode). `meta` is opaque
+ * provider-specific metadata (e.g. Codex `{ persist: "session" | "always" }`).
  */
 export type UserInputResponseOptions = {
 	content?: Record<string, unknown>;
+	meta?: Record<string, unknown>;
 };
 
 export type UserInputResponseHandler = (
@@ -38,6 +39,9 @@ export type AskUserQuestionItem = {
 	question: string;
 	options: AskUserQuestionOption[];
 	multiSelect: boolean;
+	/** Whether the free-text "Other" input is offered (Codex `isOther`;
+	 *  always true for Claude/OpenCode). */
+	allowFreeText: boolean;
 };
 
 export type AskUserQuestionViewModel = {
@@ -47,7 +51,6 @@ export type AskUserQuestionViewModel = {
 	questions: AskUserQuestionItem[];
 	answers: Record<string, string>;
 	annotations: Record<string, AskUserQuestionAnnotation>;
-	rawInput: Record<string, unknown>;
 };
 
 export type UnsupportedAskUserQuestionViewModel = {
@@ -72,33 +75,6 @@ function readBoolean(value: unknown): boolean {
 	return value === true;
 }
 
-function readStringRecord(value: unknown): Record<string, string> {
-	if (!isRecord(value)) return {};
-	const next: Record<string, string> = {};
-	for (const [key, entry] of Object.entries(value)) {
-		if (typeof entry === "string") next[key] = entry;
-	}
-	return next;
-}
-
-function readAnnotations(
-	value: unknown,
-): Record<string, AskUserQuestionAnnotation> {
-	if (!isRecord(value)) return {};
-	const next: Record<string, AskUserQuestionAnnotation> = {};
-	for (const [key, entry] of Object.entries(value)) {
-		if (!isRecord(entry)) continue;
-		const preview = readString(entry.preview);
-		const notes = readString(entry.notes);
-		if (!preview && !notes) continue;
-		next[key] = {
-			...(preview ? { preview } : {}),
-			...(notes ? { notes } : {}),
-		};
-	}
-	return next;
-}
-
 function normalizeQuestion(
 	value: unknown,
 	index: number,
@@ -108,10 +84,7 @@ function normalizeQuestion(
 	const question = readString(value.question);
 	if (!question) return null;
 
-	const optionsValue = value.options;
-	if (!Array.isArray(optionsValue)) return null;
-
-	const options = optionsValue
+	const options = (Array.isArray(value.options) ? value.options : [])
 		.map((option) => {
 			if (!isRecord(option)) return null;
 			const label = readString(option.label);
@@ -124,7 +97,10 @@ function normalizeQuestion(
 		})
 		.filter((option): option is AskUserQuestionOption => option !== null);
 
-	if (options.length === 0) return null;
+	// Canonical questions default to free-text allowed; a question with
+	// neither options nor free text has nothing to answer with.
+	const allowFreeText = value.allowFreeText !== false;
+	if (options.length === 0 && !allowFreeText) return null;
 
 	return {
 		key: question,
@@ -132,6 +108,7 @@ function normalizeQuestion(
 		question,
 		options,
 		multiSelect: readBoolean(value.multiSelect),
+		allowFreeText,
 	};
 }
 
@@ -139,11 +116,12 @@ function normalizeQuestion(
  * Build the view model the AskUserQuestion renderer expects. Returns
  * an `unsupported` shape when the payload doesn't have any well-formed
  * questions — the dispatcher renders a fallback in that case so a
- * malformed AUQ input doesn't blank the panel.
+ * malformed payload doesn't blank the panel.
  *
- * NOTE: this builds the existing AUQ view model verbatim — preview /
- * notes / header / multiSelect / answers / annotations / `metadata.source`
- * all flow through unchanged from the AUQ tool input.
+ * The payload questions arrive in the canonical shape (normalized on
+ * the Rust side from Claude/Codex/OpenCode raw questions); the renderer
+ * submits `{ answers, annotations? }` keyed by question text and the
+ * sidecar managers map that back to each provider's reply shape.
  */
 export function normalizeAskUserQuestion(
 	userInput: PendingUserInput,
@@ -155,13 +133,6 @@ export function normalizeAskUserQuestion(
 			reason: "Expected ask-user-question payload.",
 		};
 	}
-
-	const rawInput = {
-		questions: userInput.payload.questions,
-		...(userInput.payload.metadata
-			? { metadata: userInput.payload.metadata }
-			: {}),
-	};
 
 	const questions = userInput.payload.questions
 		.map((q, index) => normalizeQuestion(q, index))
@@ -178,20 +149,13 @@ export function normalizeAskUserQuestion(
 	const metadata = userInput.payload.metadata;
 	const source =
 		userInput.source || (metadata ? (readString(metadata.source) ?? "") : "");
-	const answers = isRecord(rawInput.questions)
-		? {}
-		: readStringRecord((rawInput as { answers?: unknown }).answers);
-	const annotations = readAnnotations(
-		(rawInput as { annotations?: unknown }).annotations,
-	);
 
 	return {
 		kind: "ask-user-question",
 		userInputId: userInput.userInputId,
 		source,
 		questions,
-		answers,
-		annotations,
-		rawInput,
+		answers: {},
+		annotations: {},
 	};
 }

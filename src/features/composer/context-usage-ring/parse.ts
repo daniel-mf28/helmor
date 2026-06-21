@@ -2,18 +2,29 @@
 // The ring shows whatever was recorded at the last turn end — switching the
 // composer model in-place does not invalidate it; the next turn refreshes it.
 
+import { formatSource, translateSource } from "@/lib/i18n";
+
+export type ContextCategory = {
+	readonly name: string;
+	readonly tokens: number;
+};
+
 /** Baseline: written at turn end by both Claude and Codex. */
 export type StoredContextUsageMeta = {
 	readonly modelId: string;
 	readonly usedTokens: number;
 	readonly maxTokens: number;
 	readonly percentage: number;
+	/** Cumulative session cost (USD); opencode only. */
+	readonly cost?: number;
+	/** opencode stores the breakdown in the baseline; Claude on the rich payload. */
+	readonly categories?: ReadonlyArray<ContextCategory>;
 };
 
 /** Claude-only breakdown fetched live on hover. */
 export type ClaudeRichContextUsage = StoredContextUsageMeta & {
 	readonly isAutoCompactEnabled: boolean;
-	readonly categories: ReadonlyArray<{ name: string; tokens: number }>;
+	readonly categories: ReadonlyArray<ContextCategory>;
 };
 
 /** <60 default, 60–80 warning, >=80 danger. */
@@ -36,6 +47,8 @@ export type DisplayResolution =
 			readonly percentage: number;
 			readonly tier: RingTier;
 			readonly rich: ClaudeRichContextUsage | null;
+			readonly cost: number | null;
+			readonly categories: ReadonlyArray<ContextCategory>;
 	  };
 
 /** Rich (hover-time live fetch) drives the ring when it carries
@@ -58,7 +71,24 @@ export function resolveContextUsageDisplay(
 		percentage: effective.percentage,
 		tier: ringTier(effective.percentage),
 		rich,
+		cost: typeof effective.cost === "number" ? effective.cost : null,
+		categories: effective.categories ?? [],
 	};
+}
+
+/** Parse a `categories` array, dropping malformed entries. */
+function parseCategories(value: Json): ContextCategory[] {
+	if (!Array.isArray(value)) return [];
+	const out: ContextCategory[] = [];
+	for (const entry of value) {
+		const obj = asObject(entry);
+		if (!obj) continue;
+		const name = typeof obj.name === "string" ? obj.name : null;
+		const tokens = asNumber(obj.tokens);
+		if (!name || tokens === null) continue;
+		out.push({ name, tokens });
+	}
+	return out;
 }
 
 /** A rich payload is trusted when it has non-zero used/max — anything
@@ -103,11 +133,15 @@ export function parseStoredMeta(
 	const used = asNumber(root.usedTokens);
 	const max = asNumber(root.maxTokens);
 	if (used === null || max === null) return null;
+	const cost = asNumber(root.cost);
+	const categories = parseCategories(root.categories);
 	return {
 		modelId: typeof root.modelId === "string" ? root.modelId : "",
 		usedTokens: used,
 		maxTokens: max,
 		percentage: asNumber(root.percentage) ?? clampPercent(used, max),
+		...(cost !== null ? { cost } : {}),
+		...(categories.length > 0 ? { categories } : {}),
 	};
 }
 
@@ -126,16 +160,7 @@ export function parseClaudeRichMeta(
 	const used = asNumber(root.usedTokens);
 	const max = asNumber(root.maxTokens);
 	if (used === null || max === null) return null;
-	const rawCategories = Array.isArray(root.categories) ? root.categories : [];
-	const categories: Array<{ name: string; tokens: number }> = [];
-	for (const entry of rawCategories) {
-		const obj = asObject(entry);
-		if (!obj) continue;
-		const name = typeof obj.name === "string" ? obj.name : null;
-		const tokens = asNumber(obj.tokens);
-		if (!name || tokens === null) continue;
-		categories.push({ name, tokens });
-	}
+	const categories = parseCategories(root.categories);
 	return {
 		modelId: typeof root.modelId === "string" ? root.modelId : "",
 		usedTokens: used,
@@ -154,6 +179,16 @@ export function formatTokens(tokens: number): string {
 	if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
 	if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`;
 	return String(tokens);
+}
+
+const USD = new Intl.NumberFormat("en-US", {
+	style: "currency",
+	currency: "USD",
+});
+
+/** Format USD: "$0.00" / "$1.23". */
+export function formatUsd(cost: number): string {
+	return USD.format(Number.isFinite(cost) && cost > 0 ? cost : 0);
 }
 
 // ── Rate limits (orthogonal to context meta) ───────────────────────────
@@ -223,21 +258,26 @@ function parseCodexNotes(
 
 	const planRaw = root.plan_type ?? root.planType;
 	const planLabel = formatCodexPlan(planRaw);
-	if (planLabel) notes.push({ label: "Plan", value: planLabel });
+	if (planLabel)
+		notes.push({ label: translateSource("plan"), value: planLabel });
 
 	const credits = asObject(root.credits);
 	if (credits) {
 		const unlimited = credits.unlimited === true;
 		const hasCredits =
 			credits.has_credits === true || credits.hasCredits === true;
+		const creditsLabel = translateSource("credits");
 		if (unlimited) {
-			notes.push({ label: "Credits", value: "Unlimited" });
+			notes.push({
+				label: creditsLabel,
+				value: translateSource("composerCreditsUnlimited"),
+			});
 		} else {
 			const balance = parseCreditsBalance(credits.balance);
 			if (balance !== null) {
-				notes.push({ label: "Credits", value: formatCredits(balance) });
+				notes.push({ label: creditsLabel, value: formatCredits(balance) });
 			} else if (hasCredits === false) {
-				notes.push({ label: "Credits", value: "0.00" });
+				notes.push({ label: creditsLabel, value: "0.00" });
 			}
 		}
 	}
@@ -418,8 +458,8 @@ function claudeExtraSuffix(key: string): string | null {
 function humanizeClaudeSuffix(suffix: string): string {
 	if (suffix === "sonnet") return "Sonnet";
 	if (suffix === "opus") return "Opus";
-	if (suffix === "omelette") return "Designs";
-	if (suffix === "cowork") return "Daily Routines";
+	if (suffix === "omelette") return translateSource("composerUsageDesigns");
+	if (suffix === "cowork") return translateSource("composerUsageDailyRoutines");
 	return suffix
 		.split("_")
 		.filter(Boolean)
@@ -429,9 +469,11 @@ function humanizeClaudeSuffix(suffix: string): string {
 
 function formatWindowLabel(minutes: number | null): string | null {
 	if (minutes === null || minutes <= 0) return null;
-	if (minutes % (60 * 24) === 0) return `${minutes / 60 / 24}d limit`;
-	if (minutes % 60 === 0) return `${minutes / 60}h limit`;
-	return `${minutes}m limit`;
+	if (minutes % (60 * 24) === 0)
+		return formatSource("composerDayLimit", { count: minutes / 60 / 24 });
+	if (minutes % 60 === 0)
+		return formatSource("composerHourLimit", { count: minutes / 60 });
+	return formatSource("composerMinuteLimit", { count: minutes });
 }
 
 /** Format a unix-seconds timestamp like "Apr 23, 1:29 PM". */

@@ -6,6 +6,7 @@ import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { deleteRepository, type RepositoryCreateOption } from "@/lib/api";
+import { I18nText, useI18n } from "@/lib/i18n";
 
 export function DeleteRepoSection({
 	repo,
@@ -14,6 +15,7 @@ export function DeleteRepoSection({
 	repo: RepositoryCreateOption;
 	onDeleted: () => void;
 }) {
+	const { f } = useI18n();
 	const [confirmOpen, setConfirmOpen] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -34,13 +36,12 @@ export function DeleteRepoSection({
 	return (
 		<>
 			<div className="py-5">
-				<div className="flex items-center gap-2 text-[13px] font-medium leading-snug text-foreground">
+				<div className="flex items-center gap-2 text-ui font-medium leading-snug text-foreground">
 					<Trash2 className="size-3.5 text-destructive" strokeWidth={1.8} />
-					Delete Repository
+					<I18nText source="deleteRepository" />
 				</div>
-				<div className="mt-1 text-[12px] leading-snug text-muted-foreground">
-					Permanently remove this repository and all its workspaces, sessions,
-					and messages.
+				<div className="mt-1 text-small leading-snug text-muted-foreground">
+					<I18nText source="permanentlyRemoveRepositoryAllItsWorkspaces" />
 				</div>
 				<Button
 					variant="destructive"
@@ -51,10 +52,10 @@ export function DeleteRepoSection({
 						setConfirmOpen(true);
 					}}
 				>
-					Delete Repository
+					<I18nText source="deleteRepository" />
 				</Button>
 				{error && (
-					<div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
+					<div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-small text-destructive">
 						{error}
 					</div>
 				)}
@@ -63,16 +64,15 @@ export function DeleteRepoSection({
 			<ConfirmDialog
 				open={confirmOpen}
 				onOpenChange={setConfirmOpen}
-				title={`Delete ${repo.name}?`}
+				title={f("settingsDeleteRepoNameConfirm", { name: repo.name })}
 				description={
 					<>
-						This will permanently delete all workspaces, sessions, and messages
-						associated with{" "}
-						<strong className="text-foreground/80">{repo.name}</strong>. This
-						cannot be undone.
+						<I18nText source="willPermanentlyDeleteAllWorkspacesSessions" />{" "}
+						<strong className="text-foreground/80">{repo.name}</strong>
+						<I18nText source="cannotUndone" />
 					</>
 				}
-				confirmLabel={deleting ? "Deleting..." : "Delete"}
+				confirmLabel={deleting ? "deleting" : "delete"}
 				onConfirm={() => void handleDelete()}
 				loading={deleting}
 			/>

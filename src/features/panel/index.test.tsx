@@ -15,6 +15,7 @@ import { createHelmorQueryClient, helmorQueryKeys } from "@/lib/query-client";
 const apiMocks = vi.hoisted(() => ({
 	createSession: vi.fn(),
 	hideSession: vi.fn(),
+	renameSession: vi.fn(),
 }));
 
 vi.mock("@/components/icons", () => ({
@@ -47,6 +48,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
 		...actual,
 		createSession: apiMocks.createSession,
 		hideSession: apiMocks.hideSession,
+		renameSession: apiMocks.renameSession,
 	};
 });
 
@@ -105,8 +107,10 @@ describe("WorkspacePanel", () => {
 	beforeEach(() => {
 		apiMocks.createSession.mockReset();
 		apiMocks.hideSession.mockReset();
+		apiMocks.renameSession.mockReset();
 		apiMocks.createSession.mockResolvedValue({ sessionId: "session-new" });
 		apiMocks.hideSession.mockResolvedValue(undefined);
+		apiMocks.renameSession.mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
@@ -319,12 +323,67 @@ describe("WorkspacePanel", () => {
 			"px-8",
 		);
 		const heading = within(centeredContainer!).getByText("Nothing here yet");
+		expect(heading).toHaveClass("text-foreground/70");
 		expect(heading.parentElement).toHaveClass(
 			"flex",
 			"max-w-sm",
 			"flex-col",
 			"items-center",
 			"gap-2",
+		);
+	});
+
+	it("shows star collection progress on the workspace name text button", async () => {
+		const user = userEvent.setup();
+
+		render(
+			<TooltipProvider delayDuration={0}>
+				<QueryClientProvider client={createHelmorQueryClient()}>
+					<WorkspacePanel
+						workspace={{ ...WORKSPACE, directoryName: "himalia" }}
+						sessions={SESSIONS}
+						selectedSessionId="session-1"
+						sessionPanes={[
+							{
+								sessionId: "session-1",
+								messages: [],
+								sending: false,
+								hasLoaded: true,
+								presentationState: "presented",
+							},
+						]}
+						sending={false}
+					/>
+				</QueryClientProvider>
+			</TooltipProvider>,
+		);
+
+		const workspaceButton = screen.getByRole("button", { name: "himalia" });
+		const alignedText = screen.getByText("New session in").parentElement;
+
+		expect(workspaceButton.querySelector("svg")).toBeNull();
+		expect(alignedText).toHaveClass(
+			"inline-flex",
+			"items-center",
+			"whitespace-nowrap",
+		);
+
+		await user.hover(workspaceButton);
+
+		const tooltip = await screen.findByRole("tooltip");
+		const tooltipContent = document.querySelector(
+			'[data-slot="tooltip-content"]',
+		);
+
+		expect(tooltip).toHaveTextContent("You've collected 122/185 stars!");
+		expect(tooltip.querySelector("svg")).not.toBeNull();
+		expect(tooltipContent).toHaveClass(
+			"flex",
+			"h-[24px]",
+			"items-center",
+			"px-2",
+			"text-small",
+			"leading-none",
 		);
 	});
 
@@ -360,7 +419,7 @@ describe("WorkspacePanel", () => {
 			screen.getByRole("button", { name: /Create archive script/i }),
 		).toBeInTheDocument();
 		expect(
-			screen.queryByRole("button", { name: /Create run script/i }),
+			screen.queryByRole("button", { name: /Create run actions/i }),
 		).toBeNull();
 	});
 
@@ -393,7 +452,7 @@ describe("WorkspacePanel", () => {
 		);
 
 		await user.click(
-			screen.getByRole("button", { name: /Create run script/i }),
+			screen.getByRole("button", { name: /Create run actions/i }),
 		);
 
 		expect(onInitializeScript).toHaveBeenCalledWith("run");
@@ -521,5 +580,56 @@ describe("WorkspacePanel", () => {
 		expect(session2Tab).toBeDefined();
 		expect(within(session1Tab!).getByTestId("codex-icon")).toBeInTheDocument();
 		expect(within(session2Tab!).getByTestId("claude-icon")).toBeInTheDocument();
+	});
+
+	it("keeps long session title tooltips bounded while rename remains reachable", async () => {
+		const user = userEvent.setup();
+		const longTitle = `处理 workspace tab 自动命名失败后产生的超长 hover tooltip 文本 ${"reallylongunbrokentoken".repeat(16)}`;
+		const sessions = [
+			{
+				...SESSIONS[0],
+				title: longTitle,
+			},
+		];
+
+		render(
+			<TooltipProvider delayDuration={0}>
+				<QueryClientProvider client={createHelmorQueryClient()}>
+					<WorkspacePanel
+						workspace={WORKSPACE}
+						sessions={sessions}
+						selectedSessionId="session-1"
+						sessionPanes={[]}
+						sending={false}
+					/>
+				</QueryClientProvider>
+			</TooltipProvider>,
+		);
+
+		const tab = screen.getByRole("tab", { name: /处理 workspace tab/ });
+		await user.hover(tab);
+
+		const tooltip = await screen.findByRole("tooltip");
+		const tooltipContent = document.querySelector(
+			'[data-slot="tooltip-content"]',
+		) as HTMLElement | null;
+		expect(tooltipContent).not.toBeNull();
+		expect(tooltipContent!).toHaveClass(
+			"max-w-[22rem]",
+			"whitespace-normal",
+			"leading-snug",
+		);
+		expect(tooltip.textContent?.length).toBeLessThanOrEqual(240);
+		expect(tooltip.textContent).toMatch(/\.\.\.$/);
+
+		const tooltipText = tooltip.querySelector("span");
+		expect(tooltipText).toHaveClass("whitespace-normal", "break-words");
+		expect(tooltipText?.className).toContain("[overflow-wrap:anywhere]");
+
+		await user.click(
+			within(tab).getByRole("button", { name: "Rename session" }),
+		);
+
+		expect(within(tab).getByDisplayValue(longTitle)).toBeInTheDocument();
 	});
 });

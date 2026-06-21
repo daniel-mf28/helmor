@@ -6,6 +6,7 @@ import {
 	SettingsIcon,
 	SquarePenIcon,
 	XIcon,
+	ZapIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { GithubBrandIcon } from "@/components/brand-icon";
@@ -28,6 +29,8 @@ import {
 	writeLastSeenInstallVersion,
 } from "@/features/announcements/storage";
 import type { SettingsSection } from "@/features/settings";
+import { toggleQuickPanel } from "@/lib/api";
+import { I18nText, useI18n } from "@/lib/i18n";
 import type { WorkspaceRightSidebarMode } from "@/lib/settings";
 import packageJson from "../../../package.json";
 
@@ -94,6 +97,9 @@ export function ReleaseAnnouncementToastHost({
 			case "openStartPage":
 				onOpenStartPage();
 				break;
+			case "toggleQuickPanel":
+				void toggleQuickPanel();
+				break;
 		}
 	};
 
@@ -140,8 +146,9 @@ function ReleaseAnnouncementToast({
 						autoplay={false}
 						className="shrink-0 opacity-90"
 					/>
-					<div className="truncate text-[13px] font-semibold leading-none text-foreground">
-						New in v{announcement.version}
+					<div className="truncate text-ui font-semibold leading-none text-foreground">
+						<I18nText source="newV" />
+						{announcement.version}
 					</div>
 				</div>
 				<div className="-mr-1 flex items-center gap-1">
@@ -152,8 +159,8 @@ function ReleaseAnnouncementToast({
 						className="text-muted-foreground hover:text-foreground"
 						aria-label={
 							collapsed
-								? "Expand release announcement"
-								: "Collapse release announcement"
+								? "miscExpandReleaseAnnouncement"
+								: "miscCollapseReleaseAnnouncement"
 						}
 						onClick={() => setCollapsed((value) => !value)}
 					>
@@ -168,7 +175,7 @@ function ReleaseAnnouncementToast({
 						variant="ghost"
 						size="icon-xs"
 						className="text-muted-foreground hover:text-foreground"
-						aria-label="Dismiss release announcement"
+						aria-label="dismissReleaseAnnouncement"
 						onClick={onClose}
 					>
 						<XIcon className="size-3.5" />
@@ -205,7 +212,7 @@ function ReleaseAnnouncementToast({
 								onClick={onOpenChangelog}
 							>
 								<GithubBrandIcon size={14} />
-								Changelogs
+								<I18nText source="changelogs" />
 								<ExternalLinkIcon className="size-3" />
 							</Button>
 						</div>
@@ -223,10 +230,11 @@ function ReleaseAnnouncementListItem({
 	item: ReleaseAnnouncementItem;
 	onRunAction: (action: ReleaseAnnouncementAction) => void;
 }) {
+	const { t } = useI18n();
 	const action = item.action;
 
 	return (
-		<li className="grid grid-cols-[18px_1fr] gap-[2px] text-[12px] leading-relaxed text-muted-foreground">
+		<li className="grid grid-cols-[18px_1fr] gap-[2px] text-small leading-relaxed text-muted-foreground">
 			<span
 				className="leading-relaxed text-muted-foreground/70"
 				aria-hidden="true"
@@ -234,18 +242,18 @@ function ReleaseAnnouncementListItem({
 				-
 			</span>
 			<div className="min-w-0">
-				<span>{item.text}</span>
+				<span>{t(item.text)}</span>
 				{action ? (
 					<button
 						type="button"
-						className="ml-1.5 inline cursor-interactive align-baseline text-[12px] leading-[inherit] font-semibold text-foreground hover:underline"
+						className="ml-1.5 inline cursor-interactive align-baseline text-small leading-[inherit] font-semibold text-foreground hover:underline"
 						onClick={() => onRunAction(action.value)}
 					>
 						<ActionIcon
 							action={action.value}
 							className="mr-1 inline-block size-[1em] align-[-0.125em]"
 						/>
-						{action.label}
+						{t(action.label)}
 					</button>
 				) : null}
 			</div>
@@ -267,6 +275,8 @@ function ActionIcon({
 			return <SettingsIcon className={className} />;
 		case "openStartPage":
 			return <SquarePenIcon className={className} />;
+		case "toggleQuickPanel":
+			return <ZapIcon className={className} />;
 	}
 }
 

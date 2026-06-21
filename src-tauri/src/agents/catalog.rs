@@ -37,26 +37,238 @@ pub struct AgentModelSection {
     pub options: Vec<AgentModelOption>,
 }
 
+/// The composer/CLI picker catalog: full catalog with the user's model
+/// selection applied. Empty sections are omitted.
 pub fn static_model_sections() -> Vec<AgentModelSection> {
+    let claude_enabled = load_enabled_model_ids("app.claude_enabled_model_ids");
+    let codex_enabled = load_enabled_model_ids("app.codex_enabled_model_ids");
+    // Each custom Codex provider gets its own `codex:<id>` section, not merged
+    // into Codex; all gated by the unified `codex_enabled` list.
+    let mut sections = apply_official_enabled_filter(
+        model_sections_for_inputs(
+            crate::provider::claude::configured_models(),
+            Vec::new(),
+            load_cursor_prefs(),
+            load_opencode_prefs(),
+            load_mimo_prefs(),
+            load_kimi_prefs(),
+        ),
+        claude_enabled.as_deref(),
+        codex_enabled.as_deref(),
+    );
+    let custom = codex_custom_sections(
+        crate::provider::codex::load_providers(),
+        codex_enabled.as_deref(),
+    );
+    if !custom.is_empty() {
+        let at = sections
+            .iter()
+            .position(|section| section.id == "codex")
+            .or_else(|| sections.iter().position(|section| section.id == "claude"))
+            .map(|i| i + 1)
+            .unwrap_or(sections.len());
+        for (offset, section) in custom.into_iter().enumerate() {
+            sections.insert(at + offset, section);
+        }
+    }
+    drop_empty_sections(sections)
+}
+
+/// Full unfiltered catalog for the Settings "Models" multi-selects. Custom
+/// Codex providers are merged into the Codex section here (unlike the composer).
+pub fn full_catalog_sections() -> Vec<AgentModelSection> {
     model_sections_for_inputs(
-        super::custom_providers::configured_models(),
+        crate::provider::claude::configured_models(),
+        codex_custom_catalog_options(crate::provider::codex::load_providers()),
         load_cursor_prefs(),
+        load_opencode_prefs(),
+        load_mimo_prefs(),
+        load_kimi_prefs(),
     )
+}
+
+fn load_enabled_model_ids(key: &str) -> Option<Vec<String>> {
+    // null/absent → None (all enabled); `[]` → Some(empty) (none enabled).
+    crate::settings::load_setting_json::<Vec<String>>(key)
+        .ok()
+        .flatten()
+}
+
+/// Apply each official family's enabled-id filter to its own section's options.
+/// `claude`/`codex` track separate enabled lists; other sections pass through.
+/// Sections left without models are hidden later by `drop_empty_sections`.
+fn apply_official_enabled_filter(
+    sections: Vec<AgentModelSection>,
+    claude_enabled: Option<&[String]>,
+    codex_enabled: Option<&[String]>,
+) -> Vec<AgentModelSection> {
+    sections
+        .into_iter()
+        .map(|mut section| {
+            match section.id.as_str() {
+                "claude" => section
+                    .options
+                    .retain(|opt| crate::provider::is_enabled(claude_enabled, &opt.id)),
+                "codex" => section
+                    .options
+                    .retain(|opt| crate::provider::is_enabled(codex_enabled, &opt.id)),
+                _ => {}
+            }
+            section
+        })
+        .collect()
+}
+
+/// Hide every section with no models, regardless of provider, so the composer
+/// never renders an empty group.
+fn drop_empty_sections(sections: Vec<AgentModelSection>) -> Vec<AgentModelSection> {
+    sections
+        .into_iter()
+        .filter(|section| !section.options.is_empty())
+        .collect()
+}
+
+/// One section per custom Codex provider, filtered by `codex_enabled` (full
+/// `codex:<id>|<wire>` ids). Providers with no enabled models are omitted.
+fn codex_custom_sections(
+    providers: Vec<crate::provider::CustomProvider>,
+    codex_enabled: Option<&[String]>,
+) -> Vec<AgentModelSection> {
+    let mut sections = Vec::new();
+    for provider in providers {
+        let instance_id = provider.id.trim();
+        if instance_id.is_empty() || provider.base_url.trim().is_empty() {
+            continue;
+        }
+        let provider_id = crate::provider::codex::provider_id(instance_id);
+        let label = if provider.name.trim().is_empty() {
+            format!("Codex · {instance_id}")
+        } else {
+            provider.name.trim().to_string()
+        };
+        let mut options = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for model in &provider.models {
+            let wire = model.slug.trim();
+            if wire.is_empty() || !seen.insert(wire.to_string()) {
+                continue;
+            }
+            let model_id = crate::provider::codex::model_id(instance_id, wire);
+            if !crate::provider::is_enabled(codex_enabled, &model_id) {
+                continue;
+            }
+            let model_label = if model.label.trim().is_empty() {
+                wire
+            } else {
+                model.label.trim()
+            };
+            options.push(codex_custom_model(
+                instance_id,
+                &provider_id,
+                wire,
+                model_label,
+            ));
+        }
+        if options.is_empty() {
+            continue;
+        }
+        sections.push(AgentModelSection {
+            id: provider_id,
+            label,
+            status: AgentModelSectionStatus::Ready,
+            options,
+        });
+    }
+    sections
+}
+
+/// Flat unfiltered list of every custom Codex model, for the Settings picker.
+/// Custom models merge into the Codex section here, so each label is prefixed
+/// with its provider name (`Name · model`) — otherwise a custom `gpt-5.5` is
+/// indistinguishable from the official one. Mirrors OpenCode's labelling.
+fn codex_custom_catalog_options(
+    providers: Vec<crate::provider::CustomProvider>,
+) -> Vec<AgentModelOption> {
+    let mut out = Vec::new();
+    for provider in providers {
+        let instance_id = provider.id.trim();
+        if instance_id.is_empty() || provider.base_url.trim().is_empty() {
+            continue;
+        }
+        let provider_id = crate::provider::codex::provider_id(instance_id);
+        let prefix = if provider.name.trim().is_empty() {
+            instance_id
+        } else {
+            provider.name.trim()
+        };
+        let mut seen = std::collections::HashSet::new();
+        for model in &provider.models {
+            let wire = model.slug.trim();
+            if wire.is_empty() || !seen.insert(wire.to_string()) {
+                continue;
+            }
+            let model_label = if model.label.trim().is_empty() {
+                wire
+            } else {
+                model.label.trim()
+            };
+            out.push(codex_custom_model(
+                instance_id,
+                &provider_id,
+                wire,
+                &format!("{prefix} · {model_label}"),
+            ));
+        }
+    }
+    out
+}
+
+fn codex_custom_model(
+    instance_id: &str,
+    provider_id: &str,
+    wire_model: &str,
+    label: &str,
+) -> AgentModelOption {
+    AgentModelOption {
+        id: crate::provider::codex::model_id(instance_id, wire_model),
+        provider: provider_id.to_string(),
+        label: label.to_string(),
+        cli_model: wire_model.to_string(),
+        provider_key: None,
+        effort_levels: ["low", "medium", "high", "xhigh"]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        // serviceTier=fast is a ChatGPT-only feature; custom endpoints ignore/reject it.
+        supports_fast_mode: false,
+        supports_context_usage: true,
+    }
 }
 
 /// Inputs-driven helper used by tests; production goes through
 /// `static_model_sections`.
 fn model_sections_for_inputs(
-    custom: Vec<super::custom_providers::ClaudeProviderModel>,
+    custom: Vec<crate::provider::claude::ClaudeProviderModel>,
+    codex_custom: Vec<AgentModelOption>,
     cursor_prefs: Option<CursorPrefs>,
+    opencode_prefs: Option<OpencodePrefs>,
+    mimo_prefs: Option<OpencodePrefs>,
+    kimi_prefs: Option<KimiPrefs>,
 ) -> Vec<AgentModelSection> {
     let mut claude_section = official_claude_section();
     claude_section
         .options
         .extend(custom_provider_options(custom));
     let mut sections = vec![claude_section];
-    sections.push(codex_section());
-    sections.push(cursor_section_from_prefs(cursor_prefs));
+    let mut codex = codex_section();
+    codex.options.extend(codex_custom);
+    sections.push(codex);
+    sections.push(opencode_section_from_prefs(opencode_prefs));
+    sections.push(mimo_section_from_prefs(mimo_prefs));
+    sections.push(kimi_section_from_prefs(kimi_prefs));
+    if let Some(cursor) = cursor_section_from_prefs(cursor_prefs) {
+        sections.push(cursor);
+    }
 
     sections
 }
@@ -67,8 +279,33 @@ fn official_claude_section() -> AgentModelSection {
         label: "Claude Code".to_string(),
         status: AgentModelSectionStatus::Ready,
         options: vec![
+            // Fable 5 leads the list as the most capable pick, but it burns
+            // limits ~2x faster than Opus — `useEnsureDefaultModel` therefore
+            // pins the app default to the Opus 4.8 entry below, NOT
+            // to options[0]. No fast mode (Opus 4.6+ only).
             claude_model(
-                "default",
+                "claude-fable-5[1m]",
+                "Fable 5 1M",
+                &["low", "medium", "high", "xhigh", "max"],
+                false,
+            ),
+            // App default selection (see `useEnsureDefaultModel`, which pins
+            // this id). Pinned to the explicit `claude-opus-4-8[1m]` wire id —
+            // the `[1m]` suffix selects the 1M-context variant, matching the
+            // label. We do NOT use the CLI's `default` sentinel: it resolves to
+            // whatever the bundled claude-code decides (non-deterministic
+            // across CLI bumps), whereas a pinned id is stable. Bump when a
+            // newer Opus ships. MUST stay in sync with
+            // `sidecar/src/model-catalog.ts`.
+            claude_model(
+                "claude-opus-4-8[1m]",
+                "Opus 4.8 1M",
+                &["low", "medium", "high", "xhigh", "max"],
+                true,
+            ),
+            // Explicit 4.7 pin, above 4.6.
+            claude_model(
+                "claude-opus-4-7[1m]",
                 "Opus 4.7 1M",
                 &["low", "medium", "high", "xhigh", "max"],
                 false,
@@ -94,28 +331,240 @@ fn codex_section() -> AgentModelSection {
             codex_model("gpt-5.5", "GPT-5.5"),
             codex_model("gpt-5.4", "GPT-5.4"),
             codex_model("gpt-5.4-mini", "GPT-5.4-Mini"),
-            codex_model("gpt-5.3-codex", "GPT-5.3-Codex"),
-            codex_model("gpt-5.3-codex-spark", "GPT-5.3-Codex-Spark"),
-            codex_model("gpt-5.2", "GPT-5.2"),
         ],
     }
 }
 
-/// Cursor picker section, driven by `app.cursor_provider` settings:
-/// `enabledModelIds` (user picks; `null` → auto-fill on next fetch) and
-/// `cachedModels` (last `Cursor.models.list` snapshot). When both are
-/// absent, fall back to the SDK-guaranteed `Auto` entry.
-fn cursor_section_from_prefs(prefs: Option<CursorPrefs>) -> AgentModelSection {
-    let options = match prefs {
-        Some(prefs) => expand_cursor_options(prefs),
-        None => vec![cursor_default_auto()],
+#[derive(Debug, Clone)]
+struct KimiPrefs {
+    /// `(alias, label)` of models discovered via `kimi provider list`, cached
+    /// by the Settings panel into `app.kimi_provider`.
+    cached_models: Vec<(String, String)>,
+    /// `null` ⟺ show all cached; explicit list ⟺ that subset; absent in JSON → null.
+    enabled_ids: Option<Vec<String>>,
+}
+
+fn load_kimi_prefs() -> Option<KimiPrefs> {
+    let raw = crate::models::settings::load_setting_value("app.kimi_provider")
+        .ok()
+        .flatten()?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let cached_models = match parsed.get("cachedModels") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|item| {
+                let id = item.get("id").and_then(serde_json::Value::as_str)?;
+                let label = item
+                    .get("label")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or(id);
+                Some((id.to_string(), label.to_string()))
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    let enabled_ids = match parsed.get("enabledModelIds") {
+        Some(serde_json::Value::Array(arr)) => Some(
+            arr.iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect(),
+        ),
+        _ => None,
+    };
+    Some(KimiPrefs {
+        cached_models,
+        enabled_ids,
+    })
+}
+
+// Kimi Code resolves models from the user's `~/.kimi-code` config (managed via
+// the Settings "Custom Providers" + "Models" panels). Like every other
+// provider, the composer shows ONLY the models the user enabled in the Settings
+// "Models" picker — there is no forced built-in seed. The selected model is
+// applied per session via ACP `session/set_model`. An empty section is dropped
+// by `drop_empty_sections` so an unconfigured Kimi never clutters the picker.
+fn kimi_section_from_prefs(prefs: Option<KimiPrefs>) -> AgentModelSection {
+    let mut options = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    if let Some(prefs) = prefs {
+        let show = |alias: &str| match &prefs.enabled_ids {
+            Some(ids) => ids.iter().any(|id| id == alias),
+            None => true, // null = first-sync default: show all cached models
+        };
+        for (alias, label) in &prefs.cached_models {
+            if show(alias) && seen.insert(alias.clone()) {
+                options.push(kimi_model(alias, label));
+            }
+        }
+    }
+    AgentModelSection {
+        id: "kimi".to_string(),
+        label: "Kimi".to_string(),
+        status: AgentModelSectionStatus::Ready,
+        options,
+    }
+}
+
+// Fully dynamic from `app.opencode_provider`; no static seed. Empty `connected` → Unavailable.
+fn opencode_section_from_prefs(prefs: Option<OpencodePrefs>) -> AgentModelSection {
+    slug_section_from_prefs(prefs, "opencode", "OpenCode")
+}
+
+// MiMo Code (opencode fork) — same shape, driven by `app.mimo_provider`.
+fn mimo_section_from_prefs(prefs: Option<OpencodePrefs>) -> AgentModelSection {
+    slug_section_from_prefs(prefs, "mimo", "MiMo Code")
+}
+
+fn slug_section_from_prefs(
+    prefs: Option<OpencodePrefs>,
+    provider: &str,
+    label: &str,
+) -> AgentModelSection {
+    let (status, options) = match prefs {
+        Some(prefs) if !prefs.connected.is_empty() => (
+            AgentModelSectionStatus::Ready,
+            expand_slug_options(provider, prefs),
+        ),
+        _ => (AgentModelSectionStatus::Unavailable, Vec::new()),
     };
     AgentModelSection {
+        id: provider.to_string(),
+        label: label.to_string(),
+        status,
+        options,
+    }
+}
+
+/// Prefs shape shared by the opencode-protocol providers (opencode + mimo);
+/// both persist the same JSON under their own settings key.
+#[derive(Debug, Clone)]
+struct OpencodePrefs {
+    connected: Vec<String>,
+    enabled_ids: Option<Vec<String>>,
+    cached_models: Option<Vec<OpencodeCachedModelEntry>>,
+}
+
+#[derive(Debug, Clone)]
+struct OpencodeCachedModelEntry {
+    slug: String,
+    label: String,
+    // opencode `variants` keys; empty ⟺ no effort dropdown.
+    effort_levels: Vec<String>,
+}
+
+fn load_opencode_prefs() -> Option<OpencodePrefs> {
+    load_slug_prefs("app.opencode_provider")
+}
+
+fn load_mimo_prefs() -> Option<OpencodePrefs> {
+    load_slug_prefs("app.mimo_provider")
+}
+
+fn load_slug_prefs(setting_key: &str) -> Option<OpencodePrefs> {
+    let raw = crate::models::settings::load_setting_value(setting_key)
+        .ok()
+        .flatten()?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+
+    let connected = match parsed.get("connected") {
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|item| item.as_str().map(str::to_string))
+            .collect(),
+        _ => Vec::new(),
+    };
+    let enabled_ids = match parsed.get("enabledModelIds") {
+        Some(serde_json::Value::Array(arr)) => Some(
+            arr.iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect(),
+        ),
+        _ => None,
+    };
+    let cached_models = match parsed.get("cachedModels") {
+        Some(serde_json::Value::Array(arr)) => {
+            let mut out: Vec<OpencodeCachedModelEntry> = Vec::with_capacity(arr.len());
+            for item in arr {
+                let Some(slug) = item.get("slug").and_then(serde_json::Value::as_str) else {
+                    continue;
+                };
+                let label = item
+                    .get("label")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or(slug)
+                    .to_string();
+                let effort_levels = item
+                    .get("effortLevels")
+                    .and_then(serde_json::Value::as_array)
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                out.push(OpencodeCachedModelEntry {
+                    slug: slug.to_string(),
+                    label,
+                    effort_levels,
+                });
+            }
+            Some(out)
+        }
+        _ => None,
+    };
+
+    Some(OpencodePrefs {
+        connected,
+        enabled_ids,
+        cached_models,
+    })
+}
+
+// `enabledModelIds == null` → default-all cached models; explicit empty list → no options.
+fn expand_slug_options(provider: &str, prefs: OpencodePrefs) -> Vec<AgentModelOption> {
+    let cache = prefs.cached_models.unwrap_or_default();
+    match prefs.enabled_ids {
+        None => cache
+            .iter()
+            .map(|entry| {
+                slug_model(
+                    provider,
+                    &entry.slug,
+                    &entry.label,
+                    entry.effort_levels.clone(),
+                )
+            })
+            .collect(),
+        Some(enabled) => enabled
+            .iter()
+            .map(|slug| {
+                let entry = cache.iter().find(|entry| &entry.slug == slug);
+                let label = entry
+                    .map(|e| e.label.clone())
+                    .unwrap_or_else(|| slug.clone());
+                let effort_levels = entry.map(|e| e.effort_levels.clone()).unwrap_or_default();
+                slug_model(provider, slug, &label, effort_levels)
+            })
+            .collect(),
+    }
+}
+
+/// Cursor picker section, driven by `app.cursor_provider`. Mirrors the Settings
+/// list: present only when an API key is set AND at least one model resolves.
+/// No key (or an emptied pick list) → omitted, so the composer stays in sync.
+fn cursor_section_from_prefs(prefs: Option<CursorPrefs>) -> Option<AgentModelSection> {
+    let prefs = prefs?;
+    prefs.api_key.as_ref()?;
+    let options = expand_cursor_options(prefs);
+    if options.is_empty() {
+        return None;
+    }
+    Some(AgentModelSection {
         id: "cursor".to_string(),
         label: "Cursor".to_string(),
         status: AgentModelSectionStatus::Ready,
         options,
-    }
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +582,7 @@ struct CursorCachedParameter {
 
 #[derive(Debug, Clone)]
 struct CursorPrefs {
+    api_key: Option<String>,
     enabled_ids: Option<Vec<String>>,
     cached_models: Option<Vec<(String, CursorCachedModelEntry)>>,
 }
@@ -143,6 +593,12 @@ fn load_cursor_prefs() -> Option<CursorPrefs> {
         .flatten()?;
     let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
 
+    let api_key = parsed
+        .get("apiKey")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+        .map(str::to_string);
     let enabled_ids = match parsed.get("enabledModelIds") {
         Some(serde_json::Value::Array(arr)) => Some(
             arr.iter()
@@ -175,6 +631,7 @@ fn load_cursor_prefs() -> Option<CursorPrefs> {
     };
 
     Some(CursorPrefs {
+        api_key,
         enabled_ids,
         cached_models,
     })
@@ -268,7 +725,7 @@ fn cursor_default_auto() -> AgentModelOption {
 }
 
 fn custom_provider_options(
-    custom: Vec<super::custom_providers::ClaudeProviderModel>,
+    custom: Vec<crate::provider::claude::ClaudeProviderModel>,
 ) -> Vec<AgentModelOption> {
     custom
         .into_iter()
@@ -322,6 +779,43 @@ fn codex_model(id: &str, label: &str) -> AgentModelOption {
     }
 }
 
+// `alias` is the bare Kimi model alias (what `session/set_model` accepts). The
+// Helmor picker `id` is namespaced `kimi:<alias>` so it can't collide with a
+// claude/codex/cursor id (a custom provider's alias may be e.g. `gpt-4o`);
+// `cli_model` keeps the bare alias for the send round-trip. No effort tiers /
+// fast mode / context ring in v1 (see `provider_capabilities`).
+fn kimi_model(alias: &str, label: &str) -> AgentModelOption {
+    AgentModelOption {
+        id: format!("kimi:{alias}"),
+        provider: "kimi".to_string(),
+        label: label.to_string(),
+        cli_model: alias.to_string(),
+        provider_key: None,
+        effort_levels: Vec::new(),
+        supports_fast_mode: false,
+        supports_context_usage: false,
+    }
+}
+
+// `id`/`cli_model` are both the `provider/model` slug; `effort_levels` map to opencode `variants`.
+fn slug_model(
+    provider: &str,
+    slug: &str,
+    label: &str,
+    effort_levels: Vec<String>,
+) -> AgentModelOption {
+    AgentModelOption {
+        id: slug.to_string(),
+        provider: provider.to_string(),
+        label: label.to_string(),
+        cli_model: slug.to_string(),
+        provider_key: None,
+        effort_levels,
+        supports_fast_mode: false,
+        supports_context_usage: true,
+    }
+}
+
 /// Build a Cursor option. Cursor wire ids collide with claude/codex
 /// (e.g. `default` = Claude Opus), so Helmor `id` is namespaced
 /// `cursor-<wire>`; `cli_model` keeps the bare wire id for `agent.send`.
@@ -363,6 +857,18 @@ fn claude_effort_levels() -> Vec<String> {
         .collect()
 }
 
+/// Custom Codex provider config injected per-thread by the sidecar.
+#[derive(Debug, Clone)]
+pub struct CodexProviderConfig {
+    /// Bare provider id used as Codex `modelProvider`.
+    pub id: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub wire_api: String,
+    /// Wire model name sent verbatim to the endpoint.
+    pub wire_model: String,
+}
+
 /// Resolved model info needed by the streaming path.
 #[derive(Debug, Clone)]
 pub struct ResolvedModel {
@@ -372,6 +878,18 @@ pub struct ResolvedModel {
     pub supports_effort: bool,
     pub claude_base_url: Option<String>,
     pub claude_auth_token: Option<String>,
+    pub codex_provider: Option<CodexProviderConfig>,
+}
+
+impl ResolvedModel {
+    /// Sidecar manager key. All Codex-family providers collapse to `"codex"`.
+    pub fn sidecar_provider(&self) -> &str {
+        if self.provider.starts_with("codex") {
+            "codex"
+        } else {
+            &self.provider
+        }
+    }
 }
 
 /// Resolve a Helmor model id to provider + cli_model. `provider_hint`
@@ -380,7 +898,7 @@ pub struct ResolvedModel {
 /// cursor, `gpt-` → codex, else claude). For cursor, strips the
 /// `cursor-` namespace before handing `cli_model` to the SDK.
 pub fn resolve_model(model_id: &str, provider_hint: Option<&str>) -> ResolvedModel {
-    if let Some(model) = super::custom_providers::resolve(model_id) {
+    if let Some(model) = crate::provider::claude::resolve(model_id) {
         return ResolvedModel {
             id: model.id,
             provider: "claude".to_string(),
@@ -388,23 +906,66 @@ pub fn resolve_model(model_id: &str, provider_hint: Option<&str>) -> ResolvedMod
             supports_effort: true,
             claude_base_url: Some(model.base_url),
             claude_auth_token: Some(model.api_key),
+            codex_provider: None,
         };
     }
 
+    if let Some(model) = crate::provider::codex::resolve(model_id) {
+        return ResolvedModel {
+            id: model.id,
+            provider: model.provider,
+            cli_model: model.cli_model.clone(),
+            supports_effort: true,
+            claude_base_url: None,
+            claude_auth_token: None,
+            codex_provider: Some(CodexProviderConfig {
+                id: model.instance_id,
+                base_url: model.base_url,
+                api_key: model.api_key,
+                wire_api: "responses".to_string(),
+                wire_model: model.cli_model,
+            }),
+        };
+    }
+
+    let codex_prefix = crate::provider::codex::PROVIDER_PREFIX;
     let provider = match provider_hint {
         Some("cursor") => "cursor",
         Some("codex") => "codex",
         Some("claude") => "claude",
+        Some("opencode") => "opencode",
+        Some("mimo") => "mimo",
+        Some("kimi") => "kimi",
+        // Namespaced kimi picker id — checked before the `/` opencode rule so a
+        // custom-provider alias containing `/` still routes to kimi without a hint.
+        _ if model_id.starts_with("kimi:") => "kimi",
+        // `codex:<id>` reaches here only when its settings were removed;
+        // route to codex so the `/` doesn't mis-infer to opencode.
+        Some(hint) if hint.starts_with(codex_prefix) => "codex",
+        _ if model_id.starts_with(codex_prefix) => "codex",
         _ if model_id.starts_with("cursor-") => "cursor",
         _ if model_id.starts_with("composer-") => "cursor",
+        // `/` marks an opencode-protocol slug (claude uses `|`, codex/cursor
+        // have none). Hint-less `/` ids default to opencode — mimo sessions
+        // always carry the provider hint, so this fallback never fires for
+        // them in practice.
+        _ if model_id.contains('/') => "opencode",
         _ if model_id.starts_with("gpt-") => "codex",
+        // Bare kimi aliases (`kimi-for-coding`, `kimi-k2`).
+        _ if model_id.starts_with("kimi") => "kimi",
         _ => "claude",
     };
 
-    // Strip `cursor-` for SDK; `composer-*` had no prefix.
+    // Strip the picker namespace so the bare alias reaches the SDK/CLI:
+    // `cursor-<wire>` for Cursor, `kimi:<alias>` for Kimi.
     let cli_model = if provider == "cursor" {
         model_id
             .strip_prefix("cursor-")
+            .unwrap_or(model_id)
+            .to_string()
+    } else if provider == "kimi" {
+        model_id
+            .strip_prefix("kimi:")
             .unwrap_or(model_id)
             .to_string()
     } else {
@@ -418,6 +979,7 @@ pub fn resolve_model(model_id: &str, provider_hint: Option<&str>) -> ResolvedMod
         supports_effort: true,
         claude_base_url: None,
         claude_auth_token: None,
+        codex_provider: None,
     }
 }
 
@@ -427,10 +989,10 @@ mod tests {
 
     #[test]
     fn static_model_sections_returns_hardcoded_catalog() {
-        // `None` cursor_prefs → cursor section degrades to just Auto.
-        let sections = model_sections_for_inputs(Vec::new(), None);
+        // `None` cursor_prefs (no API key) → cursor section omitted entirely.
+        let sections = model_sections_for_inputs(Vec::new(), Vec::new(), None, None, None, None);
 
-        assert_eq!(sections.len(), 3);
+        assert_eq!(sections.len(), 5);
         assert_eq!(sections[0].id, "claude");
         assert_eq!(sections[0].status, AgentModelSectionStatus::Ready);
         assert_eq!(
@@ -439,7 +1001,14 @@ mod tests {
                 .iter()
                 .map(|model| model.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["default", "claude-opus-4-6[1m]", "sonnet", "haiku"]
+            vec![
+                "claude-fable-5[1m]",
+                "claude-opus-4-8[1m]",
+                "claude-opus-4-7[1m]",
+                "claude-opus-4-6[1m]",
+                "sonnet",
+                "haiku"
+            ]
         );
         assert!(sections[0]
             .options
@@ -454,37 +1023,37 @@ mod tests {
                 .iter()
                 .map(|model| model.id.as_str())
                 .collect::<Vec<_>>(),
-            vec![
-                "gpt-5.5",
-                "gpt-5.4",
-                "gpt-5.4-mini",
-                "gpt-5.3-codex",
-                "gpt-5.3-codex-spark",
-                "gpt-5.2",
-            ]
+            vec!["gpt-5.5", "gpt-5.4", "gpt-5.4-mini",]
         );
         assert!(sections[1]
             .options
             .iter()
             .all(|model| model.supports_fast_mode));
 
-        assert_eq!(sections[2].id, "cursor");
-        assert_eq!(sections[2].status, AgentModelSectionStatus::Ready);
-        // Without an `app.cursor_provider` row in the test DB, the Cursor
-        // section degrades to the hard fallback: a single Auto entry.
-        // Helmor id is the namespaced `cursor-default`; cli_model is the
-        // bare `default` Cursor's SDK expects.
-        let auto = &sections[2].options[0];
-        assert_eq!(auto.id, "cursor-default");
-        assert_eq!(auto.cli_model, "default");
-        assert_eq!(auto.provider, "cursor");
-        assert_eq!(sections[2].options.len(), 1);
+        // No opencode prefs row → Unavailable, no options.
+        assert_eq!(sections[2].id, "opencode");
+        assert_eq!(sections[2].status, AgentModelSectionStatus::Unavailable);
+        assert!(sections[2].options.is_empty());
+
+        // No mimo prefs row → Unavailable, no options.
+        assert_eq!(sections[3].id, "mimo");
+        assert_eq!(sections[3].label, "MiMo Code");
+        assert_eq!(sections[3].status, AgentModelSectionStatus::Unavailable);
+        assert!(sections[3].options.is_empty());
+
+        // No kimi prefs row → no enabled models → empty section (dropped from
+        // the composer by `drop_empty_sections`; only the enabled picks show).
+        assert_eq!(sections[4].id, "kimi");
+        assert!(sections[4].options.is_empty());
+
+        // No `app.cursor_provider` row → no API key → no Cursor section.
+        assert!(sections.iter().all(|s| s.id != "cursor"));
     }
 
     #[test]
     fn custom_provider_models_append_to_official_claude_section() {
         let sections = model_sections_for_inputs(
-            vec![super::super::custom_providers::ClaudeProviderModel {
+            vec![crate::provider::claude::ClaudeProviderModel {
                 id: "claude-custom|minimax|MiniMax-M2.7".to_string(),
                 provider_key: "minimax".to_string(),
                 label: "MiniMax M2.7".to_string(),
@@ -492,10 +1061,14 @@ mod tests {
                 base_url: "https://api.minimax.io/anthropic".to_string(),
                 api_key: "sk-test".to_string(),
             }],
+            Vec::new(),
+            None,
+            None,
+            None,
             None,
         );
 
-        assert_eq!(sections.len(), 3);
+        assert_eq!(sections.len(), 5);
         assert_eq!(sections[0].id, "claude");
         assert_eq!(sections[0].label, "Claude Code");
         assert_eq!(
@@ -505,7 +1078,9 @@ mod tests {
                 .map(|model| model.id.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "default",
+                "claude-fable-5[1m]",
+                "claude-opus-4-8[1m]",
+                "claude-opus-4-7[1m]",
                 "claude-opus-4-6[1m]",
                 "sonnet",
                 "haiku",
@@ -513,28 +1088,31 @@ mod tests {
             ]
         );
         assert_eq!(
-            sections[0].options[4].provider_key.as_deref(),
+            sections[0].options[6].provider_key.as_deref(),
             Some("minimax")
         );
         assert_eq!(
-            sections[0].options[4].effort_levels,
+            sections[0].options[6].effort_levels,
             vec!["low", "medium", "high", "xhigh", "max"]
         );
-        assert!(!sections[0].options[4].supports_context_usage);
+        assert!(!sections[0].options[6].supports_context_usage);
         assert_eq!(sections[1].id, "codex");
     }
 
     #[test]
     fn resolve_claude_model() {
-        let m = resolve_model("default", None);
+        let _env = crate::testkit::TestEnv::new("resolve-claude-model");
+        // The pinned Opus 4.8 1M id resolves to itself.
+        let m = resolve_model("claude-opus-4-8[1m]", None);
         assert_eq!(m.provider, "claude");
-        assert_eq!(m.cli_model, "default");
-        assert_eq!(m.id, "default");
+        assert_eq!(m.cli_model, "claude-opus-4-8[1m]");
+        assert_eq!(m.id, "claude-opus-4-8[1m]");
         assert!(m.supports_effort);
     }
 
     #[test]
     fn resolve_opus_model() {
+        let _env = crate::testkit::TestEnv::new("resolve-opus-model");
         let m = resolve_model("opus", None);
         assert_eq!(m.provider, "claude");
         assert_eq!(m.cli_model, "opus");
@@ -542,12 +1120,14 @@ mod tests {
 
     #[test]
     fn resolve_sonnet_model() {
+        let _env = crate::testkit::TestEnv::new("resolve-sonnet-model");
         let m = resolve_model("sonnet", None);
         assert_eq!(m.provider, "claude");
     }
 
     #[test]
     fn resolve_gpt_model_routes_to_codex() {
+        let _env = crate::testkit::TestEnv::new("resolve-gpt-model-routes-to-codex");
         let m = resolve_model("gpt-4o", None);
         assert_eq!(m.provider, "codex");
         assert_eq!(m.cli_model, "gpt-4o");
@@ -555,19 +1135,463 @@ mod tests {
 
     #[test]
     fn resolve_gpt_5_4_routes_to_codex() {
+        let _env = crate::testkit::TestEnv::new("resolve-gpt-5-4-routes-to-codex");
         let m = resolve_model("gpt-5.4", None);
         assert_eq!(m.provider, "codex");
     }
 
+    fn codex_custom(id: &str, name: &str, models: &[&str]) -> crate::provider::CustomProvider {
+        crate::provider::CustomProvider {
+            id: id.to_string(),
+            name: name.to_string(),
+            base_url: "http://example.com/v1".to_string(),
+            api_key: "sk-test".to_string(),
+            models: models
+                .iter()
+                .map(|m| crate::provider::CustomProviderModel {
+                    slug: m.to_string(),
+                    label: String::new(),
+                    ..Default::default()
+                })
+                .collect(),
+            enabled_model_ids: None,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn codex_custom_sections_one_per_provider() {
+        let sections = codex_custom_sections(
+            vec![codex_custom(
+                "hundun",
+                "Codex (Hundun)",
+                &["gpt-5.5", "gpt-5.4"],
+            )],
+            None,
+        );
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].id, "codex:hundun");
+        assert_eq!(sections[0].label, "Codex (Hundun)");
+        assert_eq!(sections[0].status, AgentModelSectionStatus::Ready);
+        let opt = &sections[0].options[0];
+        assert_eq!(opt.id, "codex:hundun|gpt-5.5");
+        assert_eq!(opt.provider, "codex:hundun");
+        assert_eq!(opt.cli_model, "gpt-5.5");
+        assert!(!opt.supports_fast_mode);
+        assert!(opt.supports_context_usage);
+        assert_eq!(opt.effort_levels, vec!["low", "medium", "high", "xhigh"]);
+    }
+
+    #[test]
+    fn codex_custom_section_skips_provider_without_models() {
+        let sections = codex_custom_sections(vec![codex_custom("empty", "Empty", &[])], None);
+        assert!(sections.is_empty());
+    }
+
+    #[test]
+    fn codex_custom_section_label_falls_back_to_id() {
+        let sections = codex_custom_sections(vec![codex_custom("hundun", "", &["gpt-5.5"])], None);
+        assert_eq!(sections[0].label, "Codex · hundun");
+    }
+
+    #[test]
+    fn codex_custom_section_respects_enabled_subset() {
+        let provider = codex_custom("hundun", "Hundun", &["gpt-5.5", "gpt-5.4"]);
+        let sections =
+            codex_custom_sections(vec![provider], Some(&["codex:hundun|gpt-5.4".to_string()]));
+        assert_eq!(sections.len(), 1);
+        assert_eq!(
+            sections[0]
+                .options
+                .iter()
+                .map(|o| o.cli_model.as_str())
+                .collect::<Vec<_>>(),
+            vec!["gpt-5.4"]
+        );
+    }
+
+    #[test]
+    fn codex_custom_catalog_options_prefixes_label_with_provider_name() {
+        // Merged into the Codex section, so the name prefix disambiguates a
+        // custom `gpt-5.5` from the official one.
+        let opts =
+            codex_custom_catalog_options(vec![codex_custom("hundun", "Hundun", &["gpt-5.5"])]);
+        assert_eq!(opts.len(), 1);
+        assert_eq!(opts[0].label, "Hundun · gpt-5.5");
+        assert_eq!(opts[0].id, "codex:hundun|gpt-5.5");
+    }
+
+    #[test]
+    fn codex_custom_catalog_options_prefix_falls_back_to_id() {
+        let opts = codex_custom_catalog_options(vec![codex_custom("hundun", "", &["gpt-5.5"])]);
+        assert_eq!(opts[0].label, "hundun · gpt-5.5");
+    }
+
+    #[test]
+    fn official_filter_keeps_enabled_subset() {
+        let base = model_sections_for_inputs(Vec::new(), Vec::new(), None, None, None, None);
+        let filtered = apply_official_enabled_filter(base, None, Some(&["gpt-5.5".to_string()]));
+        let codex = filtered.iter().find(|s| s.id == "codex").unwrap();
+        assert_eq!(
+            codex
+                .options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["gpt-5.5"]
+        );
+        let claude = filtered.iter().find(|s| s.id == "claude").unwrap();
+        assert!(claude.options.len() > 1, "claude untouched when None");
+    }
+
+    #[test]
+    fn official_filter_empty_list_empties_options() {
+        let base = model_sections_for_inputs(Vec::new(), Vec::new(), None, None, None, None);
+        let filtered = apply_official_enabled_filter(base, Some(&[]), None);
+        // The filter only empties options; hiding the now-empty section is
+        // `drop_empty_sections`' job (tested separately).
+        let claude = filtered.iter().find(|s| s.id == "claude").unwrap();
+        assert!(
+            claude.options.is_empty(),
+            "claude emptied when enabled = []"
+        );
+        let codex = filtered.iter().find(|s| s.id == "codex").unwrap();
+        assert!(!codex.options.is_empty(), "codex untouched (None = all)");
+    }
+
+    #[test]
+    fn drop_empty_sections_hides_any_section_without_models() {
+        let section = |id: &str, options: Vec<AgentModelOption>| AgentModelSection {
+            id: id.to_string(),
+            label: id.to_string(),
+            status: AgentModelSectionStatus::Ready,
+            options,
+        };
+        let kept = drop_empty_sections(vec![
+            section("alpha", vec![codex_model("m1", "M1")]),
+            section("beta", Vec::new()),
+            section("gamma", vec![codex_model("m2", "M2")]),
+        ]);
+        assert_eq!(
+            kept.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            vec!["alpha", "gamma"],
+        );
+    }
+
+    #[test]
+    fn sidecar_provider_collapses_codex_family() {
+        let mk = |provider: &str| ResolvedModel {
+            id: "x".into(),
+            provider: provider.into(),
+            cli_model: "x".into(),
+            supports_effort: true,
+            claude_base_url: None,
+            claude_auth_token: None,
+            codex_provider: None,
+        };
+        assert_eq!(mk("codex").sidecar_provider(), "codex");
+        assert_eq!(mk("codex:hundun").sidecar_provider(), "codex");
+        assert_eq!(mk("claude").sidecar_provider(), "claude");
+        assert_eq!(mk("opencode").sidecar_provider(), "opencode");
+        assert_eq!(mk("cursor").sidecar_provider(), "cursor");
+    }
+
+    #[test]
+    fn resolve_codex_custom_prefix_without_settings_routes_to_codex() {
+        let _env = crate::testkit::TestEnv::new("resolve-codex-custom-prefix-routes");
+        // No settings → resolve() misses → must route to codex, not opencode via `/`.
+        let m = resolve_model("codex:ppio|ppio/pa/gpt-5.5", Some("codex:ppio"));
+        assert_eq!(m.sidecar_provider(), "codex");
+    }
+
     #[test]
     fn resolve_unknown_model_defaults_to_claude() {
+        let _env = crate::testkit::TestEnv::new("resolve-unknown-model-defaults-to-claude");
         let m = resolve_model("some-future-model", None);
         assert_eq!(m.provider, "claude");
         assert_eq!(m.cli_model, "some-future-model");
     }
 
     #[test]
+    fn resolve_opencode_slug_routes_to_opencode() {
+        let _env = crate::testkit::TestEnv::new("resolve-opencode-slug-routes-to-opencode");
+        // Explicit hint.
+        let m = resolve_model("anthropic/claude-opus-4-5", Some("opencode"));
+        assert_eq!(m.provider, "opencode");
+        assert_eq!(m.cli_model, "anthropic/claude-opus-4-5");
+        assert_eq!(m.id, "anthropic/claude-opus-4-5");
+        let m = resolve_model("openai/gpt-5-codex", None);
+        assert_eq!(m.provider, "opencode");
+        assert_eq!(m.cli_model, "openai/gpt-5-codex");
+    }
+
+    #[test]
+    fn resolve_mimo_hint_routes_to_mimo() {
+        let _env = crate::testkit::TestEnv::new("resolve-mimo-hint-routes-to-mimo");
+        let m = resolve_model("xiaomi/mimo-v2.5-pro", Some("mimo"));
+        assert_eq!(m.provider, "mimo");
+        assert_eq!(m.cli_model, "xiaomi/mimo-v2.5-pro");
+        assert_eq!(m.id, "xiaomi/mimo-v2.5-pro");
+        // Hint-less `/` slug falls back to opencode by design — mimo sessions
+        // always carry the hint (see resolve_model comment).
+        let m = resolve_model("xiaomi/mimo-v2.5-pro", None);
+        assert_eq!(m.provider, "opencode");
+    }
+
+    #[test]
+    fn mimo_section_emits_cached_models_when_connected() {
+        let prefs = OpencodePrefs {
+            connected: vec!["xiaomi".to_string()],
+            enabled_ids: None,
+            cached_models: Some(vec![opencode_cache(
+                "xiaomi/mimo-v2.5-pro",
+                "Xiaomi · MiMo V2.5 Pro",
+            )]),
+        };
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), None, None, Some(prefs), None);
+        let mimo = sections.iter().find(|s| s.id == "mimo").unwrap();
+        assert_eq!(mimo.label, "MiMo Code");
+        assert_eq!(mimo.status, AgentModelSectionStatus::Ready);
+        let first = &mimo.options[0];
+        assert_eq!(first.provider, "mimo");
+        assert_eq!(first.cli_model, "xiaomi/mimo-v2.5-pro");
+        assert_eq!(first.label, "Xiaomi · MiMo V2.5 Pro");
+        assert!(first.supports_context_usage);
+    }
+
+    #[test]
+    fn resolve_kimi_model_routes_to_kimi() {
+        let _env = crate::testkit::TestEnv::new("resolve-kimi-model-routes-to-kimi");
+        // Explicit hint, bare alias (no namespace) → cli_model unchanged.
+        let m = resolve_model("kimi-for-coding", Some("kimi"));
+        assert_eq!(m.provider, "kimi");
+        assert_eq!(m.cli_model, "kimi-for-coding");
+        assert_eq!(m.id, "kimi-for-coding");
+        // Prefix inference without a hint.
+        let m = resolve_model("kimi-k2-turbo", None);
+        assert_eq!(m.provider, "kimi");
+        assert_eq!(m.cli_model, "kimi-k2-turbo");
+        // Namespaced picker id → kimi, with the `kimi:` prefix stripped for the CLI.
+        let m = resolve_model("kimi:claude-opus-4-8", Some("kimi"));
+        assert_eq!(m.provider, "kimi");
+        assert_eq!(m.cli_model, "claude-opus-4-8");
+        // Namespaced alias that contains `/` must still route to kimi (not opencode)
+        // even without a hint, since the `kimi:` rule precedes the `/` rule.
+        let m = resolve_model("kimi:vendor/model", None);
+        assert_eq!(m.provider, "kimi");
+        assert_eq!(m.cli_model, "vendor/model");
+        // The built-in default seed is the managed `kimi-code/<modelId>` key —
+        // `/`-containing, so it depends on the same precedence to reach kimi.
+        let m = resolve_model("kimi:kimi-code/kimi-for-coding", None);
+        assert_eq!(m.provider, "kimi");
+        assert_eq!(m.cli_model, "kimi-code/kimi-for-coding");
+    }
+
+    #[test]
+    fn kimi_section_shows_only_enabled_models() {
+        // No prefs → empty (no forced built-in seed; the composer drops it).
+        let none = kimi_section_from_prefs(None);
+        assert_eq!(none.id, "kimi");
+        assert!(none.options.is_empty());
+
+        // enabled_ids = null (first-sync default) → every cached model shows.
+        let all = kimi_section_from_prefs(Some(KimiPrefs {
+            cached_models: vec![
+                (
+                    "kimi-code/kimi-for-coding".to_string(),
+                    "Kimi for Coding".to_string(),
+                ),
+                ("claude-opus-4-8".to_string(), "Claude Opus 4.8".to_string()),
+            ],
+            enabled_ids: None,
+        }));
+        assert_eq!(
+            all.options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["kimi:kimi-code/kimi-for-coding", "kimi:claude-opus-4-8"]
+        );
+        let opus = &all.options[1];
+        assert_eq!(opus.provider, "kimi");
+        assert_eq!(opus.cli_model, "claude-opus-4-8");
+        assert_eq!(opus.label, "Claude Opus 4.8");
+
+        // Explicit subset → ONLY the picked alias, nothing force-added.
+        let subset = kimi_section_from_prefs(Some(KimiPrefs {
+            cached_models: vec![
+                ("a".to_string(), "A".to_string()),
+                ("b".to_string(), "B".to_string()),
+            ],
+            enabled_ids: Some(vec!["b".to_string()]),
+        }));
+        assert_eq!(
+            subset
+                .options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["kimi:b"]
+        );
+    }
+
+    fn opencode_cache(slug: &str, label: &str) -> OpencodeCachedModelEntry {
+        OpencodeCachedModelEntry {
+            slug: slug.to_string(),
+            label: label.to_string(),
+            effort_levels: Vec::new(),
+        }
+    }
+
+    fn opencode_cache_effort(
+        slug: &str,
+        label: &str,
+        efforts: &[&str],
+    ) -> OpencodeCachedModelEntry {
+        OpencodeCachedModelEntry {
+            slug: slug.to_string(),
+            label: label.to_string(),
+            effort_levels: efforts.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn opencode_section_default_all_emits_every_cached_model() {
+        let prefs = OpencodePrefs {
+            connected: vec!["opencode".to_string()],
+            enabled_ids: None,
+            cached_models: Some(vec![
+                opencode_cache("opencode/big-pickle", "OpenCode Zen · Big Pickle"),
+                opencode_cache("hundun/deepseek-v4-pro", "Hundun · DeepSeek V4 Pro"),
+            ]),
+        };
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), None, Some(prefs), None, None);
+        let opencode = sections.iter().find(|s| s.id == "opencode").unwrap();
+        assert_eq!(opencode.status, AgentModelSectionStatus::Ready);
+        assert_eq!(
+            opencode
+                .options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["opencode/big-pickle", "hundun/deepseek-v4-pro"]
+        );
+        let first = &opencode.options[0];
+        assert_eq!(first.provider, "opencode");
+        assert_eq!(first.cli_model, "opencode/big-pickle");
+        assert_eq!(first.label, "OpenCode Zen · Big Pickle");
+        assert!(first.effort_levels.is_empty());
+        assert!(!first.supports_fast_mode);
+        assert!(first.supports_context_usage);
+    }
+
+    #[test]
+    fn opencode_section_carries_per_model_effort_levels() {
+        let prefs = OpencodePrefs {
+            connected: vec!["opencode".to_string(), "hundun".to_string()],
+            enabled_ids: None,
+            cached_models: Some(vec![
+                opencode_cache("opencode/big-pickle", "OpenCode Zen · Big Pickle"),
+                opencode_cache_effort(
+                    "hundun/deepseek-v4-pro",
+                    "Hundun · DeepSeek V4 Pro",
+                    &["low", "medium", "high", "max"],
+                ),
+            ]),
+        };
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), None, Some(prefs), None, None);
+        let opencode = sections.iter().find(|s| s.id == "opencode").unwrap();
+        let zen = opencode
+            .options
+            .iter()
+            .find(|o| o.id == "opencode/big-pickle")
+            .unwrap();
+        let deepseek = opencode
+            .options
+            .iter()
+            .find(|o| o.id == "hundun/deepseek-v4-pro")
+            .unwrap();
+        assert!(
+            zen.effort_levels.is_empty(),
+            "no-effort model → no dropdown"
+        );
+        assert_eq!(deepseek.effort_levels, vec!["low", "medium", "high", "max"]);
+    }
+
+    #[test]
+    fn opencode_section_respects_enabled_subset() {
+        let prefs = OpencodePrefs {
+            connected: vec!["opencode".to_string(), "hundun".to_string()],
+            enabled_ids: Some(vec!["hundun/deepseek-v4-pro".to_string()]),
+            cached_models: Some(vec![
+                opencode_cache("opencode/big-pickle", "OpenCode Zen · Big Pickle"),
+                opencode_cache("hundun/deepseek-v4-pro", "Hundun · DeepSeek V4 Pro"),
+            ]),
+        };
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), None, Some(prefs), None, None);
+        let opencode = sections.iter().find(|s| s.id == "opencode").unwrap();
+        assert_eq!(opencode.status, AgentModelSectionStatus::Ready);
+        assert_eq!(opencode.options.len(), 1);
+        assert_eq!(opencode.options[0].id, "hundun/deepseek-v4-pro");
+        assert_eq!(opencode.options[0].label, "Hundun · DeepSeek V4 Pro");
+    }
+
+    #[test]
+    fn opencode_section_explicit_empty_enabled_list_yields_no_options() {
+        let prefs = OpencodePrefs {
+            connected: vec!["opencode".to_string()],
+            enabled_ids: Some(Vec::new()),
+            cached_models: Some(vec![opencode_cache(
+                "opencode/big-pickle",
+                "OpenCode Zen · Big Pickle",
+            )]),
+        };
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), None, Some(prefs), None, None);
+        let opencode = sections.iter().find(|s| s.id == "opencode").unwrap();
+        assert_eq!(opencode.status, AgentModelSectionStatus::Ready);
+        assert!(opencode.options.is_empty());
+    }
+
+    #[test]
+    fn opencode_section_no_connected_providers_is_unavailable() {
+        let prefs = OpencodePrefs {
+            connected: Vec::new(),
+            enabled_ids: None,
+            cached_models: Some(vec![opencode_cache(
+                "opencode/big-pickle",
+                "OpenCode Zen · Big Pickle",
+            )]),
+        };
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), None, Some(prefs), None, None);
+        let opencode = sections.iter().find(|s| s.id == "opencode").unwrap();
+        assert_eq!(opencode.status, AgentModelSectionStatus::Unavailable);
+        assert!(opencode.options.is_empty());
+    }
+
+    #[test]
+    fn opencode_section_unknown_enabled_slug_falls_back_to_slug_label() {
+        let prefs = OpencodePrefs {
+            connected: vec!["opencode".to_string()],
+            enabled_ids: Some(vec!["mystery/model".to_string()]),
+            cached_models: Some(Vec::new()),
+        };
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), None, Some(prefs), None, None);
+        let opencode = sections.iter().find(|s| s.id == "opencode").unwrap();
+        assert_eq!(opencode.options.len(), 1);
+        assert_eq!(opencode.options[0].id, "mystery/model");
+        assert_eq!(opencode.options[0].label, "mystery/model");
+    }
+
+    #[test]
     fn resolve_composer_routes_to_cursor() {
+        let _env = crate::testkit::TestEnv::new("resolve-composer-routes-to-cursor");
         let m = resolve_model("composer-2", None);
         assert_eq!(m.provider, "cursor");
         assert_eq!(m.cli_model, "composer-2");
@@ -575,6 +1599,7 @@ mod tests {
 
     #[test]
     fn cursor_namespaced_id_strips_to_wire_for_cli_model() {
+        let _env = crate::testkit::TestEnv::new("cursor-namespaced-id-strips-to-wire-for-");
         // Composer's selected model id from the picker is `cursor-default`
         // (Helmor namespace). Resolver must emit `cli_model = "default"`
         // so the SDK's `Cursor.models.list` token survives the round-trip.
@@ -600,11 +1625,70 @@ mod tests {
     }
 
     #[test]
+    fn official_claude_section_surfaces_fable_5_above_opus_lineage() {
+        let sections = model_sections_for_inputs(Vec::new(), Vec::new(), None, None, None, None);
+        let claude = sections.iter().find(|s| s.id == "claude").unwrap();
+        let ids: Vec<&str> = claude.options.iter().map(|o| o.id.as_str()).collect();
+        // User-facing ordering: Fable 5 on top, then 4.8 (default), 4.7, 4.6.
+        assert_eq!(
+            &ids[..4],
+            &[
+                "claude-fable-5[1m]",
+                "claude-opus-4-8[1m]",
+                "claude-opus-4-7[1m]",
+                "claude-opus-4-6[1m]"
+            ],
+            "Fable 5 must lead, with Opus 4.8 (default) / 4.7 / 4.6 beneath it"
+        );
+
+        // Fable 5: most capable, leads the list, but is NOT the app default
+        // (too expensive) — `useEnsureDefaultModel` pins to the Opus 4.8 id.
+        // No fast mode (Opus 4.6+ only); full effort tiers incl. xhigh.
+        let fable = &claude.options[0];
+        assert_eq!(fable.label, "Fable 5 1M");
+        assert_eq!(fable.cli_model, "claude-fable-5[1m]");
+        assert!(!fable.supports_fast_mode);
+        assert_eq!(
+            fable.effort_levels,
+            vec!["low", "medium", "high", "xhigh", "max"]
+        );
+
+        // Opus 4.8: the app default selection, supports fast mode, and keeps
+        // the xhigh effort tier. Pinned to its explicit `[1m]` wire id.
+        let default = &claude.options[1];
+        assert_eq!(default.label, "Opus 4.8 1M");
+        assert_eq!(default.cli_model, "claude-opus-4-8[1m]");
+        assert!(default.supports_fast_mode, "Opus 4.8 supports fast mode");
+        assert_eq!(
+            default.effort_levels,
+            vec!["low", "medium", "high", "xhigh", "max"]
+        );
+
+        // Explicit 4.7 pin: same effort tiers as before, still no fast mode.
+        let opus47 = &claude.options[2];
+        assert_eq!(opus47.label, "Opus 4.7 1M");
+        assert_eq!(opus47.cli_model, "claude-opus-4-7[1m]");
+        assert!(!opus47.supports_fast_mode);
+        assert_eq!(
+            opus47.effort_levels,
+            vec!["low", "medium", "high", "xhigh", "max"]
+        );
+
+        // 4.6 unchanged.
+        let opus46 = &claude.options[3];
+        assert_eq!(opus46.label, "Opus 4.6 1M");
+        assert!(opus46.supports_fast_mode);
+    }
+
+    #[test]
     fn claude_default_no_longer_collides_with_cursor_auto() {
-        // `default` belongs to Claude (Opus 4.7 1M). Cursor's Auto is
-        // `cursor-default`. They MUST resolve to different providers
-        // even when the picker / persistence flow doesn't pass a hint —
-        // this is the regression the namespace prefix exists to prevent.
+        let _env = crate::testkit::TestEnv::new("claude-default-no-longer-collides-with-c");
+        // A hint-less bare `default` still infers to claude; cursor's Auto is
+        // the namespaced `cursor-default`. They MUST resolve to different
+        // providers even without a hint — the regression the namespace prefix
+        // exists to prevent. (Claude no longer ships a `default` model id; any
+        // legacy occurrence is normalized by the DB migration before it gets
+        // here, so resolve_model just passes it through.)
         let claude = resolve_model("default", None);
         assert_eq!(claude.provider, "claude");
         assert_eq!(claude.cli_model, "default");
@@ -636,11 +1720,40 @@ mod tests {
     }
 
     #[test]
+    fn cursor_section_omitted_without_api_key() {
+        // Key deleted in Settings → no Cursor section in the composer, even
+        // though stale cached models / picks linger in the prefs.
+        let prefs = CursorPrefs {
+            api_key: None,
+            enabled_ids: Some(vec!["gpt-5.3-codex".to_string()]),
+            cached_models: Some(vec![cursor_cache("gpt-5.3-codex", "Codex 5.3", None)]),
+        };
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), Some(prefs), None, None, None);
+        assert!(sections.iter().all(|s| s.id != "cursor"));
+    }
+
+    #[test]
+    fn cursor_section_omitted_when_picks_emptied() {
+        // Key present but the user unchecked every model → omitted, matching
+        // the empty Settings list (no bare "Cursor" header in the picker).
+        let prefs = CursorPrefs {
+            api_key: Some("sk-test".to_string()),
+            enabled_ids: Some(Vec::new()),
+            cached_models: Some(vec![cursor_cache("gpt-5.3-codex", "Codex 5.3", None)]),
+        };
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), Some(prefs), None, None, None);
+        assert!(sections.iter().all(|s| s.id != "cursor"));
+    }
+
+    #[test]
     fn cursor_section_derives_effort_levels_from_cached_parameters() {
         // Real-world shape: gpt-5.3-codex via Cursor exposes a `reasoning`
         // enum but no `fast`. The composer should show the effort
         // dropdown with exactly those levels, and no Fast toggle.
         let prefs = CursorPrefs {
+            api_key: Some("sk-test".to_string()),
             enabled_ids: Some(vec!["gpt-5.3-codex".to_string()]),
             cached_models: Some(vec![cursor_cache(
                 "gpt-5.3-codex",
@@ -648,7 +1761,8 @@ mod tests {
                 Some(vec![cursor_param("reasoning", &["low", "medium", "high"])]),
             )]),
         };
-        let sections = model_sections_for_inputs(Vec::new(), Some(prefs));
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), Some(prefs), None, None, None);
         let cursor = sections.iter().find(|s| s.id == "cursor").unwrap();
         assert_eq!(cursor.options.len(), 1);
         let opt = &cursor.options[0];
@@ -663,6 +1777,7 @@ mod tests {
         // Composer 2: only `fast`, no reasoning. Composer toolbar should
         // show the Fast toggle but no effort dropdown.
         let prefs = CursorPrefs {
+            api_key: Some("sk-test".to_string()),
             enabled_ids: Some(vec!["composer-2".to_string()]),
             cached_models: Some(vec![cursor_cache(
                 "composer-2",
@@ -670,7 +1785,8 @@ mod tests {
                 Some(vec![cursor_param("fast", &["true", "false"])]),
             )]),
         };
-        let sections = model_sections_for_inputs(Vec::new(), Some(prefs));
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), Some(prefs), None, None, None);
         let cursor = sections.iter().find(|s| s.id == "cursor").unwrap();
         let opt = &cursor.options[0];
         assert!(opt.effort_levels.is_empty());
@@ -684,6 +1800,7 @@ mod tests {
         // it; the catalog must NOT treat it as a toolbar dimension —
         // composer has no Thinking button.
         let prefs = CursorPrefs {
+            api_key: Some("sk-test".to_string()),
             enabled_ids: Some(vec!["claude-haiku".to_string()]),
             cached_models: Some(vec![cursor_cache(
                 "claude-haiku",
@@ -691,7 +1808,8 @@ mod tests {
                 Some(vec![cursor_param("thinking", &["false", "true"])]),
             )]),
         };
-        let sections = model_sections_for_inputs(Vec::new(), Some(prefs));
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), Some(prefs), None, None, None);
         let opt = &sections.iter().find(|s| s.id == "cursor").unwrap().options[0];
         assert!(opt.effort_levels.is_empty());
         assert!(!opt.supports_fast_mode);
@@ -703,6 +1821,7 @@ mod tests {
         // surface effort + fast for the toolbar; `thinking` is invisible
         // here (auto-enabled sidecar-side, no UI).
         let prefs = CursorPrefs {
+            api_key: Some("sk-test".to_string()),
             enabled_ids: Some(vec!["claude-opus-4-6".to_string()]),
             cached_models: Some(vec![cursor_cache(
                 "claude-opus-4-6",
@@ -714,7 +1833,8 @@ mod tests {
                 ]),
             )]),
         };
-        let sections = model_sections_for_inputs(Vec::new(), Some(prefs));
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), Some(prefs), None, None, None);
         let opt = &sections.iter().find(|s| s.id == "cursor").unwrap().options[0];
         assert_eq!(opt.effort_levels, vec!["low", "medium", "high", "max"]);
         assert!(opt.supports_fast_mode);
@@ -725,6 +1845,7 @@ mod tests {
         // Defensive: if both `effort` (Claude shape) and `reasoning`
         // (GPT shape) somehow appear on the same model, `effort` wins.
         let prefs = CursorPrefs {
+            api_key: Some("sk-test".to_string()),
             enabled_ids: Some(vec!["weird".to_string()]),
             cached_models: Some(vec![cursor_cache(
                 "weird",
@@ -735,7 +1856,8 @@ mod tests {
                 ]),
             )]),
         };
-        let sections = model_sections_for_inputs(Vec::new(), Some(prefs));
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), Some(prefs), None, None, None);
         let opt = &sections.iter().find(|s| s.id == "cursor").unwrap().options[0];
         assert_eq!(opt.effort_levels, vec!["max"]);
     }
@@ -743,6 +1865,7 @@ mod tests {
     #[test]
     fn cursor_section_supports_both_effort_and_fast_when_present() {
         let prefs = CursorPrefs {
+            api_key: Some("sk-test".to_string()),
             enabled_ids: Some(vec!["claude-sonnet-4-5".to_string()]),
             cached_models: Some(vec![cursor_cache(
                 "claude-sonnet-4-5",
@@ -753,7 +1876,8 @@ mod tests {
                 ]),
             )]),
         };
-        let sections = model_sections_for_inputs(Vec::new(), Some(prefs));
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), Some(prefs), None, None, None);
         let opt = &sections.iter().find(|s| s.id == "cursor").unwrap().options[0];
         assert_eq!(opt.effort_levels, vec!["low", "medium", "high"]);
         assert!(opt.supports_fast_mode);
@@ -766,10 +1890,12 @@ mod tests {
         // a fake effort dropdown — the user gets the picker entry with
         // no effort/fast UI until they hit Refresh.
         let prefs = CursorPrefs {
+            api_key: Some("sk-test".to_string()),
             enabled_ids: Some(vec!["legacy".to_string()]),
             cached_models: Some(vec![cursor_cache("legacy", "Legacy Cached", None)]),
         };
-        let sections = model_sections_for_inputs(Vec::new(), Some(prefs));
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), Some(prefs), None, None, None);
         let opt = &sections.iter().find(|s| s.id == "cursor").unwrap().options[0];
         assert!(opt.effort_levels.is_empty());
         assert!(!opt.supports_fast_mode);
@@ -781,10 +1907,12 @@ mod tests {
         // longer in the cache (e.g. they hit Refresh after Cursor
         // retired the model). Show the bare id as label, no effort.
         let prefs = CursorPrefs {
+            api_key: Some("sk-test".to_string()),
             enabled_ids: Some(vec!["mystery-model".to_string()]),
             cached_models: Some(Vec::new()),
         };
-        let sections = model_sections_for_inputs(Vec::new(), Some(prefs));
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), Some(prefs), None, None, None);
         let opt = &sections.iter().find(|s| s.id == "cursor").unwrap().options[0];
         assert_eq!(opt.cli_model, "mystery-model");
         assert_eq!(opt.label, "mystery-model");
@@ -824,10 +1952,12 @@ mod tests {
             })
             .collect();
         let prefs = CursorPrefs {
+            api_key: Some("sk-test".to_string()),
             enabled_ids: Some(pick.iter().map(|s| s.to_string()).collect()),
             cached_models: Some(cached_models),
         };
-        let sections = model_sections_for_inputs(Vec::new(), Some(prefs));
+        let sections =
+            model_sections_for_inputs(Vec::new(), Vec::new(), Some(prefs), None, None, None);
         let cursor = sections.iter().find(|s| s.id == "cursor").unwrap();
         let by_wire: std::collections::HashMap<String, &AgentModelOption> = cursor
             .options
@@ -874,10 +2004,11 @@ mod tests {
 
     #[test]
     fn provider_hint_disambiguates_overlapping_ids() {
-        // gpt-5.3-codex exists in both Codex and Cursor; the request's
-        // provider field is the tie-break. (Cursor's namespaced form
-        // would be `cursor-gpt-5.3-codex`, which obviates the hint —
-        // but bare ids may still arrive via legacy / external callers.)
+        let _env = crate::testkit::TestEnv::new("provider-hint-disambiguates-overlapping-");
+        // A bare `gpt-`-prefixed id routes to Codex by prefix, but a
+        // provider hint overrides that: the same id resolves to Cursor when
+        // hinted. (Cursor's namespaced form `cursor-gpt-5.3-codex` obviates
+        // the hint, but bare ids may still arrive via legacy / external callers.)
         let codex = resolve_model("gpt-5.3-codex", Some("codex"));
         assert_eq!(codex.provider, "codex");
         let cursor = resolve_model("gpt-5.3-codex", Some("cursor"));

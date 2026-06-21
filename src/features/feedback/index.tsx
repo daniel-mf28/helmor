@@ -6,6 +6,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { I18nText } from "@/lib/i18n";
 
 export { FeedbackDialog } from "./feedback-dialog";
 
@@ -25,9 +26,11 @@ export function FeedbackButton({ onClick }: { onClick: () => void }) {
 			<TooltipContent
 				side="top"
 				sideOffset={6}
-				className="flex h-[22px] items-center rounded-md px-1.5 text-[11px] leading-none"
+				className="flex h-[22px] items-center rounded-md px-1.5 text-mini leading-none"
 			>
-				<span className="leading-none">Send feedback</span>
+				<span className="leading-none">
+					<I18nText source="sendFeedback" />
+				</span>
 			</TooltipContent>
 		</Tooltip>
 	);

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createSidecarEmitter, type SidecarEmitter } from "../src/emitter.js";
@@ -15,15 +15,33 @@ const serverState = {
 	onNotification: null as
 		| null
 		| ((notification: { method: string; params?: unknown }) => void),
+	onRequest: null as
+		| null
+		| ((request: {
+				id: string | number;
+				method: string;
+				params?: unknown;
+		  }) => void),
 	onExit: null as null | ((code: number | null, signal: string | null) => void),
 	/** Optional hook tests use to inject extra notifications between
 	 *  `turn/started` and `turn/completed` (e.g. `thread/tokenUsage/updated`). */
 	beforeTurnCompleted: null as null | (() => void),
+	/** Optional hook fired inside `thread/start` (before it resolves) so tests
+	 *  can simulate a stop arriving while the thread is still starting up. */
+	onThreadStart: null as null | (() => void),
 	exitAfterTurnStarted: false,
 	instances: [] as MockCodexAppServer[],
+	responses: [] as Array<{ id: string | number; result: unknown }>,
 };
 const gitAccessState = {
 	directories: [] as string[],
+	// `mock.module` is global to the `bun test` process and binds at collection
+	// time, so it can't be cleanly restored for files that run after us. Instead
+	// the stub delegates to the real module unless a codex test is actively
+	// driving it (set in beforeEach, released in afterAll), so git-access.test.ts
+	// still gets real behavior no matter the file order. Latent until Windows CI,
+	// where the filesystem ordering runs us before git-access.test.ts.
+	driving: false,
 };
 const codexConfigState = {
 	result: {
@@ -31,15 +49,22 @@ const codexConfigState = {
 		path: "/fake/.codex/config.toml",
 	},
 	calls: 0,
+	// Same global-mock-leak guard as gitAccessState: the stub delegates to the
+	// real module unless a codex test is actively driving, so config.test.ts
+	// (which exercises the real exports) passes no matter the file order.
+	driving: false,
 };
 
 class MockCodexAppServer {
 	killed = false;
+	disableMcp: boolean;
 
 	constructor(opts: {
 		onExit: (code: number | null, signal: string | null) => void;
+		disableMcp?: boolean;
 	}) {
 		serverState.onExit = opts.onExit;
+		this.disableMcp = opts.disableMcp ?? false;
 		serverState.instances.push(this);
 	}
 
@@ -48,7 +73,13 @@ class MockCodexAppServer {
 
 		if (method === "initialize") return {};
 		if (method === "thread/start") {
+			serverState.onThreadStart?.();
 			return { thread: { id: "thread-1" } };
+		}
+		if (method === "turn/interrupt") {
+			// Mimic codex 0.134 stalling on interrupt — never resolves. The
+			// abort path must fire this best-effort and NOT await it.
+			return new Promise(() => {});
 		}
 		if (method === "thread/resume") {
 			const threadId =
@@ -115,38 +146,89 @@ class MockCodexAppServer {
 			method: string;
 			params?: unknown;
 		}) => void,
-		_onRequest: unknown,
+		onRequest: (request: {
+			id: string | number;
+			method: string;
+			params?: unknown;
+		}) => void,
 	): void {
 		serverState.onNotification = onNotification;
+		serverState.onRequest = onRequest;
 	}
 
 	setActiveRequestId(_id: string): void {}
 
-	sendResponse(_requestId: string | number, _result: unknown): void {}
+	sendResponse(requestId: string | number, result: unknown): void {
+		serverState.responses.push({ id: requestId, result });
+	}
 	kill(): void {
 		this.killed = true;
 	}
 }
 
-mock.module("../src/codex-app-server.js", () => ({
+// Capture real fns first (consts survive mock.module's in-place namespace
+// rewrite) and pass them through, overriding only CodexAppServer — otherwise
+// codex-app-server.test.ts imports this stub and can't find buildCodexEnv /
+// buildCodexAppServerArgs (load order surfaces this on Windows CI).
+const realCodexAppServer = await import("../src/codex/app-server.js");
+const realBuildCodexAppServerArgs = realCodexAppServer.buildCodexAppServerArgs;
+const realBuildCodexEnv = realCodexAppServer.buildCodexEnv;
+mock.module("../src/codex/app-server.js", () => ({
 	CodexAppServer: MockCodexAppServer,
+	buildCodexAppServerArgs: realBuildCodexAppServerArgs,
+	buildCodexEnv: realBuildCodexEnv,
 }));
 
+// `mock.module` is global to the whole `bun test` process and is NOT undone by
+// `mock.restore()`. Capture the real module first so afterAll can put it back —
+// otherwise git-access.test.ts (and any other file that runs after us) imports
+// this stub instead of the real `resolveGitAccessDirectories`. File order is
+// filesystem-dependent, so the leak only failed on Windows CI.
+// Capture the real function VALUE before mocking — `mock.module` mutates the
+// module namespace in place, so holding the namespace object isn't enough.
+const realResolveGitAccessDirectories = (await import("../src/git-access.js"))
+	.resolveGitAccessDirectories;
 mock.module("../src/git-access.js", () => ({
-	resolveGitAccessDirectories: async () => [...gitAccessState.directories],
+	resolveGitAccessDirectories: async (cwd: string | undefined) =>
+		gitAccessState.driving
+			? [...gitAccessState.directories]
+			: realResolveGitAccessDirectories(cwd),
 }));
 
-mock.module("../src/codex-config.js", () => ({
-	ensureCodexGoalsFeatureEnabled: async () => {
+// Capture real fns into consts (NOT the namespace — mock.module mutates the
+// namespace in place, see the gitAccess note above).
+const realConfigModule = await import("../src/codex/config.js");
+const realEnsureCodexGoalsFeatureEnabled =
+	realConfigModule.ensureCodexGoalsFeatureEnabled;
+const realCodexConfigPath = realConfigModule.codexConfigPath;
+const realInjectGoalsFeature = realConfigModule.injectGoalsFeature;
+mock.module("../src/codex/config.js", () => ({
+	injectGoalsFeature: realInjectGoalsFeature,
+	ensureCodexGoalsFeatureEnabled: async (
+		...args: Parameters<typeof realEnsureCodexGoalsFeatureEnabled>
+	) => {
+		if (!codexConfigState.driving) {
+			return realEnsureCodexGoalsFeatureEnabled(...args);
+		}
 		codexConfigState.calls += 1;
 		return { ...codexConfigState.result };
 	},
-	codexConfigPath: () => codexConfigState.result.path,
+	codexConfigPath: () =>
+		codexConfigState.driving
+			? codexConfigState.result.path
+			: realCodexConfigPath(),
 }));
 
 const { CodexAppServerManager } = await import(
-	"../src/codex-app-server-manager.js"
+	"../src/codex/app-server-manager.js"
 );
+
+// Release control so the still-installed stub delegates to the real module for
+// any test file that runs after us.
+afterAll(() => {
+	gitAccessState.driving = false;
+	codexConfigState.driving = false;
+});
 
 describe("CodexAppServerManager", () => {
 	let emitter: SidecarEmitter;
@@ -154,11 +236,16 @@ describe("CodexAppServerManager", () => {
 	beforeEach(() => {
 		serverState.requests = [];
 		serverState.onNotification = null;
+		serverState.onRequest = null;
 		serverState.onExit = null;
 		serverState.beforeTurnCompleted = null;
+		serverState.onThreadStart = null;
 		serverState.exitAfterTurnStarted = false;
 		serverState.instances = [];
+		serverState.responses = [];
 		gitAccessState.directories = [];
+		gitAccessState.driving = true;
+		codexConfigState.driving = true;
 		codexConfigState.result = {
 			kind: "alreadyEnabled",
 			path: "/fake/.codex/config.toml",
@@ -192,7 +279,7 @@ describe("CodexAppServerManager", () => {
 
 		const models = await manager.listModels();
 
-		expect(models).toHaveLength(6);
+		expect(models).toHaveLength(3);
 		expect(models).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -210,6 +297,43 @@ describe("CodexAppServerManager", () => {
 			]),
 		);
 		expect(serverState.requests).toEqual([]);
+	});
+
+	test("generateTitle runs on a dedicated app-server with MCP disabled", async () => {
+		const manager = new CodexAppServerManager();
+		const events: unknown[] = [];
+		const titleEmitter = createSidecarEmitter((event) => events.push(event));
+		serverState.beforeTurnCompleted = () => {
+			serverState.onNotification?.({
+				method: "item/agentMessage/delta",
+				params: {
+					delta: "title: 查看 Linear 团队\nbranch: list-linear-teams\n",
+				},
+			});
+		};
+
+		await manager.generateTitle(
+			"REQ-title-codex",
+			"看看 linear 里有哪些 team",
+			null,
+			titleEmitter,
+			30_000,
+		);
+
+		expect(serverState.instances).toHaveLength(1);
+		// The title app-server must never start the user's MCP servers.
+		expect(serverState.instances[0]?.disableMcp).toBe(true);
+		expect(serverState.requests.map((request) => request.method)).toContain(
+			"turn/start",
+		);
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				id: "REQ-title-codex",
+				type: "titleGenerated",
+				title: "查看 Linear 团队",
+				branchName: "list-linear-teams",
+			}),
+		);
 	});
 
 	test("forwards service tier when fast mode is enabled for a codex model", async () => {
@@ -726,12 +850,307 @@ describe("CodexAppServerManager", () => {
 		);
 		expect(events.find((e) => e.type === "aborted")).toBeUndefined();
 	});
+
+	test("stopSession aborts immediately without awaiting turn/interrupt", async () => {
+		const manager = new CodexAppServerManager();
+		const events: Array<Record<string, unknown>> = [];
+		const capturingEmitter = createSidecarEmitter((event) => {
+			events.push(event as Record<string, unknown>);
+		});
+
+		// Abort mid-turn (activeTurnId set). turn/interrupt is mocked to hang
+		// forever — if the abort awaited it, this test would time out. It
+		// completing proves kill + aborted fire without waiting on the ACK.
+		serverState.beforeTurnCompleted = () => {
+			void manager.stopSession("session-stop-fast");
+		};
+
+		await expect(
+			manager.sendMessage(
+				"REQ-stop-fast",
+				{
+					sessionId: "session-stop-fast",
+					prompt: "hi",
+					model: "gpt-5.4",
+					cwd: "/tmp",
+					resume: undefined,
+					permissionMode: undefined,
+					effortLevel: "medium",
+					fastMode: false,
+					images: [],
+				},
+				capturingEmitter,
+			),
+		).rejects.toThrow(/stopped/i);
+
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: "REQ-stop-fast", type: "aborted" }),
+			]),
+		);
+		// Best-effort graceful interrupt is still attempted (just not awaited).
+		expect(
+			serverState.requests.find((r) => r.method === "turn/interrupt"),
+		).toBeDefined();
+		expect(serverState.instances[0]?.killed).toBe(true);
+	});
+
+	test("stopSession during thread startup still aborts (no silent no-op)", async () => {
+		const manager = new CodexAppServerManager();
+		const events: Array<Record<string, unknown>> = [];
+		const capturingEmitter = createSidecarEmitter((event) => {
+			events.push(event as Record<string, unknown>);
+		});
+
+		// User hits Stop while the codex thread is still starting up: the stop
+		// lands before ensureContext registers a context, so it can only record
+		// intent. sendMessage must honor it and never start the turn.
+		serverState.onThreadStart = () => {
+			void manager.stopSession("session-stop-startup");
+		};
+
+		await manager.sendMessage(
+			"REQ-stop-startup",
+			{
+				sessionId: "session-stop-startup",
+				prompt: "hi",
+				model: "gpt-5.4",
+				cwd: "/tmp",
+				resume: undefined,
+				permissionMode: undefined,
+				effortLevel: "medium",
+				fastMode: false,
+				images: [],
+			},
+			capturingEmitter,
+		);
+
+		// The turn never started, but the abort was reported (not dropped).
+		expect(
+			serverState.requests.find((r) => r.method === "turn/start"),
+		).toBeUndefined();
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: "REQ-stop-startup", type: "aborted" }),
+			]),
+		);
+		expect(serverState.instances[0]?.killed).toBe(true);
+	});
+
+	test("forwards Codex MCP tool-call approval _meta to the frontend and round-trips persist back to Codex", async () => {
+		// Repro for #639.
+		const manager = new CodexAppServerManager();
+		const events: Array<Record<string, unknown>> = [];
+		const capturingEmitter = createSidecarEmitter((event) => {
+			events.push(event as Record<string, unknown>);
+		});
+
+		serverState.beforeTurnCompleted = () => {
+			// Resolve BEFORE turn/completed — it clears pending user inputs.
+			serverState.onRequest?.({
+				id: "rpc-elicit-1",
+				method: "mcpServer/elicitation/request",
+				params: {
+					threadId: "thread-1",
+					turnId: "turn-1",
+					serverName: "wave-mcp",
+					mode: "form",
+					message: "Allow tool call `say_hello`?",
+					requestedSchema: { type: "object", properties: {} },
+					_meta: {
+						codex_approval_kind: "mcp_tool_call",
+						persist: ["session", "always"],
+					},
+				},
+			});
+
+			const userInputEvent = events.find(
+				(e) => e.type === "userInputRequest",
+			) as Record<string, unknown> | undefined;
+			expect(userInputEvent).toBeDefined();
+			expect(userInputEvent?.source).toBe("wave-mcp");
+			const payload = userInputEvent?.payload as Record<string, unknown>;
+			expect(payload.kind).toBe("form");
+			expect(payload.meta).toEqual({
+				codex_approval_kind: "mcp_tool_call",
+				persist: ["session", "always"],
+			});
+
+			const userInputId = userInputEvent?.userInputId as string;
+			const claimed = manager.resolveUserInput(userInputId, {
+				action: "submit",
+				content: {},
+				meta: { persist: "session" },
+			});
+			expect(claimed).toBe(true);
+		};
+
+		await manager.sendMessage(
+			"REQ-mcp-approval",
+			{
+				sessionId: "session-mcp-approval",
+				prompt: "use the wave mcp",
+				model: "gpt-5.5",
+				cwd: "/tmp",
+				resume: undefined,
+				// NOT bypassPermissions — that path auto-accepts.
+				permissionMode: undefined,
+				effortLevel: "high",
+				fastMode: false,
+				images: [],
+			},
+			capturingEmitter,
+		);
+
+		const response = serverState.responses.find((r) => r.id === "rpc-elicit-1");
+		expect(response?.result).toEqual({
+			action: "accept",
+			content: {},
+			_meta: { persist: "session" },
+		});
+	});
+
+	test("requestUserInput round-trips raw questions out and canonical answers back", async () => {
+		const manager = new CodexAppServerManager();
+		const events: Array<Record<string, unknown>> = [];
+		const capturingEmitter = createSidecarEmitter((event) => {
+			events.push(event as Record<string, unknown>);
+		});
+
+		serverState.beforeTurnCompleted = () => {
+			serverState.onRequest?.({
+				id: "rpc-user-input-1",
+				method: "item/tool/requestUserInput",
+				params: {
+					threadId: "thread-1",
+					turnId: "turn-1",
+					questions: [
+						{
+							id: "q0",
+							header: "Mode",
+							question: "Pick one",
+							options: [{ label: "Fast", description: "skip checks" }],
+						},
+					],
+				},
+			});
+
+			const userInputEvent = events.find(
+				(e) => e.type === "userInputRequest",
+			) as Record<string, unknown> | undefined;
+			expect(userInputEvent).toBeDefined();
+			const payload = userInputEvent?.payload as Record<string, unknown>;
+			// Raw Codex questions pass through — Rust normalizes them.
+			expect(payload.kind).toBe("ask-user-question");
+			expect(payload.questions).toEqual([
+				expect.objectContaining({ id: "q0", question: "Pick one" }),
+			]);
+
+			const userInputId = userInputEvent?.userInputId as string;
+			const claimed = manager.resolveUserInput(userInputId, {
+				action: "submit",
+				// Unified AUQ content: answers keyed by question text.
+				content: { answers: { "Pick one": "Fast" } },
+			});
+			expect(claimed).toBe(true);
+		};
+
+		await manager.sendMessage(
+			"REQ-user-input",
+			{
+				sessionId: "session-user-input",
+				prompt: "ask me something",
+				model: "gpt-5.5",
+				cwd: "/tmp",
+				resume: undefined,
+				permissionMode: undefined,
+				effortLevel: "high",
+				fastMode: false,
+				images: [],
+			},
+			capturingEmitter,
+		);
+
+		// Reverse-mapped to Codex's `{ id: { answers: [value] } }` shape.
+		const response = serverState.responses.find(
+			(r) => r.id === "rpc-user-input-1",
+		);
+		expect(response?.result).toEqual({
+			answers: { q0: { answers: ["Fast"] } },
+		});
+
+		// Resolved Q&A marker for the transcript card (persisted by Rust).
+		const resolved = events.find((e) => e.type === "user_question") as
+			| Record<string, unknown>
+			| undefined;
+		expect(resolved).toBeDefined();
+		expect(resolved?.source).toBe("Codex");
+		expect(resolved?.action).toBe("submit");
+		expect(resolved?.answers).toEqual({ "Pick one": "Fast" });
+		expect(resolved?.questions).toEqual([
+			expect.objectContaining({ id: "q0" }),
+		]);
+	});
+
+	test("plain Allow on tool-call approval sends accept without _meta", async () => {
+		const manager = new CodexAppServerManager();
+		const events: Array<Record<string, unknown>> = [];
+		const capturingEmitter = createSidecarEmitter((event) => {
+			events.push(event as Record<string, unknown>);
+		});
+
+		serverState.beforeTurnCompleted = () => {
+			serverState.onRequest?.({
+				id: "rpc-elicit-2",
+				method: "mcpServer/elicitation/request",
+				params: {
+					threadId: "thread-1",
+					turnId: "turn-1",
+					serverName: "wave-mcp",
+					mode: "form",
+					message: "Allow tool call `say_hello`?",
+					requestedSchema: { type: "object", properties: {} },
+					_meta: { codex_approval_kind: "mcp_tool_call" },
+				},
+			});
+
+			const userInputEvent = events.find((e) => e.type === "userInputRequest");
+			const userInputId = userInputEvent?.userInputId as string;
+			manager.resolveUserInput(userInputId, {
+				action: "submit",
+				content: {},
+			});
+		};
+
+		await manager.sendMessage(
+			"REQ-mcp-approval-plain",
+			{
+				sessionId: "session-mcp-approval-plain",
+				prompt: "use the wave mcp",
+				model: "gpt-5.5",
+				cwd: "/tmp",
+				resume: undefined,
+				permissionMode: undefined,
+				effortLevel: "high",
+				fastMode: false,
+				images: [],
+			},
+			capturingEmitter,
+		);
+
+		const response = serverState.responses.find((r) => r.id === "rpc-elicit-2");
+		expect(response?.result).toEqual({
+			action: "accept",
+			content: {},
+			_meta: null,
+		});
+	});
 });
 
 describe("parseGoalCommand", () => {
 	test("returns null for non-/goal prompts", async () => {
 		const { parseGoalCommand } = await import(
-			"../src/codex-app-server-manager.js"
+			"../src/codex/app-server-manager.js"
 		);
 		expect(parseGoalCommand("hello world")).toBeNull();
 		expect(parseGoalCommand("/compact")).toBeNull();
@@ -740,7 +1159,7 @@ describe("parseGoalCommand", () => {
 
 	test("returns null for bare /goal so the agent handles it", async () => {
 		const { parseGoalCommand } = await import(
-			"../src/codex-app-server-manager.js"
+			"../src/codex/app-server-manager.js"
 		);
 		expect(parseGoalCommand("/goal")).toBeNull();
 		expect(parseGoalCommand("  /goal  ")).toBeNull();
@@ -748,7 +1167,7 @@ describe("parseGoalCommand", () => {
 
 	test("treats free-form text as the objective", async () => {
 		const { parseGoalCommand } = await import(
-			"../src/codex-app-server-manager.js"
+			"../src/codex/app-server-manager.js"
 		);
 		expect(parseGoalCommand("/goal improve benchmark coverage")).toEqual({
 			kind: "set",
@@ -758,7 +1177,7 @@ describe("parseGoalCommand", () => {
 
 	test("recognises /goal resume as the resume kind", async () => {
 		const { parseGoalCommand } = await import(
-			"../src/codex-app-server-manager.js"
+			"../src/codex/app-server-manager.js"
 		);
 		expect(parseGoalCommand("/goal resume")).toEqual({ kind: "resume" });
 	});
@@ -772,7 +1191,7 @@ describe("parseGoalCommand", () => {
 	// echoed as a chat user prompt.
 	test("does NOT recognise /goal pause or /goal clear (handled by container intercept)", async () => {
 		const { parseGoalCommand } = await import(
-			"../src/codex-app-server-manager.js"
+			"../src/codex/app-server-manager.js"
 		);
 		// Sidecar treats them as plain objectives if they ever arrive here.
 		expect(parseGoalCommand("/goal pause")).toEqual({
@@ -792,11 +1211,16 @@ describe("CodexAppServerManager goal pre-flight", () => {
 	beforeEach(() => {
 		serverState.requests = [];
 		serverState.onNotification = null;
+		serverState.onRequest = null;
 		serverState.onExit = null;
 		serverState.beforeTurnCompleted = null;
+		serverState.onThreadStart = null;
 		serverState.exitAfterTurnStarted = false;
 		serverState.instances = [];
+		serverState.responses = [];
 		gitAccessState.directories = [];
+		gitAccessState.driving = true;
+		codexConfigState.driving = true;
 		codexConfigState.result = {
 			kind: "alreadyEnabled",
 			path: "/fake/.codex/config.toml",

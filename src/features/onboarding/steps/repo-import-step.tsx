@@ -7,6 +7,7 @@ import {
 	X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { I18nText, useI18n } from "@/lib/i18n";
 import type { ImportedRepository, OnboardingStep } from "../types";
 
 export function RepoImportStep({
@@ -34,9 +35,10 @@ export function RepoImportStep({
 	onBack: () => void;
 	onComplete: () => void;
 }) {
+	const { t, f } = useI18n();
 	return (
 		<section
-			aria-label="Repository import"
+			aria-label={t("repositoryImport")}
 			aria-hidden={step !== "repoImport"}
 			className={`absolute left-[calc(30vw-260px)] top-20 z-30 w-[520px] transition-all duration-1000 ease-[cubic-bezier(.22,.82,.2,1)] ${
 				step === "repoImport"
@@ -49,11 +51,10 @@ export function RepoImportStep({
 			<div className="flex h-[660px] flex-col">
 				<div className="text-center">
 					<h2 className="text-3xl font-semibold tracking-normal text-foreground">
-						Bring in your first repositories
+						<I18nText source="bringFirstRepositories" />
 					</h2>
-					<p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted-foreground">
-						Start with a local project, or pull a remote repository from GitHub.
-						You can add more than one before entering Helmor.
+					<p className="mx-auto mt-3 max-w-md text-body leading-6 text-muted-foreground">
+						<I18nText source="startLocalProjectPullRemoteRepository" />
 					</p>
 				</div>
 
@@ -72,15 +73,19 @@ export function RepoImportStep({
 								<FolderOpen className="size-5" />
 							)}
 						</div>
-						<div className="mt-4 text-sm font-medium text-foreground">
-							{isAddingLocalRepository
-								? "Adding repository…"
-								: "Choose local project"}
+						<div className="mt-4 text-body font-medium text-foreground">
+							{isAddingLocalRepository ? (
+								<I18nText source="addingRepository" />
+							) : (
+								<I18nText source="chooseLocalProject" />
+							)}
 						</div>
-						<p className="mt-1 text-xs leading-5 text-muted-foreground">
-							{isAddingLocalRepository
-								? "Pick a folder, then we'll wire it up."
-								: "Add a folder already on this machine."}
+						<p className="mt-1 text-small leading-5 text-muted-foreground">
+							{isAddingLocalRepository ? (
+								<I18nText source="pickFolderThenWeLlWire" />
+							) : (
+								<I18nText source="addFolderAlreadyMachine" />
+							)}
 						</p>
 					</button>
 					<button
@@ -92,11 +97,11 @@ export function RepoImportStep({
 						<div className="flex size-10 items-center justify-center rounded-lg border border-border/50 bg-background text-foreground">
 							<Cloud className="size-5" />
 						</div>
-						<div className="mt-4 text-sm font-medium text-foreground">
-							Import from GitHub
+						<div className="mt-4 text-body font-medium text-foreground">
+							<I18nText source="importFromGithub" />
 						</div>
-						<p className="mt-1 text-xs leading-5 text-muted-foreground">
-							Clone a remote project into Helmor.
+						<p className="mt-1 text-small leading-5 text-muted-foreground">
+							<I18nText source="cloneRemoteProjectIntoHelmor" />
 						</p>
 						{githubImportProgress !== null ? (
 							<div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-muted">
@@ -110,14 +115,19 @@ export function RepoImportStep({
 				</div>
 
 				{repoImportError ? (
-					<p role="alert" className="mt-3 text-center text-xs text-destructive">
+					<p
+						role="alert"
+						className="mt-3 text-center text-small text-destructive"
+					>
 						{repoImportError}
 					</p>
 				) : null}
 
 				<div className="mt-7 min-h-0 flex-1">
-					<div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-						<span>Imported repositories</span>
+					<div className="mb-2 flex items-center justify-between text-small text-muted-foreground">
+						<span>
+							<I18nText source="importedRepositories" />
+						</span>
 						{importedRepositories.length > 0 ? (
 							<span>{importedRepositories.length}</span>
 						) : null}
@@ -136,16 +146,16 @@ export function RepoImportStep({
 											<Cloud className="size-3.5 text-muted-foreground" />
 										)}
 										<div className="min-w-0 flex-1">
-											<div className="truncate text-xs font-medium text-foreground">
+											<div className="truncate text-small font-medium text-foreground">
 												{repo.name}
 											</div>
-											<div className="truncate text-[11px] text-muted-foreground">
+											<div className="truncate text-mini text-muted-foreground">
 												{repo.detail}
 											</div>
 										</div>
 										<button
 											type="button"
-											aria-label={`Remove ${repo.name}`}
+											aria-label={f("removeLabel", { label: repo.name })}
 											disabled={removingRepositoryIds.has(repo.id)}
 											onClick={() => {
 												onRemoveRepository(repo.id);
@@ -158,9 +168,8 @@ export function RepoImportStep({
 								))}
 							</div>
 						) : (
-							<div className="flex h-full min-h-32 items-center justify-center text-center text-xs leading-5 text-muted-foreground">
-								Choose a local folder or import from GitHub to build your first
-								queue.
+							<div className="flex h-full min-h-32 items-center justify-center text-center text-small leading-5 text-muted-foreground">
+								<I18nText source="chooseLocalFolderImportFromGithub" />
 							</div>
 						)}
 					</div>
@@ -172,18 +181,18 @@ export function RepoImportStep({
 						variant="ghost"
 						size="lg"
 						onClick={onBack}
-						className="h-11 gap-2 px-4 text-[0.95rem]"
+						className="h-11 gap-2 px-4 text-title"
 					>
 						<ArrowLeft data-icon="inline-start" className="size-4" />
-						Back
+						<I18nText source="back" />
 					</Button>
 					<Button
 						type="button"
 						size="lg"
 						onClick={onComplete}
-						className="h-11 gap-2 px-4 text-[0.95rem]"
+						className="h-11 gap-2 px-4 text-title"
 					>
-						Let&apos;s ship
+						<I18nText source="letAposSShip" />
 						<ArrowRight data-icon="inline-end" className="size-4" />
 					</Button>
 				</div>

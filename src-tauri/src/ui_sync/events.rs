@@ -20,11 +20,29 @@ pub enum UiMutationEvent {
     CodexGoalChanged {
         session_id: String,
     },
+    /// The session's normalised plan projection in `session_plan_state`
+    /// was upserted (Codex `turn/plan/updated` or Claude `ExitPlanMode`
+    /// just landed). Frontends invalidate the `sessionPlanState` query
+    /// and re-fetch the typed payload.
+    SessionPlanChanged {
+        session_id: String,
+    },
     /// Fires when a `goal_status` system message has been synthesised into
     /// the conversation history out-of-band — the streaming pipeline owns
     /// real assistant messages, this exists for the lifecycle markers
     /// (Goal paused / resumed / cleared) we insert ourselves.
     SessionMessagesAppended {
+        session_id: String,
+    },
+    /// A turn's terminal rows really landed in `session_messages` — fired
+    /// after `persist_result_and_finalize` / `persist_error_message`
+    /// succeed (including the abnormal-exit cleanup path) and after an
+    /// aborted turn finalizes. Unlike
+    /// `SessionMessagesAppended` (active refetch for out-of-band inserts),
+    /// frontends only mark the thread cache stale (`refetchType: 'none'`)
+    /// so the next mount refetches; the live-stream dispatcher keeps
+    /// owning the on-screen snapshot.
+    SessionTurnPersisted {
         session_id: String,
     },
     WorkspaceFilesChanged {
@@ -43,6 +61,11 @@ pub enum UiMutationEvent {
     RepositoryChanged {
         repo_id: String,
     },
+    /// A repo's `repo_run_actions` list changed (create / update / delete /
+    /// reorder). Frontends invalidate `["repoScripts", repoId, ...]`.
+    RepoRunActionsChanged {
+        repo_id: String,
+    },
     SettingsChanged {
         key: Option<String>,
     },
@@ -58,6 +81,64 @@ pub enum UiMutationEvent {
     /// `list_active_streams`. See `agents::streaming::active_streams` for
     /// the source of truth this notification mirrors.
     ActiveStreamsChanged,
+    /// A Terminal-Mode agent hook reported a working/idle transition. The
+    /// ui-sync socket listener folds it into the active-stream registry (so the
+    /// sidebar spinner treats it like any session) and re-broadcasts
+    /// `ActiveStreamsChanged`. Carries the owning session + workspace.
+    TerminalActivityChanged {
+        session_id: String,
+        workspace_id: String,
+        busy: bool,
+    },
+    /// A Terminal-Mode agent hook reported the turn finished (`Stop`). The
+    /// ui-sync listener re-broadcasts this so the frontend runs the shared
+    /// completion path (mark-unread + OS notification) like a GUI session.
+    TerminalSessionIdle {
+        session_id: String,
+        workspace_id: String,
+    },
+    /// A Terminal-Mode agent hook captured the user's submitted prompt
+    /// (`UserPromptSubmit`). The frontend feeds it to the shared title and
+    /// branch-rename generator so a Terminal session names itself like a GUI
+    /// session does on its first turn.
+    TerminalPromptCaptured {
+        session_id: String,
+        workspace_id: String,
+        prompt: String,
+    },
+    /// Connected-Slack-workspace set changed (Connect / Disconnect).
+    /// Frontends invalidate the workspace list query and the inbox
+    /// queries for any affected team.
+    SlackWorkspacesChanged,
+    /// A Slack workspace's stored credentials no longer authenticate
+    /// (xoxc rotation, account logout, admin revoke). The frontend
+    /// surfaces a "Reconnect" affordance for this workspace.
+    SlackTokenInvalidated {
+        team_id: String,
+    },
+    /// AI-triage config changed.
+    TriageConfigChanged,
+    /// Active tick status changed (begin / progress / end).
+    TriageActiveStatusChanged,
+    /// An AI-triage workspace was created. Frontend invalidates sidebar.
+    TriageWorkspaceCreated {
+        workspace_id: String,
+    },
+    /// Fast mode was requested but didn't engage; the composer flips its
+    /// fast-mode toggle off for this session.
+    FastModeUnavailable {
+        session_id: String,
+        reason: String,
+    },
+    /// The mobile-companion paired-device list changed (paired or revoked).
+    /// Frontends invalidate the `pairedDevices` query.
+    PairedDevicesChanged,
+    /// "Open in Helmor" from the quick panel. Only the MAIN window acts on
+    /// this (navigates to the workspace/session); the quick panel ignores it.
+    WorkspaceRevealRequested {
+        workspace_id: String,
+        session_id: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,7 +186,13 @@ mod tests {
             UiMutationEvent::CodexGoalChanged {
                 session_id: "s".into(),
             },
+            UiMutationEvent::SessionPlanChanged {
+                session_id: "s".into(),
+            },
             UiMutationEvent::SessionMessagesAppended {
+                session_id: "s".into(),
+            },
+            UiMutationEvent::SessionTurnPersisted {
                 session_id: "s".into(),
             },
             UiMutationEvent::WorkspaceFilesChanged {
@@ -123,6 +210,9 @@ mod tests {
             UiMutationEvent::RepositoryChanged {
                 repo_id: "r".into(),
             },
+            UiMutationEvent::RepoRunActionsChanged {
+                repo_id: "r".into(),
+            },
             UiMutationEvent::SettingsChanged { key: None },
             UiMutationEvent::PendingCliSendQueued {
                 workspace_id: "w".into(),
@@ -132,6 +222,32 @@ mod tests {
                 permission_mode: None,
             },
             UiMutationEvent::ActiveStreamsChanged,
+            UiMutationEvent::TerminalActivityChanged {
+                session_id: "s".into(),
+                workspace_id: "w".into(),
+                busy: true,
+            },
+            UiMutationEvent::TerminalSessionIdle {
+                session_id: "s".into(),
+                workspace_id: "w".into(),
+            },
+            UiMutationEvent::TerminalPromptCaptured {
+                session_id: "s".into(),
+                workspace_id: "w".into(),
+                prompt: "hi".into(),
+            },
+            UiMutationEvent::SlackTokenInvalidated {
+                team_id: "T1".into(),
+            },
+            UiMutationEvent::TriageConfigChanged,
+            UiMutationEvent::TriageActiveStatusChanged,
+            UiMutationEvent::TriageWorkspaceCreated {
+                workspace_id: "w".into(),
+            },
+            UiMutationEvent::FastModeUnavailable {
+                session_id: "s".into(),
+                reason: "extra usage not enabled".into(),
+            },
         ];
         for event in cases {
             let s = serde_json::to_string(&event).unwrap();
@@ -146,6 +262,28 @@ mod tests {
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["type"], "contextUsageChanged");
+        assert_eq!(json["sessionId"], "abc");
+        assert!(json.get("session_id").is_none());
+    }
+
+    #[test]
+    fn session_plan_changed_uses_camel_case_type_and_field() {
+        let event = UiMutationEvent::SessionPlanChanged {
+            session_id: "abc".into(),
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "sessionPlanChanged");
+        assert_eq!(json["sessionId"], "abc");
+        assert!(json.get("session_id").is_none());
+    }
+
+    #[test]
+    fn session_turn_persisted_uses_camel_case_type_and_field() {
+        let event = UiMutationEvent::SessionTurnPersisted {
+            session_id: "abc".into(),
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "sessionTurnPersisted");
         assert_eq!(json["sessionId"], "abc");
         assert!(json.get("session_id").is_none());
     }
@@ -179,11 +317,11 @@ mod tests {
             session_id: "s".into(),
             prompt: "hello".into(),
             model_id: Some("claude-sonnet-4-5".into()),
-            permission_mode: Some("acceptEdits".into()),
+            permission_mode: Some("bypassPermissions".into()),
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["modelId"], "claude-sonnet-4-5");
-        assert_eq!(json["permissionMode"], "acceptEdits");
+        assert_eq!(json["permissionMode"], "bypassPermissions");
         assert_eq!(json["workspaceId"], "w");
         assert_eq!(json["sessionId"], "s");
         assert_eq!(json["prompt"], "hello");

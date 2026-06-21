@@ -1,4 +1,3 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { createElement, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -7,6 +6,9 @@ import {
 	installDownloadedAppUpdate,
 	listenAppUpdateStatus,
 } from "@/lib/api";
+import { formatSource, translateSource } from "@/lib/i18n";
+import { openUrl } from "@/lib/platform-bridge";
+import { isQuickPanelWindow } from "@/lib/window-role";
 
 function toastIdForUpdate(status: AppUpdateStatus): string | null {
 	return status.update ? `app-update-${status.update.version}` : null;
@@ -25,9 +27,11 @@ function showDownloadedUpdateToast(
 		update: NonNullable<AppUpdateStatus["update"]>;
 	},
 ) {
-	toast("Update ready to install", {
+	toast(translateSource("miscUpdateReadyToInstall"), {
 		id: toastIdForUpdate(status) ?? undefined,
-		description: `Helmor ${status.update.version} has been downloaded.`,
+		description: formatSource("miscHelmorVersionHasBeenDownloaded", {
+			version: status.update.version,
+		}),
 		action: createElement(
 			"button",
 			{
@@ -36,16 +40,16 @@ function showDownloadedUpdateToast(
 				"data-action": true,
 				onClick: () => {
 					void installDownloadedAppUpdate().catch((error: unknown) => {
-						toast.error("Install failed", {
+						toast.error(translateSource("installFailed"), {
 							description:
 								error instanceof Error
 									? error.message
-									: "Unable to install the downloaded update.",
+									: translateSource("unableInstallDownloadedUpdate"),
 						});
 					});
 				},
 			},
-			"Update and restart",
+			translateSource("updateRestart"),
 		),
 		cancel: createElement(
 			"button",
@@ -55,7 +59,7 @@ function showDownloadedUpdateToast(
 				"data-cancel": true,
 				onClick: () => void openUrl(status.update.releaseUrl),
 			},
-			"View change log",
+			translateSource("miscViewChangeLog"),
 		),
 		duration: 8000,
 	});
@@ -66,6 +70,9 @@ export function useAppUpdater(): AppUpdateStatus | null {
 	const [status, setStatus] = useState<AppUpdateStatus | null>(null);
 
 	useEffect(() => {
+		// Update checks, download toasts and install actions are app-wide
+		// singletons — the main window owns them.
+		if (isQuickPanelWindow) return;
 		let cleanup: (() => void) | undefined;
 		let mounted = true;
 
@@ -86,6 +93,14 @@ export function useAppUpdater(): AppUpdateStatus | null {
 			.catch(() => {});
 		void listenAppUpdateStatus(handleStatus)
 			.then((unlisten) => {
+				// If the component unmounted before listen() resolved, the
+				// cleanup below already ran (cleanup was still undefined), so it
+				// could never call this unlisten — detach it now to avoid a
+				// leaked backend listener. Mirrors use-ui-sync-bridge.ts.
+				if (!mounted) {
+					unlisten();
+					return;
+				}
 				cleanup = unlisten;
 			})
 			.catch(() => {});

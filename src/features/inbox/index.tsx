@@ -3,10 +3,8 @@ import {
 	ChevronDown,
 	Loader2,
 	Pickaxe,
-	Search,
 	SlidersHorizontal,
 	Smartphone,
-	X,
 } from "lucide-react";
 import type { ChangeEvent } from "react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -28,6 +26,7 @@ import type {
 import type { ComposerInsertTarget } from "@/lib/composer-insert";
 import { forgeLabelsFor } from "@/lib/forge-labels";
 import { parseForgeRepoHost } from "@/lib/forge-repo-filter";
+import { I18nText, useI18n } from "@/lib/i18n";
 import { inboxKindLabelsQueryOptions } from "@/lib/query-client";
 import {
 	DEFAULT_INBOX_ACCOUNT_TOGGLES,
@@ -37,8 +36,16 @@ import {
 import type { ContextCard, ContextCardSource } from "@/lib/sources/types";
 import { useForgeAccountsAll } from "@/lib/use-forge-accounts";
 import { cn } from "@/lib/utils";
+import {
+	InboxActionIconButton,
+	InboxActionMenuButton,
+	InboxSearchField,
+} from "./actions";
+import { InboxSourceLayout } from "./layout";
+import { SlackInboxSection } from "./slack-inbox-section";
 import { SourceCard } from "./source-card";
 import { SourceIcon } from "./source-icon";
+import { useDebouncedValue } from "./use-debounced-value";
 import {
 	type InboxItemWithDetailRef,
 	type InboxKind,
@@ -88,7 +95,7 @@ type ForgeStateFilter = {
 	label: string;
 };
 
-const EXTERNAL_FILTER_IDS: ExternalFilterId[] = ["linear", "slack", "mobile"];
+const EXTERNAL_FILTER_IDS: ExternalFilterId[] = ["slack", "linear", "mobile"];
 
 /** If the user pastes a GitHub or GitLab issue/PR/MR URL into the
  *  search box, snap the sub-tab to the matching kind so the result
@@ -112,21 +119,22 @@ function forgeUrlToInboxKind(query: string): InboxKind | null {
 	return null;
 }
 
+// Values are i18n catalog KEYS, resolved at render via t().
 const COMING_SOON_COPY: Record<ExternalFilterId, string[]> = {
 	linear: [
-		"Pull in issues, specs, labels, and priorities.",
-		"Start workspaces directly from planned tasks.",
-		"Keep implementation context tied to product intent.",
+		"inboxComingSoonLinear1",
+		"inboxComingSoonLinear2",
+		"inboxComingSoonLinear3",
 	],
 	slack: [
-		"Capture threads, decisions, and follow-up requests.",
-		"Convert discussions into actionable workspace prompts.",
-		"Preserve source context without copying long chat history.",
+		"inboxComingSoonSlack1",
+		"inboxComingSoonSlack2",
+		"inboxComingSoonSlack3",
 	],
 	mobile: [
-		"Send tasks, links, and screenshots from your phone.",
-		"Keep lightweight review and triage flows in sync.",
-		"Hand off mobile-captured context to desktop agents.",
+		"inboxComingSoonMobile1",
+		"inboxComingSoonMobile2",
+		"inboxComingSoonMobile3",
 	],
 };
 
@@ -135,22 +143,23 @@ const COMING_SOON_COPY: Record<ExternalFilterId, string[]> = {
  *  on both forges. Provider-specific COPY (e.g. "Merge requests" vs
  *  "Pull requests" for the kind label itself) comes from the backend
  *  via `inboxKindLabelsQueryOptions`. */
+// `label` values are i18n catalog KEYS, resolved at render via t().
 const FORGE_STATE_FILTERS: Record<InboxKind, ForgeStateFilter[]> = {
 	issues: [
-		{ id: "all", label: "All" },
-		{ id: "open", label: "Open" },
-		{ id: "closed", label: "Closed" },
+		{ id: "all", label: "all" },
+		{ id: "open", label: "open" },
+		{ id: "closed", label: "closed" },
 	],
 	prs: [
-		{ id: "all", label: "All" },
-		{ id: "open", label: "Open" },
-		{ id: "closed", label: "Closed" },
-		{ id: "merged", label: "Merged" },
+		{ id: "all", label: "all" },
+		{ id: "open", label: "open" },
+		{ id: "closed", label: "closed" },
+		{ id: "merged", label: "merged" },
 	],
 	discussions: [
-		{ id: "all", label: "All" },
-		{ id: "answered", label: "Answered" },
-		{ id: "unanswered", label: "Unanswered" },
+		{ id: "all", label: "all" },
+		{ id: "answered", label: "answered" },
+		{ id: "unanswered", label: "unanswered" },
 	],
 };
 
@@ -191,15 +200,6 @@ export function forgeFilterIdForRepo(
 	const provider: ForgeProvider | null | undefined = repository?.forgeProvider;
 	if (provider === "gitlab") return "gitlab";
 	return "github";
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number) {
-	const [debouncedValue, setDebouncedValue] = useState(value);
-	useEffect(() => {
-		const timer = window.setTimeout(() => setDebouncedValue(value), delayMs);
-		return () => window.clearTimeout(timer);
-	}, [value, delayMs]);
-	return debouncedValue;
 }
 
 export const InboxSidebar = memo(function InboxSidebar({
@@ -244,6 +244,7 @@ export const InboxSidebar = memo(function InboxSidebar({
 	stateFilterBySource?: Record<string, string>;
 	onStateFilterBySourceChange?: (filters: Record<string, string>) => void;
 }) {
+	const { t, f } = useI18n();
 	const projectForgeId = forgeFilterIdForRepo(repository ?? null);
 	const visibleSourceFilters = useMemo<SourceFilterId[]>(
 		() => [projectForgeId, ...EXTERNAL_FILTER_IDS],
@@ -441,6 +442,96 @@ export const InboxSidebar = memo(function InboxSidebar({
 		filteredCards.length,
 	]);
 
+	const forgeActions = isForgeSource ? (
+		<>
+			<InboxSearchField
+				value={searchQuery}
+				onChange={handleSearchChange}
+				onClear={() => setSearchQuery("")}
+				ariaLabel={f("inboxSearchProviderContexts", {
+					provider: activeForgeLabels.providerName,
+				})}
+			/>
+
+			{showForgeTypeSelect && activeKindLabels ? (
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<InboxActionIconButton
+							aria-label={f("inboxFilterByKind", {
+								kind: activeKindLabels.short,
+							})}
+							title={activeKindLabels.short}
+						>
+							{(() => {
+								const source =
+									INBOX_KIND_ICON_SOURCE[activeForgeProvider]?.[
+										activeKindLabels.kind
+									];
+								return source ? (
+									<SourceIcon source={source} size={13} className="block" />
+								) : null;
+							})()}
+						</InboxActionIconButton>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" className="w-40">
+						<DropdownMenuRadioGroup
+							value={activeKindLabels.kind}
+							onValueChange={(value) => setForgeTypeFilter(value as InboxKind)}
+						>
+							{enabledKindLabels.map((entry) => {
+								const source =
+									INBOX_KIND_ICON_SOURCE[activeForgeProvider]?.[entry.kind];
+								return (
+									<DropdownMenuRadioItem
+										key={entry.kind}
+										value={entry.kind}
+										className="gap-2 text-mini"
+									>
+										{source ? (
+											<SourceIcon
+												source={source}
+												size={12}
+												className="shrink-0"
+											/>
+										) : null}
+										<span>{entry.short}</span>
+									</DropdownMenuRadioItem>
+								);
+							})}
+						</DropdownMenuRadioGroup>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			) : null}
+
+			<DropdownMenu>
+				<DropdownMenuTrigger asChild>
+					<InboxActionMenuButton>
+						<span>{t(activeStateFilter.label)}</span>
+						<ChevronDown className="size-3" strokeWidth={2} />
+					</InboxActionMenuButton>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="end" className="w-28">
+					<DropdownMenuRadioGroup
+						value={activeStateFilter.id}
+						onValueChange={(value) =>
+							setStateFilter(value as ForgeStateFilterId)
+						}
+					>
+						{stateOptions.map((filter) => (
+							<DropdownMenuRadioItem
+								key={filter.id}
+								value={filter.id}
+								className="text-mini"
+							>
+								{t(filter.label)}
+							</DropdownMenuRadioItem>
+						))}
+					</DropdownMenuRadioGroup>
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</>
+	) : null;
+
 	return (
 		<div className={cn("h-full min-h-0 flex-col overflow-hidden", className)}>
 			{showWindowSafeTop ? (
@@ -481,7 +572,7 @@ export const InboxSidebar = memo(function InboxSidebar({
 									? "Linear"
 									: filterId === "slack"
 										? "Slack"
-										: "Mobile";
+										: t("mobile");
 						return (
 							<button
 								key={filterId}
@@ -526,131 +617,19 @@ export const InboxSidebar = memo(function InboxSidebar({
 				</div>
 			</div>
 
-			{isForgeSource ? (
-				<div className={cn("mt-1.5", horizontalPaddingClass)}>
-					<div className="flex h-7 min-w-0 items-center gap-1.5">
-						<div className="flex min-w-0 flex-1 items-center rounded-md border border-border/45 bg-background/35 px-1.5 text-muted-foreground transition-colors focus-within:border-border/80 focus-within:bg-background/55">
-							<Search className="size-3 shrink-0" strokeWidth={1.9} />
-							<input
-								type="text"
-								value={searchQuery}
-								onChange={handleSearchChange}
-								placeholder="Search"
-								aria-label={`Search ${activeForgeLabels.providerName} contexts`}
-								className="h-6 min-w-0 flex-1 bg-transparent px-1.5 text-[11px] text-foreground outline-none placeholder:text-muted-foreground/70"
-							/>
-							{searchQuery ? (
-								<button
-									type="button"
-									aria-label="Clear search"
-									onClick={() => setSearchQuery("")}
-									className="flex size-4 cursor-interactive items-center justify-center rounded-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-								>
-									<X className="size-3" strokeWidth={2} />
-								</button>
-							) : null}
-						</div>
-
-						{showForgeTypeSelect && activeKindLabels ? (
-							<DropdownMenu>
-								<DropdownMenuTrigger asChild>
-									<button
-										type="button"
-										aria-label={`Filter by ${activeKindLabels.short}`}
-										title={activeKindLabels.short}
-										className="inline-flex size-7 shrink-0 cursor-interactive items-center justify-center rounded-md border border-border/45 bg-background/35 text-muted-foreground transition-colors hover:bg-accent/45 hover:text-foreground"
-									>
-										{(() => {
-											const source =
-												INBOX_KIND_ICON_SOURCE[activeForgeProvider]?.[
-													activeKindLabels.kind
-												];
-											return source ? (
-												<SourceIcon
-													source={source}
-													size={13}
-													className="block"
-												/>
-											) : null;
-										})()}
-									</button>
-								</DropdownMenuTrigger>
-								<DropdownMenuContent align="end" className="w-40">
-									<DropdownMenuRadioGroup
-										value={activeKindLabels.kind}
-										onValueChange={(value) =>
-											setForgeTypeFilter(value as InboxKind)
-										}
-									>
-										{enabledKindLabels.map((entry) => {
-											const source =
-												INBOX_KIND_ICON_SOURCE[activeForgeProvider]?.[
-													entry.kind
-												];
-											return (
-												<DropdownMenuRadioItem
-													key={entry.kind}
-													value={entry.kind}
-													className="gap-2 text-[11px]"
-												>
-													{source ? (
-														<SourceIcon
-															source={source}
-															size={12}
-															className="shrink-0"
-														/>
-													) : null}
-													<span>{entry.short}</span>
-												</DropdownMenuRadioItem>
-											);
-										})}
-									</DropdownMenuRadioGroup>
-								</DropdownMenuContent>
-							</DropdownMenu>
-						) : null}
-
-						<DropdownMenu>
-							<DropdownMenuTrigger asChild>
-								<button
-									type="button"
-									className="inline-flex h-7 shrink-0 cursor-interactive items-center gap-1 rounded-md border border-border/45 bg-background/35 px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent/45 hover:text-foreground"
-								>
-									<span>{activeStateFilter.label}</span>
-									<ChevronDown className="size-3" strokeWidth={2} />
-								</button>
-							</DropdownMenuTrigger>
-							<DropdownMenuContent align="end" className="w-28">
-								<DropdownMenuRadioGroup
-									value={activeStateFilter.id}
-									onValueChange={(value) =>
-										setStateFilter(value as ForgeStateFilterId)
-									}
-								>
-									{stateOptions.map((filter) => (
-										<DropdownMenuRadioItem
-											key={filter.id}
-											value={filter.id}
-											className="text-[11px]"
-										>
-											{filter.label}
-										</DropdownMenuRadioItem>
-									))}
-								</DropdownMenuRadioGroup>
-							</DropdownMenuContent>
-						</DropdownMenu>
-					</div>
-				</div>
-			) : null}
-
-			<div
-				ref={scrollContainerRef}
-				className={cn(
-					"scrollbar-stable min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-width:thin]",
-					horizontalPaddingClass,
-					isForgeSource ? "mt-1" : "mt-[7px]",
-				)}
-			>
-				<div className="flex w-[calc(100%+12px)] flex-col gap-2 pb-3">
+			{selectedSource === "slack" ? (
+				<SlackInboxSection
+					onOpenCard={onOpenCard}
+					selectedCardId={selectedCardId}
+					appendContextTarget={appendContextTarget}
+					horizontalPaddingClass={horizontalPaddingClass}
+				/>
+			) : (
+				<InboxSourceLayout
+					ref={scrollContainerRef}
+					horizontalPaddingClass={horizontalPaddingClass}
+					actions={forgeActions}
+				>
 					{isComingSoonSource ? (
 						<div className="flex min-h-[calc(100vh-150px)] w-full items-center justify-center px-3">
 							<div className="flex w-full max-w-[250px] flex-col items-stretch text-muted-foreground/65">
@@ -659,17 +638,19 @@ export const InboxSidebar = memo(function InboxSidebar({
 										className="inbox-coming-soon-pickaxe size-3.5 shrink-0"
 										strokeWidth={2}
 									/>
-									<span className="text-[13px] font-medium">Coming Soon</span>
+									<span className="text-ui font-medium">
+										<I18nText source="comingSoon" />
+									</span>
 								</div>
 								<div className="my-7 flex items-center gap-2 px-2">
 									<div className="h-px flex-1 bg-border" />
 									<div className="size-0.5 rounded-full bg-border" />
 									<div className="h-px flex-1 bg-border" />
 								</div>
-								<ul className="list-disc space-y-3 pl-4 text-left text-pretty text-[11px] leading-4 marker:text-muted-foreground/35">
+								<ul className="list-disc space-y-3 pl-4 text-left text-pretty text-mini leading-4 marker:text-muted-foreground/35">
 									{COMING_SOON_COPY[selectedSource as ExternalFilterId].map(
 										(line) => (
-											<li key={line}>{line}</li>
+											<li key={line}>{t(line)}</li>
 										),
 									)}
 								</ul>
@@ -739,8 +720,8 @@ export const InboxSidebar = memo(function InboxSidebar({
 							repoFilter={repoFilter ?? null}
 						/>
 					)}
-				</div>
-			</div>
+				</InboxSourceLayout>
+			)}
 		</div>
 	);
 });
@@ -749,7 +730,9 @@ function InboxLoadingState() {
 	return (
 		<div className="mt-8 flex flex-col items-center gap-2 px-6 text-muted-foreground/70">
 			<Loader2 className="size-4 animate-spin" strokeWidth={2} />
-			<div className="text-[12px] leading-5">Loading items…</div>
+			<div className="text-small leading-5">
+				<I18nText source="loadingItems" />
+			</div>
 		</div>
 	);
 }
@@ -761,14 +744,15 @@ function InboxErrorState({
 	error: unknown;
 	onRetry: () => void;
 }) {
+	const { t } = useI18n();
 	const message =
-		error instanceof Error ? error.message : "Couldn't load context items.";
+		error instanceof Error ? error.message : t("inboxCouldntLoadContextItems");
 	return (
 		<div className="mt-8 flex flex-col items-center gap-2 px-6 text-center">
-			<div className="text-[13px] font-medium text-foreground">
-				Couldn't load
+			<div className="text-ui font-medium text-foreground">
+				<I18nText source="couldnTLoad" />
 			</div>
-			<div className="text-[12px] leading-5 text-muted-foreground">
+			<div className="text-small leading-5 text-muted-foreground">
 				{message}
 			</div>
 			<Button
@@ -776,9 +760,9 @@ function InboxErrorState({
 				variant="ghost"
 				size="sm"
 				onClick={onRetry}
-				className="mt-1 cursor-interactive text-[12px]"
+				className="mt-1 cursor-interactive text-small"
 			>
-				Try again
+				<I18nText source="tryAgain" />
 			</Button>
 		</div>
 	);
@@ -886,12 +870,12 @@ function ConfigureInboxLink({ onClick }: { onClick: () => void }) {
 			type="button"
 			onClick={onClick}
 			className={cn(
-				"mt-1 flex cursor-interactive items-center justify-center gap-1.5 self-center rounded-md px-2 py-1 text-[11px] text-muted-foreground/80 transition-colors",
+				"mt-1 flex cursor-interactive items-center justify-center gap-1.5 self-center rounded-md px-2 py-1 text-mini text-muted-foreground/80 transition-colors",
 				"hover:bg-accent/40 hover:text-foreground",
 			)}
 		>
 			<SlidersHorizontal className="size-3" strokeWidth={2} />
-			Configure
+			<I18nText source="configure" />
 		</button>
 	);
 }
@@ -917,7 +901,7 @@ function ConnectForgeState({
 					<GitlabBrandIcon size={16} />
 				)}
 			</div>
-			<div className="text-[13px] font-medium text-foreground">
+			<div className="text-ui font-medium text-foreground">
 				{labels.connectAction}
 			</div>
 			<Button
@@ -927,7 +911,7 @@ function ConnectForgeState({
 				className="mt-1 cursor-interactive gap-1.5"
 			>
 				<SlidersHorizontal className="size-3.5" strokeWidth={2} />
-				Configure
+				<I18nText source="configure" />
 			</Button>
 		</div>
 	);
@@ -945,28 +929,30 @@ function KindDisabledState({
 	labels: InboxKindLabels | null;
 	onConfigure: () => void;
 }) {
-	const plural = labels?.plural ?? "Items";
+	const { t } = useI18n();
+	const plural = labels?.plural ?? t("inboxItems");
 	const lower = plural.toLowerCase();
 	return (
 		<div className="mt-8 flex flex-col items-center gap-2 px-6 text-center">
 			<div className="flex size-8 items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground">
 				<SlidersHorizontal className="size-4" strokeWidth={2} />
 			</div>
-			<div className="text-[13px] font-medium text-foreground">
-				{plural} are off
+			<div className="text-ui font-medium text-foreground">
+				{plural} <I18nText source="off2" />
 			</div>
-			<div className="text-[12px] leading-5 text-muted-foreground">
-				Turn {lower} back on in Contexts settings.
+			<div className="text-small leading-5 text-muted-foreground">
+				<I18nText source="turn" /> {lower}{" "}
+				<I18nText source="backContextsSettings" />
 			</div>
 			<Button
 				type="button"
 				variant="ghost"
 				size="sm"
 				onClick={onConfigure}
-				className="mt-1 cursor-interactive gap-1.5 text-[12px]"
+				className="mt-1 cursor-interactive gap-1.5 text-small"
 			>
 				<SlidersHorizontal className="size-3.5" strokeWidth={2} />
-				Configure
+				<I18nText source="configure" />
 			</Button>
 		</div>
 	);
@@ -982,11 +968,14 @@ function NoItemsState({
 	labels: InboxKindLabels | null;
 	repoFilter: string | null;
 }) {
-	const lower = (labels?.plural ?? "Items").toLowerCase();
-	const title = repoFilter ? `No ${lower} in ${repoFilter}` : `No ${lower} yet`;
+	const { t, f } = useI18n();
+	const lower = (labels?.plural ?? t("inboxItems")).toLowerCase();
+	const title = repoFilter
+		? f("inboxNoItemsInRepo", { items: lower, repo: repoFilter })
+		: f("inboxNoItemsYet", { items: lower });
 	return (
 		<div className="mt-8 flex flex-col items-center gap-1 px-6 text-center">
-			<div className="text-[12px] leading-5 text-muted-foreground/80">
+			<div className="text-small leading-5 text-muted-foreground/80">
 				{title}
 			</div>
 		</div>

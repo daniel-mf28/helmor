@@ -3,11 +3,14 @@ import type {
 	FileMentionPart,
 	ImagePart,
 	MessagePart,
+	PastedTextPart,
 	PlanReviewPart,
 	PromptSuggestionPart,
 	SystemNoticePart,
 	ThreadMessageLike,
 	TodoListPart,
+	UserQuestionPart,
+	WorkflowPart,
 } from "@/lib/api";
 
 export type RenderedMessage = ThreadMessageLike;
@@ -89,6 +92,12 @@ export function isTodoListPart(part: unknown): part is TodoListPart {
 	return isObj(part) && part.type === "todo-list" && Array.isArray(part.items);
 }
 
+export function isWorkflowPart(part: unknown): part is WorkflowPart {
+	return (
+		isObj(part) && part.type === "workflow" && typeof part.name === "string"
+	);
+}
+
 export function isImagePart(part: unknown): part is ImagePart {
 	return isObj(part) && part.type === "image" && isObj(part.source);
 }
@@ -106,6 +115,20 @@ export function isPromptSuggestionPart(
 export function isFileMentionPart(part: unknown): part is FileMentionPart {
 	return (
 		isObj(part) && part.type === "file-mention" && typeof part.path === "string"
+	);
+}
+
+export function isPastedTextPart(part: unknown): part is PastedTextPart {
+	return (
+		isObj(part) && part.type === "pasted-text" && typeof part.text === "string"
+	);
+}
+
+export function isUserQuestionPart(part: unknown): part is UserQuestionPart {
+	return (
+		isObj(part) &&
+		part.type === "user-question" &&
+		Array.isArray(part.questions)
 	);
 }
 

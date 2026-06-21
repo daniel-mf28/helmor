@@ -137,6 +137,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 	getCurrentWindow: vi.fn(() => ({
 		onCloseRequested: vi.fn(async () => () => {}),
 		setBadgeCount: vi.fn(async () => {}),
+		close: vi.fn(async () => {}),
 	})),
 }));
 
@@ -194,6 +195,26 @@ vi.mock("@tauri-apps/api/core", () => ({
 					lastAttemptAt: null,
 					downloadedAt: null,
 				};
+			case "get_helmor_components_update_check":
+				return {
+					cli: {
+						installed: false,
+						installPath: null,
+						buildMode: "development",
+						installState: "missing",
+					},
+					skills: {
+						installed: false,
+						claude: false,
+						codex: false,
+						command:
+							"npx --yes skills add dohooo/helmor/.agents/skills/helmor-cli -g -s helmor-cli -y --copy -a claude-code -a codex",
+					},
+					lastCheckedVersion: null,
+					currentVersion: "0.0.0-test",
+					cliError: null,
+					skillsError: null,
+				};
 			case "load_auto_close_action_kinds":
 				return [];
 			case "load_auto_close_opt_in_asked":
@@ -202,8 +223,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 				return [];
 			case "list_workspace_files":
 				return [];
-			case "list_workspace_changes_with_content":
-				return { items: [], prefetched: [] };
+			case "list_workspace_changes":
+				return [];
 			case "list_slash_commands":
 				return [];
 			case "list_workspace_linked_directories":
@@ -314,6 +335,10 @@ if (typeof window !== "undefined" && typeof window.matchMedia === "undefined") {
 if (typeof HTMLCanvasElement !== "undefined") {
 	Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
 		configurable: true,
+		// `src/lib/css-color.ts` resolves CSS values via canvas (gradient
+		// sentinel + getImageData). jsdom doesn't ship a canvas backend, so we
+		// stub the methods it touches with shapes that exercise the same code
+		// paths without crashing.
 		value: vi.fn(() => ({
 			measureText: (text: string) => ({
 				width: text.length * 8,
@@ -334,6 +359,14 @@ if (typeof HTMLCanvasElement !== "undefined") {
 			lineTo: () => {},
 			stroke: () => {},
 			fillText: () => {},
+			createLinearGradient: () => ({
+				addColorStop: () => {},
+			}),
+			getImageData: () => ({
+				data: new Uint8ClampedArray([0, 0, 0, 255]),
+			}),
+			fillStyle: "",
+			globalCompositeOperation: "source-over",
 			font: "",
 			textBaseline: "alphabetic",
 		})),

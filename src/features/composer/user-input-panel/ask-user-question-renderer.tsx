@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
 	InteractionFooter,
@@ -76,7 +77,11 @@ function buildAnswerString(
 		? response.selectedOptionLabels
 		: response.selectedOptionLabels.slice(0, 1);
 	const parts = [...selectedLabels];
-	if (response.useOther && response.otherText.trim()) {
+	if (
+		question.allowFreeText &&
+		response.useOther &&
+		response.otherText.trim()
+	) {
 		if (question.multiSelect) {
 			parts.push(response.otherText.trim());
 		} else {
@@ -123,8 +128,10 @@ function buildAskUserQuestionInput(
 		}
 	}
 
+	// Canonical answer payload, keyed by question text. The sidecar
+	// managers merge/translate it into each provider's reply shape
+	// (Claude `updatedInput`, Codex answers map, OpenCode string[][]).
 	return {
-		...viewModel.rawInput,
 		answers,
 		...(Object.keys(annotations).length > 0 ? { annotations } : {}),
 	};
@@ -136,6 +143,7 @@ export function AskUserQuestionRenderer({
 	onResponse,
 	viewModel,
 }: UserInputPanelProps & { viewModel: AskUserQuestionViewModel }) {
+	const { t, f } = useI18n();
 	const initialResponses = useMemo(
 		() => buildInitialAskResponses(viewModel),
 		[viewModel],
@@ -229,8 +237,6 @@ export function AskUserQuestionRenderer({
 			return;
 		}
 
-		// AUQ produces the full `updatedInput` shape directly — sidecar's
-		// canUseTool resolver passes it through to the SDK unchanged.
 		onResponse(userInput, "submit", {
 			content: buildAskUserQuestionInput(viewModel, responses),
 		});
@@ -242,18 +248,20 @@ export function AskUserQuestionRenderer({
 				icon={MessageSquareMore}
 				title={currentQuestion.question}
 				description={
-					currentQuestion.multiSelect
-						? "Choose one or more options."
-						: "Choose one option."
+					currentQuestion.options.length === 0
+						? "typeAnswer"
+						: currentQuestion.multiSelect
+							? "chooseOneMoreOptions"
+							: "chooseOneOption"
 				}
 				trailing={
 					<>
 						{viewModel.source ? (
-							<span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+							<span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-micro font-medium text-muted-foreground">
 								{viewModel.source}
 							</span>
 						) : null}
-						<span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+						<span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-micro font-medium text-muted-foreground">
 							{questionIndex + 1}/{questions.length}
 						</span>
 						{questions.length > 1 ? (
@@ -262,7 +270,7 @@ export function AskUserQuestionRenderer({
 									type="button"
 									variant="ghost"
 									size="icon-xs"
-									aria-label="Previous question"
+									aria-label="previousQuestion"
 									disabled={disabled || questionIndex === 0}
 									onClick={() =>
 										setQuestionIndex((current) => Math.max(0, current - 1))
@@ -274,7 +282,7 @@ export function AskUserQuestionRenderer({
 									type="button"
 									variant="ghost"
 									size="icon-xs"
-									aria-label="Next question"
+									aria-label="nextQuestion"
 									disabled={disabled || questionIndex === questions.length - 1}
 									onClick={() =>
 										setQuestionIndex((current) =>
@@ -326,7 +334,7 @@ export function AskUserQuestionRenderer({
 							onClick={() => handleOptionToggle(option.label)}
 						>
 							{selected && option.preview ? (
-								<pre className="mt-2 ml-[1.6rem] max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background/70 px-2.5 py-2 text-[11px] leading-5 text-muted-foreground">
+								<pre className="mt-2 ml-[1.6rem] max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background/70 px-2.5 py-2 text-mini leading-5 text-muted-foreground">
 									{option.preview}
 								</pre>
 							) : null}
@@ -334,86 +342,90 @@ export function AskUserQuestionRenderer({
 					);
 				})}
 
-				<div
-					data-ask-option-row="other"
-					className={cn(
-						"cursor-interactive px-2 py-1.5",
-						disabled && "cursor-not-allowed opacity-60",
-					)}
-					onClick={() => {
-						if (disabled) {
-							return;
-						}
-						handleOtherActivate();
-					}}
-				>
-					<div className="flex items-center gap-1.5">
-						<span className="mt-0.5 shrink-0 text-muted-foreground">
-							{currentQuestion.multiSelect ? (
-								currentResponse.useOther ? (
-									<Check
+				{currentQuestion.allowFreeText ? (
+					<div
+						data-ask-option-row="other"
+						className={cn(
+							"cursor-interactive px-2 py-1.5",
+							disabled && "cursor-not-allowed opacity-60",
+						)}
+						onClick={() => {
+							if (disabled) {
+								return;
+							}
+							handleOtherActivate();
+						}}
+					>
+						<div className="flex items-center gap-1.5">
+							<span className="mt-0.5 shrink-0 text-muted-foreground">
+								{currentQuestion.multiSelect ? (
+									currentResponse.useOther ? (
+										<Check
+											className="size-3.5 text-foreground"
+											strokeWidth={2.4}
+										/>
+									) : (
+										<span className="block size-3.5 rounded-[6px] bg-background/80 ring-1 ring-inset ring-border/45" />
+									)
+								) : currentResponse.useOther ? (
+									<CircleDot
 										className="size-3.5 text-foreground"
-										strokeWidth={2.4}
+										strokeWidth={1.9}
 									/>
 								) : (
-									<span className="block size-3.5 rounded-[6px] bg-background/80 ring-1 ring-inset ring-border/45" />
-								)
-							) : currentResponse.useOther ? (
-								<CircleDot
-									className="size-3.5 text-foreground"
-									strokeWidth={1.9}
-								/>
-							) : (
-								<Circle
-									className="size-3.5 text-muted-foreground/60"
-									strokeWidth={1.9}
-								/>
-							)}
-						</span>
-						<Input
-							ref={otherInputRef}
-							aria-label={`Other answer for ${currentQuestion.header}`}
-							disabled={disabled}
-							placeholder="Other"
-							value={currentResponse.otherText}
-							onFocus={() => {
-								if (!currentResponse.useOther) {
-									handleOtherActivate();
-								}
-							}}
-							onBlur={() => {
-								if (currentResponse.otherText.trim().length > 0) {
-									return;
-								}
-								updateResponse(currentQuestion.key, (current) => ({
-									...current,
-									useOther: false,
-									otherText: "",
-								}));
-							}}
-							onClick={(event) => {
-								event.stopPropagation();
-							}}
-							onChange={(event) => {
-								const value = event.target.value;
-								updateResponse(currentQuestion.key, (current) => ({
-									...current,
-									selectedOptionLabels: currentQuestion.multiSelect
-										? current.selectedOptionLabels
-										: [],
-									useOther: true,
-									otherText: value,
-								}));
-							}}
-							className="h-auto rounded-none border-0 !bg-transparent px-1 py-0.5 text-[13px] leading-5 shadow-none placeholder:text-muted-foreground/55 focus-visible:ring-0 disabled:!bg-transparent dark:!bg-transparent dark:disabled:!bg-transparent"
-						/>
+									<Circle
+										className="size-3.5 text-muted-foreground/60"
+										strokeWidth={1.9}
+									/>
+								)}
+							</span>
+							<Input
+								ref={otherInputRef}
+								aria-label={f("composerOtherAnswerFor", {
+									header: currentQuestion.header,
+								})}
+								disabled={disabled}
+								placeholder="other"
+								value={currentResponse.otherText}
+								onFocus={() => {
+									if (!currentResponse.useOther) {
+										handleOtherActivate();
+									}
+								}}
+								onBlur={() => {
+									if (currentResponse.otherText.trim().length > 0) {
+										return;
+									}
+									updateResponse(currentQuestion.key, (current) => ({
+										...current,
+										useOther: false,
+										otherText: "",
+									}));
+								}}
+								onClick={(event) => {
+									event.stopPropagation();
+								}}
+								onChange={(event) => {
+									const value = event.target.value;
+									updateResponse(currentQuestion.key, (current) => ({
+										...current,
+										selectedOptionLabels: currentQuestion.multiSelect
+											? current.selectedOptionLabels
+											: [],
+										useOther: true,
+										otherText: value,
+									}));
+								}}
+								className="h-auto rounded-none border-0 !bg-transparent px-1 py-0.5 text-ui leading-5 shadow-none placeholder:text-muted-foreground/55 focus-visible:ring-0 disabled:!bg-transparent dark:!bg-transparent dark:disabled:!bg-transparent"
+							/>
+						</div>
 					</div>
-				</div>
+				) : null}
 			</div>
 
 			<InteractionOptionalInput
 				icon={ClipboardList}
-				placeholder="Optional note for Claude"
+				placeholder="optionalNoteAgent"
 				value={currentResponse.notes}
 				onChange={(value) => {
 					updateResponse(currentQuestion.key, (current) => ({
@@ -432,7 +444,7 @@ export function AskUserQuestionRenderer({
 					onClick={() => onResponse(userInput, "decline")}
 				>
 					<X className="size-3.5" strokeWidth={2} />
-					<span>Decline</span>
+					<span>{t("decline")}</span>
 				</Button>
 				<Button
 					variant="default"
@@ -441,7 +453,7 @@ export function AskUserQuestionRenderer({
 					onClick={handleSubmitAnswers}
 				>
 					<Check className="size-3.5" strokeWidth={2} />
-					<span>Send Answers</span>
+					<span>{t("sendAnswers")}</span>
 				</Button>
 			</InteractionFooter>
 		</UserInputCard>

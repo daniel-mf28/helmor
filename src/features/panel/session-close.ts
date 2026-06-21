@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { clearPersistedDraft } from "@/features/composer/draft-storage";
+import { closeTerminal } from "@/features/terminal/terminal-session-store";
 import {
 	createSession,
 	deleteSession,
@@ -7,6 +8,7 @@ import {
 	type WorkspaceDetail,
 	type WorkspaceSessionSummary,
 } from "@/lib/api";
+import { translateSource } from "@/lib/i18n";
 import { helmorQueryKeys } from "@/lib/query-client";
 import { isNewSession } from "@/lib/workspace-helpers";
 import type { PushWorkspaceToast } from "@/lib/workspace-toast-context";
@@ -116,6 +118,12 @@ export async function closeWorkspaceSession({
 			onSessionHidden?.(sessionId, workspace.id);
 		}
 
+		// Terminal sessions own a live PTY in the module store; closing the
+		// session must SIGTERM it (tab switches only detach + keep it alive).
+		if (targetSession.sessionKind === "terminal") {
+			closeTerminal(sessionId);
+		}
+
 		if (adjacentSessionId) {
 			const adjacentSession =
 				sessions.find((session) => session.id === adjacentSessionId) ?? null;
@@ -158,7 +166,7 @@ export async function closeWorkspaceSession({
 		onSessionsChanged?.();
 		pushToast?.(
 			error instanceof Error ? error.message : String(error),
-			"Unable to close session",
+			translateSource("panelUnableCloseSession"),
 			"destructive",
 		);
 		return false;

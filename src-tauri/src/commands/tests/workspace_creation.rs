@@ -4,6 +4,139 @@ use crate::workspace_state::{WorkspaceBranchIntent, WorkspaceMode, WorkspaceStat
 use crate::workspace_status::WorkspaceStatus;
 
 #[test]
+fn create_stacked_workspace_links_parent_and_targets_parent_branch() {
+    let _guard = TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let harness = CreateTestHarness::new();
+
+    // Bottom of the stack: a normal workspace off the repo default.
+    let parent = workspaces::create_workspace_from_repo_impl(&harness.repo_id).unwrap();
+    // Layer 2: stacked on the parent.
+    let child = workspaces::create_stacked_workspace_impl(&parent.created_workspace_id).unwrap();
+
+    assert_eq!(child.created_state, WorkspaceState::Ready);
+    // Child got its own fresh branch, distinct from the parent's.
+    assert_ne!(child.branch, parent.branch);
+
+    let connection = Connection::open(harness.db_path()).unwrap();
+    let (parent_id, intended_target, init_parent): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = connection
+        .query_row(
+            r#"
+            SELECT parent_workspace_id, intended_target_branch,
+              initialization_parent_branch
+            FROM workspaces WHERE id = ?1
+            "#,
+            [&child.created_workspace_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+
+    // Stack link recorded.
+    assert_eq!(
+        parent_id.as_deref(),
+        Some(parent.created_workspace_id.as_str())
+    );
+    // Dual-write invariant: the child's base IS the parent's branch, so
+    // `gh pr create --base` targets the parent (no ship-path change needed).
+    assert_eq!(intended_target.as_deref(), Some(parent.branch.as_str()));
+    assert_eq!(init_parent.as_deref(), Some(parent.branch.as_str()));
+}
+
+#[test]
+fn stack_deletion_constraint_tip_free_root_pops_middle_blocked() {
+    let _guard = TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let harness = CreateTestHarness::new();
+
+    // root -> mid -> tip
+    let root = workspaces::create_workspace_from_repo_impl(&harness.repo_id).unwrap();
+    let mid = workspaces::create_stacked_workspace_impl(&root.created_workspace_id).unwrap();
+    let tip = workspaces::create_stacked_workspace_impl(&mid.created_workspace_id).unwrap();
+
+    // Middle layer (live parent below + children above): blocked.
+    let err = workspaces::permanently_delete_workspace(&mid.created_workspace_id).unwrap_err();
+    assert!(
+        err.to_string().to_lowercase().contains("middle"),
+        "expected a middle-layer block, got: {err}"
+    );
+
+    // Tip (has parent, no children): free delete.
+    workspaces::permanently_delete_workspace(&tip.created_workspace_id).unwrap();
+
+    // Root (no parent, has children = `mid` now that the tip is gone): pop the
+    // bottom — `mid` becomes a new root targeting the repo default.
+    workspaces::permanently_delete_workspace(&root.created_workspace_id).unwrap();
+
+    let connection = Connection::open(harness.db_path()).unwrap();
+    let (parent, target): (Option<String>, Option<String>) = connection
+        .query_row(
+            "SELECT parent_workspace_id, intended_target_branch FROM workspaces WHERE id = ?1",
+            [&mid.created_workspace_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        parent, None,
+        "mid should be detached to a root after root pop"
+    );
+    let default_branch: String = connection
+        .query_row(
+            "SELECT default_branch FROM repos WHERE id = ?1",
+            [&harness.repo_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(target.as_deref(), Some(default_branch.as_str()));
+}
+
+#[test]
+fn load_workspace_stack_returns_root_to_tip_chain() {
+    let _guard = TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let harness = CreateTestHarness::new();
+
+    // Build a 3-layer stack: root -> mid -> tip.
+    let root = workspaces::create_workspace_from_repo_impl(&harness.repo_id).unwrap();
+    let mid = workspaces::create_stacked_workspace_impl(&root.created_workspace_id).unwrap();
+    let tip = workspaces::create_stacked_workspace_impl(&mid.created_workspace_id).unwrap();
+
+    // From the MIDDLE layer: walks up to root AND down to tip, ordered root→tip.
+    let chain = crate::models::workspaces::load_workspace_stack(&mid.created_workspace_id).unwrap();
+    let ids: Vec<&str> = chain.iter().map(|layer| layer.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec![
+            root.created_workspace_id.as_str(),
+            mid.created_workspace_id.as_str(),
+            tip.created_workspace_id.as_str(),
+        ],
+        "stack should be ordered root -> tip regardless of entry layer"
+    );
+    assert_eq!(
+        chain[1].parent_workspace_id.as_deref(),
+        Some(root.created_workspace_id.as_str())
+    );
+    assert_eq!(
+        chain[2].parent_workspace_id.as_deref(),
+        Some(mid.created_workspace_id.as_str())
+    );
+
+    // A standalone (non-stacked) workspace returns just itself.
+    let solo = workspaces::create_workspace_from_repo_impl(&harness.repo_id).unwrap();
+    let solo_chain =
+        crate::models::workspaces::load_workspace_stack(&solo.created_workspace_id).unwrap();
+    assert_eq!(solo_chain.len(), 1);
+    assert_eq!(solo_chain[0].id, solo.created_workspace_id);
+}
+
+#[test]
 fn create_workspace_from_repo_creates_ready_workspace_and_initial_session() {
     let _guard = TEST_LOCK
         .lock()
@@ -106,10 +239,15 @@ fn prepare_local_workspace_keeps_current_branch_when_source_is_none() {
     assert_eq!(response.directory_name, "");
     // Local mode: prepare returns the cwd immediately so the start-page
     // submit flow can pin it onto the pending payload without waiting for
-    // the workspaceDetail React Query to settle.
+    // the workspaceDetail React Query to settle. Compare against the
+    // canonicalized form: the harness stores repos.root_path through
+    // normalize_filesystem_path (matching production) and macOS resolves
+    // /var → /private/var in canonicalize.
+    let expected_root = crate::models::repos::normalize_filesystem_path(&harness.source_repo_root)
+        .unwrap_or_else(|| harness.source_repo_root.to_string_lossy().into_owned());
     assert_eq!(
         response.working_directory.as_deref(),
-        Some(harness.source_repo_root.display().to_string()).as_deref(),
+        Some(expected_root.as_str()),
     );
 
     let connection = Connection::open(harness.db_path()).unwrap();
@@ -621,11 +759,12 @@ fn finalize_workspace_from_repo_no_ops_for_local_workspace() {
     assert_eq!(finalized.final_state, WorkspaceState::Ready);
     // Local short-circuit still returns the cwd (== repo root). Without
     // this, the frontend submit flow couldn't reuse the same payload-patch
-    // path for both modes.
-    assert_eq!(
-        finalized.working_directory,
-        harness.source_repo_root.display().to_string(),
-    );
+    // path for both modes. Compare against the canonicalized form (the
+    // harness stores it that way; on macOS canonicalize resolves
+    // /var → /private/var).
+    let expected_root = crate::models::repos::normalize_filesystem_path(&harness.source_repo_root)
+        .unwrap_or_else(|| harness.source_repo_root.to_string_lossy().into_owned());
+    assert_eq!(finalized.working_directory, expected_root);
     let _ = WorkspaceMode::Worktree; // sanity: enum is in scope
 }
 
@@ -847,7 +986,11 @@ fn prepare_workspace_inserts_initializing_row_without_creating_worktree() {
         Some("bun install")
     );
     assert_eq!(
-        prepared.repo_scripts.run_script.as_deref(),
+        prepared
+            .repo_scripts
+            .run_actions
+            .first()
+            .map(|a| a.command.as_str()),
         Some("bun run dev")
     );
     assert_eq!(prepared.repo_scripts.archive_script, None);
@@ -1471,6 +1614,38 @@ fn git_action_status_returns_fresh_defaults_for_initializing_workspace() {
 }
 
 #[test]
+fn git_action_status_returns_quiet_status_for_chat_workspace() {
+    let _guard = TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _harness = CreateTestHarness::new();
+
+    // Chat workspaces are scratch dirs with no git binding. A naive
+    // `git status` call would emit `WorkspaceBroken` on every poll;
+    // the short-circuit must catch chat mode before running git.
+    let prepared =
+        crate::workspace::lifecycle::prepare_chat_workspace_impl(WorkspaceStatus::InProgress, None)
+            .unwrap();
+
+    let status = tauri::async_runtime::block_on(
+        crate::commands::editor_commands::get_workspace_git_action_status(
+            prepared.workspace_id.clone(),
+        ),
+    )
+    .expect("get_workspace_git_action_status should succeed for chat workspace");
+
+    assert_eq!(status.uncommitted_count, 0);
+    assert_eq!(status.conflict_count, 0);
+    assert_eq!(status.behind_target_count, 0);
+    assert_eq!(status.ahead_of_remote_count, 0);
+    assert_eq!(status.sync_status, git_ops::WorkspaceSyncStatus::UpToDate);
+    assert_eq!(
+        status.push_status,
+        git_ops::WorkspacePushStatus::Unpublished,
+    );
+}
+
+#[test]
 fn pr_lookups_short_circuit_for_initializing_workspace_without_network() {
     let _guard = TEST_LOCK
         .lock()
@@ -1514,7 +1689,8 @@ fn load_repo_scripts_priority_1_worktree_helmor_json_wins() {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let harness = CreateTestHarness::new();
 
-    // Commit a repo-root helmor.json and seed a DB script override — both
+    // Commit a repo-root helmor.json and seed DB-level script overrides
+    // (both `setup_script` and a `repo_run_actions` row) — every one
     // should be SHADOWED by the worktree's own helmor.json.
     harness.commit_repo_files(&[(
         "helmor.json",
@@ -1523,9 +1699,11 @@ fn load_repo_scripts_priority_1_worktree_helmor_json_wins() {
     Connection::open(harness.db_path())
         .unwrap()
         .execute(
-            "UPDATE repos SET setup_script = ?1, run_script = ?2 WHERE id = ?3",
-            ("db-setup", "db-run", &harness.repo_id),
+            "UPDATE repos SET setup_script = ?1 WHERE id = ?2",
+            ("db-setup", &harness.repo_id),
         )
+        .unwrap();
+    crate::repos::create_repo_run_action(&harness.repo_id, "Default", "db-run", "concurrent", None)
         .unwrap();
 
     // Finalize so the worktree exists, then rewrite the worktree's
@@ -1549,7 +1727,10 @@ fn load_repo_scripts_priority_1_worktree_helmor_json_wins() {
     let scripts =
         crate::repos::load_repo_scripts(&harness.repo_id, Some(&prepared.workspace_id)).unwrap();
     assert_eq!(scripts.setup_script.as_deref(), Some("worktree-setup"));
-    assert_eq!(scripts.run_script.as_deref(), Some("worktree-run"));
+    assert_eq!(
+        scripts.run_actions.first().map(|a| a.command.as_str()),
+        Some("worktree-run")
+    );
     assert!(scripts.setup_from_project);
     assert!(scripts.run_from_project);
 }
@@ -1570,9 +1751,11 @@ fn load_repo_scripts_priority_2_repo_root_wins_when_worktree_missing() {
     Connection::open(harness.db_path())
         .unwrap()
         .execute(
-            "UPDATE repos SET setup_script = ?1, run_script = ?2 WHERE id = ?3",
-            ("db-setup", "db-run", &harness.repo_id),
+            "UPDATE repos SET setup_script = ?1 WHERE id = ?2",
+            ("db-setup", &harness.repo_id),
         )
+        .unwrap();
+    crate::repos::create_repo_run_action(&harness.repo_id, "Default", "db-run", "concurrent", None)
         .unwrap();
 
     let prepared = workspaces::prepare_workspace_from_repo_impl(
@@ -1591,8 +1774,11 @@ fn load_repo_scripts_priority_2_repo_root_wins_when_worktree_missing() {
     // setup: worktree absent → falls to repo root.
     assert_eq!(scripts.setup_script.as_deref(), Some("source-root-setup"));
     assert!(scripts.setup_from_project);
-    // run: no project value anywhere → falls to DB.
-    assert_eq!(scripts.run_script.as_deref(), Some("db-run"));
+    // run: no project value anywhere → falls to DB action.
+    assert_eq!(
+        scripts.run_actions.first().map(|a| a.command.as_str()),
+        Some("db-run")
+    );
     assert!(!scripts.run_from_project);
 }
 
@@ -1608,9 +1794,11 @@ fn load_repo_scripts_priority_3_falls_through_to_db_when_no_helmor_json_anywhere
     Connection::open(harness.db_path())
         .unwrap()
         .execute(
-            "UPDATE repos SET setup_script = ?1, run_script = ?2, archive_script = ?3 WHERE id = ?4",
-            ("db-setup", "db-run", "db-archive", &harness.repo_id),
+            "UPDATE repos SET setup_script = ?1, archive_script = ?2 WHERE id = ?3",
+            ("db-setup", "db-archive", &harness.repo_id),
         )
+        .unwrap();
+    crate::repos::create_repo_run_action(&harness.repo_id, "Default", "db-run", "concurrent", None)
         .unwrap();
 
     let prepared = workspaces::prepare_workspace_from_repo_impl(
@@ -1626,7 +1814,10 @@ fn load_repo_scripts_priority_3_falls_through_to_db_when_no_helmor_json_anywhere
     let scripts =
         crate::repos::load_repo_scripts(&harness.repo_id, Some(&prepared.workspace_id)).unwrap();
     assert_eq!(scripts.setup_script.as_deref(), Some("db-setup"));
-    assert_eq!(scripts.run_script.as_deref(), Some("db-run"));
+    assert_eq!(
+        scripts.run_actions.first().map(|a| a.command.as_str()),
+        Some("db-run")
+    );
     assert_eq!(scripts.archive_script.as_deref(), Some("db-archive"));
     assert!(!scripts.setup_from_project);
     assert!(!scripts.run_from_project);
@@ -1636,6 +1827,55 @@ fn load_repo_scripts_priority_3_falls_through_to_db_when_no_helmor_json_anywhere
 // ---------------------------------------------------------------------------
 // `delete_workspace_and_session_rows` cascade isolation
 // ---------------------------------------------------------------------------
+
+#[test]
+fn delete_session_removes_session_plan_state() {
+    let _guard = TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let harness = CreateTestHarness::new();
+
+    let workspace = workspaces::prepare_workspace_from_repo_impl(
+        &harness.repo_id,
+        None,
+        WorkspaceBranchIntent::FromBranch,
+        WorkspaceStatus::InProgress,
+        None,
+    )
+    .unwrap();
+    workspaces::finalize_workspace_from_repo_impl(&workspace.workspace_id).unwrap();
+
+    let connection = Connection::open(harness.db_path()).unwrap();
+    connection
+        .execute(
+            "INSERT INTO session_plan_state (session_id, source, plan_json)
+             VALUES (?1, 'codex', ?2)",
+            [
+                workspace.initial_session_id.as_str(),
+                r#"{"items":[],"currentItemId":null,"allowedPrompts":[],"rawText":null,"rawSource":"codex"}"#,
+            ],
+        )
+        .unwrap();
+
+    sessions::delete_session(&workspace.initial_session_id).unwrap();
+
+    let (sessions_count, plan_count, active_session_id): (i64, i64, Option<String>) = connection
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM sessions WHERE id = ?1),
+                    (SELECT COUNT(*) FROM session_plan_state WHERE session_id = ?1),
+                    (SELECT active_session_id FROM workspaces WHERE id = ?2)",
+            [
+                workspace.initial_session_id.as_str(),
+                workspace.workspace_id.as_str(),
+            ],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+
+    assert_eq!(sessions_count, 0);
+    assert_eq!(plan_count, 0);
+    assert_eq!(active_session_id, None);
+}
 
 #[test]
 fn delete_workspace_and_session_rows_leaves_other_workspaces_intact() {
@@ -1664,8 +1904,8 @@ fn delete_workspace_and_session_rows_leaves_other_workspaces_intact() {
     .unwrap();
     workspaces::finalize_workspace_from_repo_impl(&drop.workspace_id).unwrap();
 
-    // Plant a session_message on each so the cascade is observable across
-    // every dependent table.
+    // Plant dependent rows on each so the cascade is observable across every
+    // table owned by sessions.
     let connection = Connection::open(harness.db_path()).unwrap();
     let now = crate::models::db::current_timestamp().unwrap();
     for (session_id, workspace_id) in [
@@ -1683,40 +1923,53 @@ fn delete_workspace_and_session_rows_leaves_other_workspaces_intact() {
                 ),
             )
             .unwrap();
+        connection
+            .execute(
+                "INSERT INTO session_plan_state (session_id, source, plan_json)
+                 VALUES (?1, 'codex', ?2)",
+                [
+                    session_id.as_str(),
+                    r#"{"items":[],"currentItemId":null,"allowedPrompts":[],"rawText":null,"rawSource":"codex"}"#,
+                ],
+            )
+            .unwrap();
     }
 
     crate::models::workspaces::delete_workspace_and_session_rows(&drop.workspace_id).unwrap();
 
     // Dropped workspace + everything under it is gone.
-    let (dropped_ws, dropped_sessions, dropped_msgs): (i64, i64, i64) = connection
-        .query_row(
-            "SELECT
-                    (SELECT COUNT(*) FROM workspaces WHERE id = ?1),
-                    (SELECT COUNT(*) FROM sessions WHERE workspace_id = ?1),
-                    (SELECT COUNT(*) FROM session_messages WHERE session_id = ?2)",
-            [&drop.workspace_id, &drop.initial_session_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .unwrap();
+    let (dropped_ws, dropped_sessions, dropped_msgs, dropped_plan): (i64, i64, i64, i64) =
+        connection
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM workspaces WHERE id = ?1),
+                        (SELECT COUNT(*) FROM sessions WHERE workspace_id = ?1),
+                        (SELECT COUNT(*) FROM session_messages WHERE session_id = ?2),
+                        (SELECT COUNT(*) FROM session_plan_state WHERE session_id = ?2)",
+                [&drop.workspace_id, &drop.initial_session_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
     assert_eq!(dropped_ws, 0);
     assert_eq!(dropped_sessions, 0);
     assert_eq!(dropped_msgs, 0);
+    assert_eq!(dropped_plan, 0);
 
     // Sibling workspace is fully intact — cascade must not leak across
     // workspace_id.
-    let (kept_ws, kept_sessions, kept_msgs): (i64, i64, i64) = connection
+    let (kept_ws, kept_sessions, kept_msgs, kept_plan): (i64, i64, i64, i64) = connection
         .query_row(
-            "SELECT
-                (SELECT COUNT(*) FROM workspaces WHERE id = ?1),
-                (SELECT COUNT(*) FROM sessions WHERE workspace_id = ?1),
-                (SELECT COUNT(*) FROM session_messages WHERE session_id = ?2)",
+            "SELECT (SELECT COUNT(*) FROM workspaces WHERE id = ?1),
+                    (SELECT COUNT(*) FROM sessions WHERE workspace_id = ?1),
+                    (SELECT COUNT(*) FROM session_messages WHERE session_id = ?2),
+                    (SELECT COUNT(*) FROM session_plan_state WHERE session_id = ?2)",
             [&keep.workspace_id, &keep.initial_session_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .unwrap();
     assert_eq!(kept_ws, 1);
     assert_eq!(kept_sessions, 1);
     assert_eq!(kept_msgs, 1);
+    assert_eq!(kept_plan, 1);
 }
 
 #[test]

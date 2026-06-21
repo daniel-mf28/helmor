@@ -4,6 +4,7 @@ export type ShortcutId =
 	| "workspace.quickSwitchNext"
 	| "workspace.quickSwitchPrevious"
 	| "workspace.new"
+	| "workspace.justChat"
 	| "workspace.addRepository"
 	| "workspace.filterSidebar"
 	| "workspace.copyPath"
@@ -13,9 +14,11 @@ export type ShortcutId =
 	| "session.new"
 	| "session.close"
 	| "session.reopenClosed"
+	| "window.close"
 	| "script.run"
 	| "settings.open"
 	| "theme.toggle"
+	| "window.miniMode.toggle"
 	| "sidebar.left.toggle"
 	| "sidebar.right.toggle"
 	| "zen.toggle"
@@ -23,6 +26,7 @@ export type ShortcutId =
 	| "zoom.out"
 	| "zoom.reset"
 	| "global.hotkey"
+	| "quickPanel.hotkey"
 	| "action.createPr"
 	| "action.commitAndPush"
 	| "action.pullLatest"
@@ -31,9 +35,11 @@ export type ShortcutId =
 	| "action.openPullRequest"
 	| "composer.focus"
 	| "composer.togglePlanMode"
+	| "composer.toggleTerminalMode"
 	| "composer.toggleContextPanel"
 	| "composer.openModelPicker"
 	| "composer.toggleFollowUpBehavior"
+	| "startSurface.cycleRepository"
 	| "editor.edit"
 	| "editor.new"
 	| "editor.close"
@@ -45,14 +51,15 @@ export type ShortcutId =
 	| "inspector.focusTerminal";
 
 export type ShortcutGroup =
-	| "Navigation"
-	| "Session"
-	| "Workspace"
-	| "Actions"
-	| "System"
-	| "Composer"
-	| "Editor"
-	| "Terminal";
+	| "navigation"
+	| "session"
+	| "workspace"
+	| "actions"
+	| "system"
+	| "miscComposer"
+	| "miscStartSurface"
+	| "miscEditor"
+	| "terminal";
 
 // Scopes a shortcut can live in. "app" = always active regardless of focus.
 // All others gate on [data-focus-scope] DOM ancestors of the active element;
@@ -60,7 +67,19 @@ export type ShortcutGroup =
 // "composer" and "chat"), so a shortcut bound to "chat" still fires while
 // typing — and a "composer"-only shortcut stays off when chat focus lives
 // elsewhere (inspector, message list).
-export type ShortcutScope = "app" | "chat" | "composer" | "terminal" | "editor";
+//
+// `start-composer` and `workspace-composer` are sibling leaf scopes that split
+// the composer namespace by surface. They both inherit from `composer` (and
+// transitively from `chat`) so generic composer shortcuts keep firing, but
+// surface-specific shortcuts can target one and not the other.
+export type ShortcutScope =
+	| "app"
+	| "chat"
+	| "composer"
+	| "terminal"
+	| "editor"
+	| "start-composer"
+	| "workspace-composer";
 
 export type ShortcutDefinition = {
 	id: ShortcutId;

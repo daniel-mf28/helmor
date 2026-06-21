@@ -2,6 +2,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
 import type * as React from "react";
 import { Button } from "@/components/ui/button";
+import { I18nText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 function Dialog({
@@ -58,7 +59,7 @@ function DialogContent({
 			<DialogPrimitive.Content
 				data-slot="dialog-content"
 				className={cn(
-					"fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+					"fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-body text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
 					className,
 				)}
 				{...props}
@@ -111,7 +112,9 @@ function DialogFooter({
 			{children}
 			{showCloseButton && (
 				<DialogPrimitive.Close asChild>
-					<Button variant="outline">Close</Button>
+					<Button variant="outline">
+						<I18nText source="close" />
+					</Button>
 				</DialogPrimitive.Close>
 			)}
 		</div>
@@ -120,33 +123,39 @@ function DialogFooter({
 
 function DialogTitle({
 	className,
+	children,
 	...props
 }: React.ComponentProps<typeof DialogPrimitive.Title>) {
 	return (
 		<DialogPrimitive.Title
 			data-slot="dialog-title"
 			className={cn(
-				"font-heading text-base leading-none font-medium",
+				"font-heading text-heading leading-none font-medium",
 				className,
 			)}
 			{...props}
-		/>
+		>
+			{children}
+		</DialogPrimitive.Title>
 	);
 }
 
 function DialogDescription({
 	className,
+	children,
 	...props
 }: React.ComponentProps<typeof DialogPrimitive.Description>) {
 	return (
 		<DialogPrimitive.Description
 			data-slot="dialog-description"
 			className={cn(
-				"text-sm text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
+				"text-body text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
 				className,
 			)}
 			{...props}
-		/>
+		>
+			{children}
+		</DialogPrimitive.Description>
 	);
 }
 

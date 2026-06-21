@@ -21,6 +21,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { I18nText, useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
@@ -177,8 +178,12 @@ function Sidebar({
 					side={side}
 				>
 					<SheetHeader className="sr-only">
-						<SheetTitle>Sidebar</SheetTitle>
-						<SheetDescription>Displays the mobile sidebar.</SheetDescription>
+						<SheetTitle>
+							<I18nText source="sidebar" />
+						</SheetTitle>
+						<SheetDescription>
+							<I18nText source="displaysMobileSidebar" />
+						</SheetDescription>
 					</SheetHeader>
 					<div className="flex h-full w-full flex-col">{children}</div>
 				</SheetContent>
@@ -260,15 +265,16 @@ function SidebarTrigger({
 
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
 	const { toggleSidebar } = useSidebar();
+	const { t } = useI18n();
 
 	return (
 		<button
 			data-sidebar="rail"
 			data-slot="sidebar-rail"
-			aria-label="Toggle Sidebar"
+			aria-label={t("toggleSidebar")}
 			tabIndex={-1}
 			onClick={toggleSidebar}
-			title="Toggle Sidebar"
+			title={t("toggleSidebar")}
 			className={cn(
 				"absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",
 				"in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
@@ -374,6 +380,7 @@ function SidebarGroup({ className, ...props }: React.ComponentProps<"div">) {
 function SidebarGroupLabel({
 	className,
 	asChild = false,
+	children,
 	...props
 }: React.ComponentProps<"div"> & { asChild?: boolean }) {
 	const Comp = asChild ? Slot.Root : "div";
@@ -383,31 +390,41 @@ function SidebarGroupLabel({
 			data-slot="sidebar-group-label"
 			data-sidebar="group-label"
 			className={cn(
-				"flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-sidebar-foreground/70 ring-sidebar-ring outline-hidden transition-[margin,opacity] duration-200 ease-linear group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0 focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
+				"flex h-8 shrink-0 items-center rounded-md px-2 text-small font-medium text-sidebar-foreground/70 ring-sidebar-ring outline-hidden transition-[margin,opacity] duration-200 ease-linear group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0 focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
 				className,
 			)}
 			{...props}
-		/>
+		>
+			{children}
+		</Comp>
 	);
 }
 
 function SidebarGroupAction({
 	className,
 	asChild = false,
+	children,
+	"aria-label": ariaLabel,
+	title,
 	...props
 }: React.ComponentProps<"button"> & { asChild?: boolean }) {
 	const Comp = asChild ? Slot.Root : "button";
+	const { t } = useI18n();
 
 	return (
 		<Comp
 			data-slot="sidebar-group-action"
 			data-sidebar="group-action"
+			aria-label={typeof ariaLabel === "string" ? t(ariaLabel) : ariaLabel}
+			title={typeof title === "string" ? t(title) : title}
 			className={cn(
 				"absolute top-3.5 right-3 flex aspect-square w-5 cursor-interactive items-center justify-center rounded-md p-0 text-sidebar-foreground ring-sidebar-ring outline-hidden transition-transform group-data-[collapsible=icon]:hidden after:absolute after:-inset-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 md:after:hidden [&>svg]:size-4 [&>svg]:shrink-0",
 				className,
 			)}
 			{...props}
-		/>
+		>
+			{children}
+		</Comp>
 	);
 }
 
@@ -419,7 +436,7 @@ function SidebarGroupContent({
 		<div
 			data-slot="sidebar-group-content"
 			data-sidebar="group-content"
-			className={cn("w-full text-sm", className)}
+			className={cn("w-full text-body", className)}
 			{...props}
 		/>
 	);
@@ -448,7 +465,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-	"peer/menu-button group/menu-button flex w-full cursor-interactive items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
+	"peer/menu-button group/menu-button flex w-full cursor-interactive items-center gap-2 overflow-hidden rounded-md p-2 text-left text-body ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
 	{
 		variants: {
 			variant: {
@@ -457,9 +474,9 @@ const sidebarMenuButtonVariants = cva(
 					"bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]",
 			},
 			size: {
-				default: "h-8 text-sm",
-				sm: "h-7 text-xs",
-				lg: "h-12 text-sm group-data-[collapsible=icon]:p-0!",
+				default: "h-8 text-body",
+				sm: "h-7 text-small",
+				lg: "h-12 text-body group-data-[collapsible=icon]:p-0!",
 			},
 		},
 		defaultVariants: {
@@ -476,6 +493,9 @@ function SidebarMenuButton({
 	size = "default",
 	tooltip,
 	className,
+	children,
+	"aria-label": ariaLabel,
+	title,
 	...props
 }: React.ComponentProps<"button"> & {
 	asChild?: boolean;
@@ -484,6 +504,7 @@ function SidebarMenuButton({
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
 	const Comp = asChild ? Slot.Root : "button";
 	const { isMobile, state } = useSidebar();
+	const { t } = useI18n();
 
 	const button = (
 		<Comp
@@ -491,9 +512,13 @@ function SidebarMenuButton({
 			data-sidebar="menu-button"
 			data-size={size}
 			data-active={isActive}
+			aria-label={typeof ariaLabel === "string" ? t(ariaLabel) : ariaLabel}
+			title={typeof title === "string" ? t(title) : title}
 			className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
 			{...props}
-		/>
+		>
+			{children}
+		</Comp>
 	);
 
 	if (!tooltip) {
@@ -523,17 +548,23 @@ function SidebarMenuAction({
 	className,
 	asChild = false,
 	showOnHover = false,
+	children,
+	"aria-label": ariaLabel,
+	title,
 	...props
 }: React.ComponentProps<"button"> & {
 	asChild?: boolean;
 	showOnHover?: boolean;
 }) {
 	const Comp = asChild ? Slot.Root : "button";
+	const { t } = useI18n();
 
 	return (
 		<Comp
 			data-slot="sidebar-menu-action"
 			data-sidebar="menu-action"
+			aria-label={typeof ariaLabel === "string" ? t(ariaLabel) : ariaLabel}
+			title={typeof title === "string" ? t(title) : title}
 			className={cn(
 				"absolute top-1.5 right-1 flex aspect-square w-5 cursor-interactive items-center justify-center rounded-md p-0 text-sidebar-foreground ring-sidebar-ring outline-hidden transition-transform group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 after:absolute after:-inset-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 md:after:hidden [&>svg]:size-4 [&>svg]:shrink-0",
 				showOnHover &&
@@ -541,12 +572,15 @@ function SidebarMenuAction({
 				className,
 			)}
 			{...props}
-		/>
+		>
+			{children}
+		</Comp>
 	);
 }
 
 function SidebarMenuBadge({
 	className,
+	children,
 	...props
 }: React.ComponentProps<"div">) {
 	return (
@@ -554,11 +588,13 @@ function SidebarMenuBadge({
 			data-slot="sidebar-menu-badge"
 			data-sidebar="menu-badge"
 			className={cn(
-				"pointer-events-none absolute right-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs font-medium text-sidebar-foreground tabular-nums select-none group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 peer-data-active/menu-button:text-sidebar-accent-foreground",
+				"pointer-events-none absolute right-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-small font-medium text-sidebar-foreground tabular-nums select-none group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 peer-data-active/menu-button:text-sidebar-accent-foreground",
 				className,
 			)}
 			{...props}
-		/>
+		>
+			{children}
+		</div>
 	);
 }
 
@@ -633,6 +669,9 @@ function SidebarMenuSubButton({
 	size = "md",
 	isActive = false,
 	className,
+	children,
+	"aria-label": ariaLabel,
+	title,
 	...props
 }: React.ComponentProps<"a"> & {
 	asChild?: boolean;
@@ -640,6 +679,7 @@ function SidebarMenuSubButton({
 	isActive?: boolean;
 }) {
 	const Comp = asChild ? Slot.Root : "a";
+	const { t } = useI18n();
 
 	return (
 		<Comp
@@ -647,12 +687,16 @@ function SidebarMenuSubButton({
 			data-sidebar="menu-sub-button"
 			data-size={size}
 			data-active={isActive}
+			aria-label={typeof ariaLabel === "string" ? t(ariaLabel) : ariaLabel}
+			title={typeof title === "string" ? t(title) : title}
 			className={cn(
-				"flex h-7 min-w-0 -translate-x-px cursor-interactive items-center gap-2 overflow-hidden rounded-md px-2 text-sidebar-foreground ring-sidebar-ring outline-hidden group-data-[collapsible=icon]:hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[size=md]:text-sm data-[size=sm]:text-xs data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-accent-foreground",
+				"flex h-7 min-w-0 -translate-x-px cursor-interactive items-center gap-2 overflow-hidden rounded-md px-2 text-sidebar-foreground ring-sidebar-ring outline-hidden group-data-[collapsible=icon]:hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[size=md]:text-body data-[size=sm]:text-small data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-accent-foreground",
 				className,
 			)}
 			{...props}
-		/>
+		>
+			{children}
+		</Comp>
 	);
 }
 

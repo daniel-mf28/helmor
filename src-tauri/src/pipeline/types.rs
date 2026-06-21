@@ -172,6 +172,27 @@ pub enum MessagePart {
         body: Option<String>,
     },
 
+    /// Claude Code "Dynamic Workflow" run — the `Workflow` tool call plus
+    /// its `task_*` lifecycle events (`task_type = "local_workflow"`),
+    /// aggregated into one evolving card so the user sees a single tidy
+    /// widget instead of a stream of raw subagent notices.
+    #[serde(rename = "workflow", rename_all = "camelCase")]
+    Workflow {
+        id: String,
+        /// `meta.name` of the workflow (from the `workflow_name` event field).
+        name: String,
+        status: WorkflowStatus,
+        /// One row per orchestrated agent, merged from `workflow_progress`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        agents: Vec<WorkflowAgent>,
+        /// Cumulative token usage across the whole workflow, when reported.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total_tokens: Option<u64>,
+        /// Total wall-clock duration in ms, when reported.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        duration_ms: Option<u64>,
+    },
+
     /// Unified todo-list block. Both Claude (`TodoWrite` tool_use) and
     /// Codex (`item.completed` of `todo_list`) collapse into this single
     /// shape so the frontend renders identically across providers.
@@ -210,9 +231,34 @@ pub enum MessagePart {
         allowed_prompts: Vec<PlanAllowedPrompt>,
     },
 
+    /// Normalized agent→user question card. One shape for Claude
+    /// AskUserQuestion, Codex `requestUserInput` and OpenCode `question`
+    /// — provider raw shapes are normalized by `pipeline::user_question`
+    /// so the frontend renders a single component.
+    #[serde(rename = "user-question", rename_all = "camelCase")]
+    UserQuestion {
+        /// `userInputId` round-trip key (Claude: the tool_use id).
+        id: String,
+        /// Badge string: `"Claude"`, `"Codex"`, `"OpenCode"`.
+        source: String,
+        questions: Vec<UserQuestionItem>,
+        /// `{ [question text]: answer string }` — multi-select answers are
+        /// comma-joined labels, free-text answers pass through verbatim.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        answers: Option<Value>,
+        status: UserQuestionStatus,
+    },
+
     /// Inline file reference from the composer's @-mention picker.
     #[serde(rename = "file-mention", rename_all = "camelCase")]
     FileMention { id: String, path: String },
+
+    /// A span of the user's prompt that entered the composer as a pasted-text
+    /// tag badge. The text is still part of the prompt sent to the agent; the
+    /// renderer shows it as the same tag chip (hover previews the content)
+    /// instead of inlining the full paste.
+    #[serde(rename = "pasted-text", rename_all = "camelCase")]
+    PastedText { id: String, text: String },
 }
 
 impl MessagePart {
@@ -225,13 +271,69 @@ impl MessagePart {
             | Self::Reasoning { id, .. }
             | Self::SystemNotice { id, .. }
             | Self::TodoList { id, .. }
+            | Self::Workflow { id, .. }
             | Self::Image { id, .. }
             | Self::PromptSuggestion { id, .. }
-            | Self::FileMention { id, .. } => id,
+            | Self::FileMention { id, .. }
+            | Self::PastedText { id, .. } => id,
             Self::ToolCall { tool_call_id, .. } => tool_call_id,
             Self::PlanReview { tool_use_id, .. } => tool_use_id,
+            Self::UserQuestion { id, .. } => id,
         }
     }
+}
+
+/// One question inside a [`MessagePart::UserQuestion`] card.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserQuestionItem {
+    pub question: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header: Option<String>,
+    #[serde(default)]
+    pub multi_select: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<UserQuestionOption>,
+    /// Whether the renderer offers a free-text "Other" input (always for
+    /// Claude/OpenCode; Codex's `isOther` flag).
+    #[serde(default = "default_true")]
+    pub allow_free_text: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserQuestionOption {
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UserQuestionStatus {
+    /// Asked, not yet answered (live streaming only).
+    Pending,
+    Answered,
+    Declined,
+    /// Turn aborted while the question was open.
+    Cancelled,
+}
+
+/// UTF-16 code-unit range of one pasted-text tag inside a user prompt, as
+/// computed by the composer (JS string offsets). Persisted on the
+/// `user_prompt` payload as `pastedTexts`; the adapter converts to byte
+/// offsets when splitting the prompt into parts.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PastedTextRange {
+    pub start: u64,
+    pub end: u64,
 }
 
 /// Image payload variants. `Base64` carries the raw blob (no `data:` URI
@@ -270,6 +372,51 @@ pub struct TodoItem {
 pub struct PlanAllowedPrompt {
     pub tool: String,
     pub prompt: String,
+}
+
+/// One orchestrated agent inside a `MessagePart::Workflow`, merged from the
+/// `workflow_progress` entries in `task_progress` events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowAgent {
+    pub label: String,
+    pub status: WorkflowAgentStatus,
+    /// Short preview of the agent's result (truncated), when it has finished.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_preview: Option<String>,
+    /// Phase grouping back-refs (the agent's `phaseIndex`/`phaseTitle`),
+    /// used to render a `workflow -> phase -> agent` drill-down.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase_index: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase_title: Option<String>,
+    /// Per-agent metrics surfaced in the agent detail view.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+}
+
+/// Overall state of a workflow run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowStatus {
+    Running,
+    Completed,
+    Failed,
+    Stopped,
+}
+
+/// State of a single workflow agent row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowAgentStatus {
+    Running,
+    Done,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

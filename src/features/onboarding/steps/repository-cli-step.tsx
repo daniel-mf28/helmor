@@ -35,6 +35,7 @@ import {
 	stopForgeCliAuthTerminal,
 	writeForgeCliAuthTerminalStdin,
 } from "@/lib/api";
+import { formatSource, I18nText, translateSource, useI18n } from "@/lib/i18n";
 import { initialsFor } from "@/lib/initials";
 import { helmorQueryKeys } from "@/lib/query-client";
 import { useForgeAccountsAll } from "@/lib/use-forge-accounts";
@@ -83,6 +84,7 @@ export function RepositoryCliStep({
 	onBack: () => void;
 	onNext: () => void;
 }) {
+	const { t } = useI18n();
 	const [github, setGithub] = useState<CliState>({
 		logins: [],
 		checking: true,
@@ -258,7 +260,9 @@ export function RepositoryCliStep({
 					// the user can retry from the same tab.
 					setAddingAccount(null);
 					toast(
-						`Finish ${provider === "gitlab" ? "GitLab" : "GitHub"} CLI auth, then click Set up again.`,
+						formatSource("miscFinishCliAuthClickSetUpAgain", {
+							provider: provider === "gitlab" ? "GitLab" : "GitHub",
+						}),
 					);
 					return;
 				}
@@ -304,7 +308,12 @@ export function RepositoryCliStep({
 			})
 			.catch(() => {});
 		const label = pending.provider === "gitlab" ? "GitLab" : "GitHub";
-		toast.success(`${label} connected as @${pending.login}`);
+		toast.success(
+			formatSource("miscProviderConnectedAsLogin", {
+				provider: label,
+				login: pending.login,
+			}),
+		);
 	}, [addingAccount, accountsQuery.data, resetFlowTo, queryClient]);
 
 	// Fail-safe: if the profile fetch never lands (network error,
@@ -392,7 +401,7 @@ export function RepositoryCliStep({
 	const handleGitlabHostSubmit = useCallback(() => {
 		const host = normalizeGitlabHost(gitlabHost);
 		if (!host) {
-			toast.error("Enter a GitLab domain.");
+			toast.error(translateSource("miscEnterGitlabDomain"));
 			return;
 		}
 		setGitlabHost(host);
@@ -408,7 +417,7 @@ export function RepositoryCliStep({
 
 	return (
 		<section
-			aria-label="Repository CLI setup"
+			aria-label={t("repositoryCliSetup")}
 			aria-hidden={step !== "corner"}
 			className={`absolute top-20 right-20 z-30 w-[560px] transition-all duration-1000 ease-[cubic-bezier(.22,.82,.2,1)] ${
 				step === "skills"
@@ -420,12 +429,10 @@ export function RepositoryCliStep({
 		>
 			<div className="flex flex-col items-start">
 				<h2 className="max-w-none text-4xl font-semibold leading-[1.02] tracking-normal text-foreground whitespace-nowrap">
-					Connect accounts
+					<I18nText source="connectAccounts" />
 				</h2>
-				<p className="mt-4 max-w-md text-[12.5px] leading-5 text-muted-foreground">
-					Each repo uses one of your accounts. Add now or skip — existing logins
-					are picked up automatically. All accounts live in your local gh/glab
-					CLI.
+				<p className="mt-4 max-w-md text-small leading-5 text-muted-foreground">
+					<I18nText source="eachRepoUsesOneAccountsAdd" />
 				</p>
 
 				<div className="mt-7 grid w-full gap-3">
@@ -486,18 +493,18 @@ export function RepositoryCliStep({
 						variant="ghost"
 						size="lg"
 						onClick={onBack}
-						className="h-9 gap-2 px-4 text-[0.95rem]"
+						className="h-9 gap-2 px-4 text-title"
 					>
 						<ArrowLeft data-icon="inline-start" className="size-4" />
-						Back
+						<I18nText source="back" />
 					</Button>
 					<Button
 						type="button"
 						size="lg"
 						onClick={onNext}
-						className="h-9 gap-2 px-4 text-[0.95rem]"
+						className="h-9 gap-2 px-4 text-title"
 					>
-						Next
+						<I18nText source="next" />
 						<ArrowRight data-icon="inline-end" className="size-4" />
 					</Button>
 				</div>
@@ -594,10 +601,12 @@ function AccountListPanel({
 				{compact ? (
 					<CompactAccountStack rows={rows} addingAccount={addingAccount} />
 				) : rows.length === 0 ? (
-					<div className="flex items-center justify-center px-2 py-4 text-[12px] text-muted-foreground">
-						{loading
-							? "Checking for connected accounts…"
-							: "No accounts connected yet."}
+					<div className="flex items-center justify-center px-2 py-4 text-small text-muted-foreground">
+						{loading ? (
+							<I18nText source="checkingConnectedAccounts" />
+						) : (
+							<I18nText source="noAccountsConnectedYet" />
+						)}
 					</div>
 				) : (
 					<ul className="divide-y divide-border/40">
@@ -730,19 +739,20 @@ function PickerButton({
 	icon: React.ReactNode;
 	label: string;
 }) {
+	const { t } = useI18n();
 	return (
 		<button
 			type="button"
 			onClick={onClick}
 			className={cn(
-				"flex h-full cursor-interactive items-center justify-center gap-2 rounded-lg border text-[12.5px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring/60",
+				"flex h-full cursor-interactive items-center justify-center gap-2 rounded-lg border text-small font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring/60",
 				muted
 					? "border-border/40 bg-card/40 text-muted-foreground hover:border-border/70 hover:bg-card/70 hover:text-foreground"
 					: "border-border/55 bg-card/80 text-foreground hover:bg-card focus-visible:bg-card",
 			)}
 		>
 			{icon}
-			<span>{label}</span>
+			<span>{t(label)}</span>
 		</button>
 	);
 }
@@ -761,10 +771,13 @@ function CompactAccountStack({
 	}>;
 	addingAccount: AddingAccount | null;
 }) {
+	const { f } = useI18n();
 	const addingLabel = addingAccount
 		? addingAccount.login
-			? `Adding @${addingAccount.login}…`
-			: `Adding ${addingAccount.provider === "gitlab" ? "GitLab" : "GitHub"} account…`
+			? f("miscAddingLogin", { login: addingAccount.login })
+			: f("miscAddingProviderAccount", {
+					provider: addingAccount.provider === "gitlab" ? "GitLab" : "GitHub",
+				})
 		: null;
 
 	if (rows.length === 0) {
@@ -777,13 +790,13 @@ function CompactAccountStack({
 				{addingLabel ? (
 					<>
 						<Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-						<span className="text-[12px] text-muted-foreground">
+						<span className="text-small text-muted-foreground">
 							{addingLabel}
 						</span>
 					</>
 				) : (
-					<span className="text-[12px] text-muted-foreground">
-						No accounts connected yet.
+					<span className="text-small text-muted-foreground">
+						<I18nText source="noAccountsConnectedYet" />
 					</span>
 				)}
 			</div>
@@ -807,15 +820,15 @@ function CompactAccountStack({
 					))}
 					{overflow > 0 ? (
 						<div
-							className="flex size-7 items-center justify-center rounded-full border-2 border-card bg-muted text-[10px] font-semibold text-muted-foreground"
-							title={`${overflow} more account${overflow === 1 ? "" : "s"}`}
+							className="flex size-7 items-center justify-center rounded-full border-2 border-card bg-muted text-micro font-semibold text-muted-foreground"
+							title={f("miscCountMoreAccounts", { count: overflow })}
 						>
 							+{overflow}
 						</div>
 					) : null}
 				</div>
-				<span className="truncate text-[12px] text-muted-foreground">
-					{addingLabel ?? `${rows.length} connected`}
+				<span className="truncate text-small text-muted-foreground">
+					{addingLabel ?? f("miscCountConnected", { count: rows.length })}
 				</span>
 			</div>
 		</div>
@@ -863,7 +876,7 @@ function StackedAccountAvatar({
 								initialsFor(displayName)
 							)
 						}
-						fallbackClassName="bg-muted text-[10px] font-semibold uppercase text-muted-foreground"
+						fallbackClassName="bg-muted text-micro font-semibold uppercase text-muted-foreground"
 					/>
 				</span>
 			</HoverCardTrigger>
@@ -889,6 +902,7 @@ function AccountRow({
 		account: ForgeAccount | null;
 	};
 }) {
+	const { f } = useI18n();
 	const account = row.account;
 	const displayName = account?.name?.trim() || row.login;
 	const providerIcon =
@@ -905,21 +919,23 @@ function AccountRow({
 				src={account?.avatarUrl}
 				alt={row.login}
 				fallback={initialsFor(displayName)}
-				fallbackClassName="bg-muted text-[12px] font-semibold uppercase text-muted-foreground"
+				fallbackClassName="bg-muted text-small font-semibold uppercase text-muted-foreground"
 			/>
 			<div className="min-w-0 flex-1">
 				<div className="flex items-center gap-1.5">
-					<span className="truncate text-[12.5px] font-medium text-foreground">
+					<span className="truncate text-small font-medium text-foreground">
 						{displayName}
 					</span>
-					<span className="truncate text-[11px] text-muted-foreground">
+					<span className="truncate text-mini text-muted-foreground">
 						@{row.login}
 					</span>
 				</div>
-				<div className="mt-0.5 flex items-center gap-1 text-[10.5px] text-muted-foreground">
+				<div className="mt-0.5 flex items-center gap-1 text-micro text-muted-foreground">
 					{providerIcon}
 					<span className="truncate">
-						{row.provider === "gitlab" ? `GitLab · ${row.host}` : "GitHub"}
+						{row.provider === "gitlab"
+							? f("miscGitlabHost", { host: row.host })
+							: "GitHub"}
 					</span>
 				</div>
 			</div>
@@ -994,6 +1010,7 @@ function GitlabHostSlot({
 	onSubmit: () => void;
 	onClose: () => void;
 }) {
+	const { t } = useI18n();
 	const openDelay = active && !flowSettled ? "700ms" : "0ms";
 	return (
 		<div
@@ -1018,16 +1035,16 @@ function GitlabHostSlot({
 					<button
 						type="button"
 						onClick={onClose}
-						aria-label="Cancel"
+						aria-label={t("cancel")}
 						className="absolute top-3 right-3 inline-flex size-6 cursor-interactive items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 					>
 						<X className="size-3.5" strokeWidth={2.4} />
 					</button>
-					<div className="text-sm font-medium text-foreground">
-						GitLab domain
+					<div className="text-body font-medium text-foreground">
+						<I18nText source="gitlabDomain" />
 					</div>
-					<p className="mt-1 text-xs leading-5 text-muted-foreground">
-						Use gitlab.com or your self-hosted GitLab domain.
+					<p className="mt-1 text-small leading-5 text-muted-foreground">
+						<I18nText source="useGitlabComSelfHostedGitlab" />
 					</p>
 					<form
 						className="mt-4 flex items-center gap-2"
@@ -1040,12 +1057,12 @@ function GitlabHostSlot({
 							value={value}
 							onChange={(event) => onChange(event.target.value)}
 							placeholder={DEFAULT_GITLAB_HOST}
-							aria-label="GitLab domain"
+							aria-label="gitlabDomain"
 							className="h-10"
 						/>
 						<Button type="submit" className="h-10 shrink-0 gap-2 px-3">
 							<LogIn className="size-4" />
-							Log in
+							<I18nText source="log" />
 						</Button>
 					</form>
 				</div>

@@ -38,6 +38,7 @@ import {
 	CommandList,
 } from "@/components/ui/command";
 import type { InspectorFileItem } from "@/lib/editor-session";
+import { I18nText } from "@/lib/i18n";
 import { workspaceFilesQueryOptions } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 import { $createFileBadgeNode } from "../file-badge-node";
@@ -214,8 +215,10 @@ export function FileMentionPlugin({
 							className="rounded-xl border border-border/60 bg-background text-foreground shadow-2xl ring-1 ring-black/5"
 						>
 							<CommandList className="max-h-72">
-								<CommandEmpty>No files</CommandEmpty>
-								<CommandGroup heading="Files">
+								<CommandEmpty>
+									<I18nText source="noFiles" />
+								</CommandEmpty>
+								<CommandGroup heading="files">
 									{options.map((opt, index) => {
 										const file = opt.file;
 										const isSelected = index === selectedIndex;
@@ -234,7 +237,7 @@ export function FileMentionPlugin({
 												onMouseEnter={() => setHighlightedIndex(index)}
 												onPointerDown={(event) => event.preventDefault()}
 												className={cn(
-													"min-w-0 rounded-lg px-2.5 py-2 text-[13px]",
+													"min-w-0 rounded-lg px-2.5 py-2 text-ui",
 													isSelected && "bg-muted text-foreground",
 												)}
 											>
@@ -246,7 +249,7 @@ export function FileMentionPlugin({
 													{file.name}
 												</span>
 												<span
-													className="min-w-0 flex-1 truncate whitespace-nowrap text-xs text-muted-foreground"
+													className="min-w-0 flex-1 truncate whitespace-nowrap text-small text-muted-foreground"
 													title={file.path}
 												>
 													{directory}

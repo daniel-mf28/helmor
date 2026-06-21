@@ -16,6 +16,7 @@ import {
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ShimmerText } from "@/components/ui/shimmer-text";
+import { I18nText } from "@/lib/i18n";
 import type { ReasoningLifecycle } from "@/lib/reasoning-lifecycle";
 import { cn } from "@/lib/utils";
 
@@ -159,12 +160,24 @@ export type ReasoningTriggerProps = ComponentProps<
 
 function defaultGetThinkingMessage(isStreaming: boolean, duration?: number) {
 	if (isStreaming) {
-		return <ShimmerText>Thinking...</ShimmerText>;
+		return (
+			<ShimmerText>
+				<I18nText source="thinking2" />
+			</ShimmerText>
+		);
 	}
 	if (duration === undefined) {
-		return <span>Thinking</span>;
+		return (
+			<span>
+				<I18nText source="thinking" />
+			</span>
+		);
 	}
-	return <span>Thought for {duration}s</span>;
+	return (
+		<span>
+			<I18nText source="thought" /> {duration}s
+		</span>
+	);
 }
 
 export const ReasoningTrigger = memo(
@@ -184,7 +197,7 @@ export const ReasoningTrigger = memo(
 			return (
 				<div
 					className={cn(
-						"inline-flex max-w-full items-center gap-1.5 py-0.5 text-[12px] text-muted-foreground",
+						"inline-flex max-w-full items-center gap-1.5 py-0.5 text-small text-muted-foreground",
 						className,
 					)}
 				>
@@ -197,7 +210,7 @@ export const ReasoningTrigger = memo(
 		return (
 			<CollapsibleTrigger
 				className={cn(
-					"group/reasoning inline-flex max-w-full cursor-interactive items-center gap-1.5 py-0.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden",
+					"group/reasoning inline-flex max-w-full cursor-interactive items-center gap-1.5 py-0.5 text-small text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden",
 					className,
 				)}
 				{...props}

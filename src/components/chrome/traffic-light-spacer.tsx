@@ -1,5 +1,6 @@
-import { isMac } from "@/lib/platform";
+import { isMac, isTauriRuntime } from "@/lib/platform";
 import { cn } from "@/lib/utils";
+import { isQuickPanelWindow } from "@/lib/window-role";
 
 /**
  * Reserves horizontal space for the OS window controls so header content
@@ -23,6 +24,13 @@ export function TrafficLightSpacer({
 	width?: number;
 	className?: string;
 }) {
+	if (!isTauriRuntime()) {
+		return null;
+	}
+	// The frameless quick panel has no OS window controls to clear.
+	if (isQuickPanelWindow) {
+		return null;
+	}
 	const mac = isMac();
 	const shouldRender = (side === "left" && mac) || (side === "right" && !mac);
 	if (!shouldRender) {

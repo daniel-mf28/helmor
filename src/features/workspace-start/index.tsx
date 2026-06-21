@@ -1,5 +1,6 @@
 import {
 	ChevronDown,
+	FolderPlus,
 	GitBranch,
 	GitBranchPlus,
 	GitMerge,
@@ -20,6 +21,7 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -28,10 +30,12 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { WorkspaceAvatar } from "@/features/navigation/avatar";
+import { getShortcut } from "@/features/shortcuts/registry";
 import {
 	InlineShortcutDisplay,
 	ShortcutDisplay,
 } from "@/features/shortcuts/shortcut-display";
+import { useAppShortcuts } from "@/features/shortcuts/use-app-shortcuts";
 import { SourceDetailView } from "@/features/source-detail";
 import type {
 	BranchPickerEntry,
@@ -40,12 +44,15 @@ import type {
 	WorkspaceMode,
 } from "@/lib/api";
 import type { ComposerInsertTarget } from "@/lib/composer-insert";
+import { I18nText, useI18n } from "@/lib/i18n";
+import { useSettings } from "@/lib/settings";
 import type { ContextCard } from "@/lib/sources/types";
 import { cn } from "@/lib/utils";
+import { publishShellEvent } from "@/shell/event-bus";
 import { CreateBranchDialog } from "./create-branch-dialog";
 
+const COMPACT_TRAFFIC_LIGHT_SPACER_WIDTH = 60;
 const PREVIEW_TRAFFIC_LIGHT_SPACER_WIDTH = 52;
-const SWITCH_REPOSITORY_SHORTCUT = "Shift+Tab";
 
 function defaultBranchPrefix(repo: RepositoryCreateOption | null): string {
 	if (!repo) return "";
@@ -80,8 +87,13 @@ type WorkspaceStartPageProps = {
 	onCreateAndCheckoutBranch?: (branch: string) => Promise<void>;
 	previewCard?: ContextCard | null;
 	previewAppendContextTarget?: ComposerInsertTarget;
+	headerLeading?: React.ReactNode;
 	showWindowSafeTop?: boolean;
 	onClosePreview?: () => void;
+	/** Quick panel layout: pin the composer to the bottom edge and center
+	 * the heading in the space above it (instead of centering the whole
+	 * block at mid-height). */
+	composerAtBottom?: boolean;
 	children: React.ReactNode;
 };
 
@@ -101,11 +113,20 @@ export function WorkspaceStartPage({
 	onCreateAndCheckoutBranch,
 	previewCard = null,
 	previewAppendContextTarget,
+	headerLeading,
 	showWindowSafeTop = false,
 	onClosePreview,
+	composerAtBottom = false,
 	children,
 }: WorkspaceStartPageProps) {
+	const { t } = useI18n();
 	const [createBranchOpen, setCreateBranchOpen] = useState(false);
+	// Split the localized heading on the {repo} token so the repo picker keeps
+	// its place while word order follows each language (en: text→repo→"?",
+	// zh: "在 "→repo→" 里构建什么？").
+	const [buildHeadingBefore, buildHeadingAfter] = t("whatShouldWeBuildRepo")
+		.split("{repo}")
+		.map((part) => part.trim());
 
 	// Local mode mirrors git DWIM (local-first) for icon resolution; UseBranch
 	// has the same shape. Worktree mode follows the user-picked intent.
@@ -117,6 +138,16 @@ export function WorkspaceStartPage({
 		: // Unknown branch (e.g. pending new from the "Create and checkout"
 			// footer) — treat as local: no `origin/` prefix in the pill.
 			"local";
+
+	const { settings } = useSettings();
+	const cycleRepositoryShortcut = getShortcut(
+		settings.shortcuts,
+		"startSurface.cycleRepository",
+	);
+	const justChatShortcut = getShortcut(
+		settings.shortcuts,
+		"workspace.justChat",
+	);
 
 	const selectNextRepository = useCallback(() => {
 		if (repositories.length === 0) {
@@ -132,28 +163,21 @@ export function WorkspaceStartPage({
 		onSelectRepository(repositories[nextIndex]);
 	}, [onSelectRepository, repositories, selectedRepository]);
 
-	useEffect(() => {
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key !== "Tab" || !event.shiftKey || event.defaultPrevented) {
-				return;
-			}
-
-			const activeElement = document.activeElement;
-			if (!(activeElement instanceof HTMLElement)) {
-				return;
-			}
-
-			if (!activeElement.closest('[aria-label="Workspace composer"]')) {
-				return;
-			}
-
-			event.preventDefault();
-			selectNextRepository();
-		};
-
-		window.addEventListener("keydown", handleKeyDown, true);
-		return () => window.removeEventListener("keydown", handleKeyDown, true);
-	}, [selectNextRepository]);
+	// Cycle-repository goes through the central shortcuts registry. Its
+	// `start-composer` scope is a sibling of `workspace-composer`, so the
+	// Shift+Tab plan-mode toggle that lives on the workspace composer does
+	// NOT fire on the start surface (the start surface composer carries
+	// `data-focus-scope="start-composer"`).
+	useAppShortcuts({
+		overrides: settings.shortcuts,
+		handlers: [
+			{
+				id: "startSurface.cycleRepository",
+				callback: selectNextRepository,
+				enabled: repositories.length > 1,
+			},
+		],
+	});
 
 	useEffect(() => {
 		if (!previewCard || !onClosePreview) {
@@ -173,7 +197,20 @@ export function WorkspaceStartPage({
 	}, [onClosePreview, previewCard]);
 
 	return (
-		<div className="flex min-h-0 flex-1 justify-center">
+		<div
+			data-focus-scope="start-composer"
+			className="relative flex min-h-0 flex-1 justify-center"
+		>
+			{headerLeading ? (
+				<div className="absolute left-0 top-0 z-30 flex h-9 items-center">
+					<TrafficLightSpacer
+						side="left"
+						width={COMPACT_TRAFFIC_LIGHT_SPACER_WIDTH}
+						className="hidden max-[960px]:block"
+					/>
+					{headerLeading}
+				</div>
+			) : null}
 			<div className="relative h-full min-h-0 w-full max-w-5xl">
 				<div
 					className={cn(
@@ -198,7 +235,7 @@ export function WorkspaceStartPage({
 								{previewCard ? (
 									<h2
 										data-tauri-drag-region
-										className="flex h-full min-w-0 flex-1 translate-y-[2px] items-center text-[13px] font-medium leading-5 text-foreground"
+										className="flex h-full min-w-0 flex-1 translate-y-[2px] items-center text-ui font-medium leading-5 text-foreground"
 									>
 										<span className="min-w-0 truncate">
 											{previewCard.title}
@@ -215,7 +252,7 @@ export function WorkspaceStartPage({
 									variant="ghost"
 									size="sm"
 									onClick={onClosePreview}
-									aria-label="Close source preview"
+									aria-label="closeSourcePreview"
 									className="gap-1.5 px-2 text-muted-foreground hover:text-foreground"
 								>
 									<ShortcutDisplay hotkey="Escape" />
@@ -241,24 +278,29 @@ export function WorkspaceStartPage({
 				<div
 					className={cn(
 						"absolute left-1/2 flex w-full max-w-3xl -translate-x-1/2 flex-col items-center transition-[top,transform,opacity,gap] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-						previewCard
-							? "top-[calc(100%-11rem)] gap-0"
-							: "top-1/2 gap-7 -translate-y-1/2",
+						composerAtBottom
+							? "inset-y-0 gap-7 pb-3"
+							: previewCard
+								? "top-[calc(100%-11rem)] gap-0"
+								: "top-1/2 gap-7 -translate-y-1/2",
 					)}
 				>
 					<div
 						aria-hidden={previewCard ? true : undefined}
 						className={cn(
 							"relative w-full overflow-hidden transition-[height,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-							previewCard
-								? "pointer-events-none h-0 translate-y-2 opacity-0"
-								: "h-10 translate-y-0 opacity-100",
+							composerAtBottom
+								? "min-h-0 flex-1"
+								: previewCard
+									? "pointer-events-none h-0 translate-y-2 opacity-0"
+									: "h-10 translate-y-0 opacity-100",
 						)}
 					>
 						<div
 							className={cn(
-								"absolute top-0 flex items-center gap-x-2 whitespace-nowrap text-center font-semibold leading-tight tracking-normal text-foreground transition-[left,transform,font-size] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
+								"absolute flex items-center gap-x-2 whitespace-nowrap text-center font-semibold leading-tight tracking-normal text-foreground transition-[left,transform,font-size] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
 								"left-1/2 -translate-x-1/2 text-[24px]",
+								composerAtBottom ? "top-1/2 -translate-y-1/2" : "top-0",
 							)}
 						>
 							{mode === "chat" ? (
@@ -270,7 +312,7 @@ export function WorkspaceStartPage({
 											: "max-w-[32rem] translate-y-0 opacity-100",
 									)}
 								>
-									What should we work on?
+									<I18nText source="whatShouldWeWork" />
 								</span>
 							) : (
 								<>
@@ -279,20 +321,10 @@ export function WorkspaceStartPage({
 											"inline-block overflow-hidden transition-[max-width,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
 											previewCard
 												? "max-w-0 -translate-y-1 opacity-0"
-												: "max-w-[22rem] translate-y-0 opacity-100",
+												: "max-w-[24rem] translate-y-0 opacity-100",
 										)}
 									>
-										What should we build
-									</span>
-									<span
-										className={cn(
-											"inline-block overflow-hidden transition-[max-width,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-											previewCard
-												? "max-w-0 -translate-y-1 opacity-0"
-												: "max-w-[2rem] translate-y-0 opacity-100",
-										)}
-									>
-										in
+										{buildHeadingBefore}
 									</span>
 									<DropdownMenu>
 										<Tooltip>
@@ -318,7 +350,7 @@ export function WorkspaceStartPage({
 																		"rounded-md transition-[width,height] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
 																		"size-6",
 																	)}
-																	fallbackClassName="text-[9px]"
+																	fallbackClassName="text-nano"
 																/>
 																<span className="min-w-0 truncate">
 																	{selectedRepository.name}
@@ -333,7 +365,7 @@ export function WorkspaceStartPage({
 															</>
 														) : (
 															<span className="text-muted-foreground">
-																a repository
+																<I18nText source="repository2" />
 															</span>
 														)}
 													</Button>
@@ -342,11 +374,11 @@ export function WorkspaceStartPage({
 											<TooltipContent
 												side="top"
 												sideOffset={4}
-												className="flex h-[24px] items-center gap-2 rounded-md px-2 text-[12px] leading-none"
+												className="flex h-[24px] items-center gap-2 rounded-md px-2 text-small leading-none"
 											>
-												<span>Switch repository</span>
+												<I18nText source="switchRepository" />
 												<InlineShortcutDisplay
-													hotkey={SWITCH_REPOSITORY_SHORTCUT}
+													hotkey={cycleRepositoryShortcut}
 													className="text-background/60"
 												/>
 											</TooltipContent>
@@ -369,7 +401,7 @@ export function WorkspaceStartPage({
 														repoName={repository.name}
 														title={repository.name}
 														className="size-5 rounded-md"
-														fallbackClassName="text-[8px]"
+														fallbackClassName="text-nano"
 													/>
 													<span className="min-w-0 flex-1 truncate">
 														{repository.name}
@@ -383,10 +415,10 @@ export function WorkspaceStartPage({
 											"inline-block overflow-hidden transition-[max-width,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
 											previewCard
 												? "max-w-0 -translate-y-1 opacity-0"
-												: "max-w-[2rem] translate-y-0 opacity-100",
+												: "max-w-[12rem] translate-y-0 opacity-100",
 										)}
 									>
-										?
+										{buildHeadingAfter}
 									</span>
 								</>
 							)}
@@ -408,7 +440,7 @@ export function WorkspaceStartPage({
 									<button
 										type="button"
 										disabled={repositories.length === 0}
-										className="inline-flex h-7 max-w-[13rem] cursor-interactive items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+										className="inline-flex h-7 max-w-[13rem] cursor-interactive items-center gap-1 rounded-md px-1.5 text-ui font-medium text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
 									>
 										{selectedRepository ? (
 											<>
@@ -418,7 +450,7 @@ export function WorkspaceStartPage({
 													repoName={selectedRepository.name}
 													title={selectedRepository.name}
 													className="size-4 rounded-md"
-													fallbackClassName="text-[7px]"
+													fallbackClassName="text-nano"
 												/>
 												<span className="min-w-0 truncate">
 													{selectedRepository.name}
@@ -429,7 +461,9 @@ export function WorkspaceStartPage({
 												/>
 											</>
 										) : (
-											<span className="truncate">Repository</span>
+											<span className="truncate">
+												<I18nText source="repository" />
+											</span>
 										)}
 									</button>
 								</DropdownMenuTrigger>
@@ -446,7 +480,7 @@ export function WorkspaceStartPage({
 												repoName={repository.name}
 												title={repository.name}
 												className="size-5 rounded-md"
-												fallbackClassName="text-[8px]"
+												fallbackClassName="text-nano"
 											/>
 											<span className="min-w-0 flex-1 truncate">
 												{repository.name}
@@ -465,7 +499,7 @@ export function WorkspaceStartPage({
 											// Chat mode is always enabled (no repo needed);
 											// other modes require a selected repository.
 											disabled={mode !== "chat" && !selectedRepository}
-											className="inline-flex h-7 cursor-interactive items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-muted-foreground outline-none transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+											className="inline-flex h-7 cursor-interactive items-center gap-1 rounded-md px-1.5 text-ui font-medium text-muted-foreground outline-none transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 										>
 											{mode === "local" ? (
 												<Laptop
@@ -485,10 +519,10 @@ export function WorkspaceStartPage({
 											)}
 											<span>
 												{mode === "local"
-													? "Work locally"
+													? t("workLocally")
 													: mode === "chat"
-														? "Just chat"
-														: "New worktree"}
+														? t("justChat")
+														: t("newWorktree")}
 											</span>
 											<ChevronDown
 												className="size-3 shrink-0 text-muted-foreground"
@@ -500,9 +534,9 @@ export function WorkspaceStartPage({
 								<TooltipContent
 									side="top"
 									sideOffset={4}
-									className="rounded-md px-2 text-[12px] leading-none"
+									className="rounded-md px-2 text-small leading-none"
 								>
-									Select where to run the task
+									<I18nText source="selectWhereRunTask" />
 								</TooltipContent>
 							</Tooltip>
 							{/* Skip focus return so the wrapping Tooltip doesn't re-open via onFocus after selection. */}
@@ -511,30 +545,70 @@ export function WorkspaceStartPage({
 								className="w-fit min-w-36"
 								onCloseAutoFocus={(event) => event.preventDefault()}
 							>
-								<DropdownMenuItem
-									onClick={() => onModeChange("local")}
-									className="gap-2 pr-3"
-									data-checked={mode === "local" ? "true" : undefined}
-								>
-									<Laptop className="size-3.5" strokeWidth={1.8} />
-									<span>Work locally</span>
-								</DropdownMenuItem>
-								<DropdownMenuItem
-									onClick={() => onModeChange("worktree")}
-									className="gap-2 pr-3"
-									data-checked={mode === "worktree" ? "true" : undefined}
-								>
-									<Split className="size-3.5 rotate-90" strokeWidth={1.8} />
-									<span>New worktree</span>
-								</DropdownMenuItem>
-								<DropdownMenuItem
-									onClick={() => onModeChange("chat")}
-									className="gap-2 pr-3"
-									data-checked={mode === "chat" ? "true" : undefined}
-								>
-									<MessageCircle className="size-3.5" strokeWidth={1.8} />
-									<span>Just chat</span>
-								</DropdownMenuItem>
+								{repositories.length === 0 ? (
+									// No repos → swap the repo-bound modes for an "Add a
+									// repository" CTA that fires `helmor:open-add-repository`
+									// (sidebar listener opens its add-repo sub-menu).
+									<>
+										<DropdownMenuItem
+											onClick={() =>
+												publishShellEvent({ type: "open-add-repository" })
+											}
+											className="gap-2 pr-3"
+										>
+											<FolderPlus className="size-3.5" strokeWidth={1.8} />
+											<I18nText source="addRepository" />
+										</DropdownMenuItem>
+										<DropdownMenuSeparator />
+										<DropdownMenuItem
+											onClick={() => onModeChange("chat")}
+											className="gap-2 pr-3"
+											data-checked="true"
+										>
+											<MessageCircle className="size-3.5" strokeWidth={1.8} />
+											<I18nText source="justChat" />
+											{justChatShortcut ? (
+												<InlineShortcutDisplay
+													hotkey={justChatShortcut}
+													className="ml-auto text-muted-foreground"
+												/>
+											) : null}
+										</DropdownMenuItem>
+									</>
+								) : (
+									<>
+										<DropdownMenuItem
+											onClick={() => onModeChange("local")}
+											className="gap-2 pr-3"
+											data-checked={mode === "local" ? "true" : undefined}
+										>
+											<Laptop className="size-3.5" strokeWidth={1.8} />
+											<I18nText source="workLocally" />
+										</DropdownMenuItem>
+										<DropdownMenuItem
+											onClick={() => onModeChange("worktree")}
+											className="gap-2 pr-3"
+											data-checked={mode === "worktree" ? "true" : undefined}
+										>
+											<Split className="size-3.5 rotate-90" strokeWidth={1.8} />
+											<I18nText source="newWorktree" />
+										</DropdownMenuItem>
+										<DropdownMenuItem
+											onClick={() => onModeChange("chat")}
+											className="gap-2 pr-3"
+											data-checked={mode === "chat" ? "true" : undefined}
+										>
+											<MessageCircle className="size-3.5" strokeWidth={1.8} />
+											<I18nText source="justChat" />
+											{justChatShortcut ? (
+												<InlineShortcutDisplay
+													hotkey={justChatShortcut}
+													className="ml-auto text-muted-foreground"
+												/>
+											) : null}
+										</DropdownMenuItem>
+									</>
+								)}
 							</DropdownMenuContent>
 						</DropdownMenu>
 						{/* Branch intent picker. Worktree mode only. */}
@@ -546,7 +620,7 @@ export function WorkspaceStartPage({
 											<button
 												type="button"
 												disabled={!selectedRepository}
-												className="inline-flex h-7 cursor-interactive items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-muted-foreground outline-none transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+												className="inline-flex h-7 cursor-interactive items-center gap-1 rounded-md px-1.5 text-ui font-medium text-muted-foreground outline-none transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 											>
 												{branchIntent === "use_branch" ? (
 													<GitMerge
@@ -561,8 +635,8 @@ export function WorkspaceStartPage({
 												)}
 												<span>
 													{branchIntent === "use_branch"
-														? "Reuse"
-														: "Branch off"}
+														? t("reuse")
+														: t("branchOff")}
 												</span>
 												<ChevronDown
 													className="size-3 shrink-0 text-muted-foreground"
@@ -574,11 +648,11 @@ export function WorkspaceStartPage({
 									<TooltipContent
 										side="top"
 										sideOffset={4}
-										className="rounded-md px-2 text-[12px] leading-none"
+										className="rounded-md px-2 text-small leading-none"
 									>
 										{branchIntent === "use_branch"
-											? "Check out the picked branch directly."
-											: "Fork a fresh branch off the picked base"}
+											? t("checkOutPickedBranchDirectly")
+											: t("forkFreshBranchOffPickedBase")}
 									</TooltipContent>
 								</Tooltip>
 								{/* Skip focus return so the wrapping Tooltip doesn't re-open via onFocus after selection. */}
@@ -596,10 +670,10 @@ export function WorkspaceStartPage({
 									>
 										<div className="flex items-center gap-2">
 											<GitBranchPlus className="size-3.5" strokeWidth={1.8} />
-											<span>Branch off</span>
+											<I18nText source="branchOff" />
 										</div>
-										<span className="pl-[1.375rem] text-[11px] text-muted-foreground">
-											Fork a fresh branch off the picked base.
+										<span className="pl-[1.375rem] text-mini text-muted-foreground">
+											<I18nText source="forkFreshBranchOffPickedBase" />
 										</span>
 									</DropdownMenuItem>
 									<DropdownMenuItem
@@ -611,10 +685,10 @@ export function WorkspaceStartPage({
 									>
 										<div className="flex items-center gap-2">
 											<GitMerge className="size-3.5" strokeWidth={1.8} />
-											<span>Reuse</span>
+											<I18nText source="reuse" />
 										</div>
-										<span className="pl-[1.375rem] text-[11px] text-muted-foreground">
-											Check out the picked branch directly.
+										<span className="pl-[1.375rem] text-mini text-muted-foreground">
+											<I18nText source="checkOutPickedBranchDirectly" />
 										</span>
 									</DropdownMenuItem>
 								</DropdownMenuContent>
@@ -637,14 +711,16 @@ export function WorkspaceStartPage({
 												? ({ close }) => (
 														<button
 															type="button"
-															className="flex w-full cursor-interactive items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+															className="flex w-full cursor-interactive items-center gap-2 rounded-md px-2 py-1.5 text-left text-small text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
 															onClick={() => {
 																close();
 																setCreateBranchOpen(true);
 															}}
 														>
 															<Plus className="size-3.5" strokeWidth={2} />
-															<span>Create and checkout new branch…</span>
+															<span>
+																<I18nText source="createCheckoutNewBranch" />
+															</span>
 														</button>
 													)
 												: undefined
@@ -654,7 +730,7 @@ export function WorkspaceStartPage({
 											<button
 												type="button"
 												disabled={!selectedRepository}
-												className="inline-flex h-7 max-w-[13rem] cursor-interactive items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-muted-foreground outline-none transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+												className="inline-flex h-7 max-w-[13rem] cursor-interactive items-center gap-1 rounded-md px-1.5 text-ui font-medium text-muted-foreground outline-none transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 											>
 												<GitBranch
 													className="size-3.5 shrink-0"
@@ -678,13 +754,13 @@ export function WorkspaceStartPage({
 									<TooltipContent
 										side="top"
 										sideOffset={4}
-										className="rounded-md px-2 text-[12px] leading-none"
+										className="rounded-md px-2 text-small leading-none"
 									>
 										{mode === "local"
-											? "Switch branch"
+											? t("miscSwitchBranch")
 											: branchIntent === "use_branch"
-												? "Branch to reuse"
-												: "Base to fork off"}
+												? t("miscBranchToReuse")
+												: t("miscBaseToForkOff")}
 									</TooltipContent>
 								</Tooltip>
 								<CreateBranchDialog

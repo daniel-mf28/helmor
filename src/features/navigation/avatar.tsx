@@ -41,6 +41,7 @@ export const WorkspaceAvatar = memo(function WorkspaceAvatar({
 	fallbackIcon,
 	badgeClassName,
 	badgeAriaLabel,
+	sourceBadge,
 	isRunning,
 }: {
 	repoIconSrc?: string | null;
@@ -55,6 +56,11 @@ export const WorkspaceAvatar = memo(function WorkspaceAvatar({
 	fallbackIcon?: ReactNode;
 	badgeClassName?: string | null;
 	badgeAriaLabel?: string;
+	/** Optional bottom-right badge node (e.g. a triage source logo). When
+	 *  present it replaces the top-right status dot — used by AI-proposed
+	 *  rows. Rendered as a direct child of the `relative` avatar root so its
+	 *  own absolute positioning resolves against the avatar. */
+	sourceBadge?: ReactNode;
 	isRunning?: boolean;
 }) {
 	const fallback = (
@@ -98,7 +104,7 @@ export const WorkspaceAvatar = memo(function WorkspaceAvatar({
 				<span
 					data-slot="avatar-fallback"
 					className={cn(
-						"grid size-full place-items-center bg-muted text-center text-[7px] font-semibold leading-none uppercase tracking-[0.02em] text-muted-foreground",
+						"grid size-full place-items-center bg-muted text-center text-nano font-semibold leading-none uppercase tracking-[0.02em] text-muted-foreground",
 						fallbackClassName,
 						"rounded-full",
 					)}
@@ -119,7 +125,9 @@ export const WorkspaceAvatar = memo(function WorkspaceAvatar({
 					}}
 				/>
 			) : null}
-			{badgeClassName ? (
+			{sourceBadge ? (
+				sourceBadge
+			) : badgeClassName ? (
 				<AvatarBadge
 					aria-label={badgeAriaLabel}
 					className={cn(

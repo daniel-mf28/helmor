@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/tooltip";
 import { InlineShortcutDisplay } from "@/features/shortcuts/shortcut-display";
 import type { RepositoryCreateOption } from "@/lib/api";
+import { formatSource, I18nText, translateSource, useI18n } from "@/lib/i18n";
 import type { SidebarGrouping, SidebarSort } from "@/lib/settings";
 import { WorkspaceAvatar } from "./avatar";
 
@@ -61,24 +62,24 @@ interface SidebarViewPopoverProps {
 }
 
 const SIDEBAR_SORT_OPTIONS: SidebarSortOption[] = [
-	{ value: "custom", label: "Draggable order", icon: GripVertical },
-	{ value: "repoName", label: "Repository name", icon: ArrowDownAZ },
-	{ value: "updatedAt", label: "Last updated", icon: Clock3 },
-	{ value: "createdAt", label: "Created time", icon: Calendar },
+	{ value: "custom", label: "draggableOrder", icon: GripVertical },
+	{ value: "repoName", label: "repositoryName", icon: ArrowDownAZ },
+	{ value: "updatedAt", label: "lastUpdated", icon: Clock3 },
+	{ value: "createdAt", label: "createdTime", icon: Calendar },
 ];
 
 function repoFilterLabel(
 	repositories: RepositoryCreateOption[],
 	selectedRepoIds: string[],
 ) {
-	if (selectedRepoIds.length === 0) return "All repositories";
+	if (selectedRepoIds.length === 0) return translateSource("allRepositories");
 	if (selectedRepoIds.length === 1) {
 		return (
 			repositories.find((repo) => repo.id === selectedRepoIds[0])?.name ??
-			"1 selected"
+			formatSource("countSelected", { count: 1 })
 		);
 	}
-	return `${selectedRepoIds.length} selected`;
+	return formatSource("countSelected", { count: selectedRepoIds.length });
 }
 
 function SidebarRepoFilterPicker({
@@ -86,6 +87,7 @@ function SidebarRepoFilterPicker({
 	selectedRepoIds,
 	onRepoFilterChange,
 }: SidebarRepoFilterPickerProps) {
+	const { t } = useI18n();
 	const sortedRepositories = useMemo(
 		() =>
 			[...repositories].sort((left, right) =>
@@ -118,7 +120,7 @@ function SidebarRepoFilterPicker({
 				<Button
 					type="button"
 					variant="outline"
-					className="h-8 w-full justify-between rounded-md border-border/70 bg-muted/30 px-2 text-[13px] font-normal"
+					className="h-8 w-full justify-between rounded-md border-border/70 bg-muted/30 px-2 text-ui font-normal"
 				>
 					<span className="truncate">{label}</span>
 					<ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
@@ -130,16 +132,18 @@ function SidebarRepoFilterPicker({
 				className="w-(--radix-popover-trigger-width)"
 				commandClassName="max-h-[320px]"
 			>
-				<CommandInput placeholder="Search repositories" />
+				<CommandInput placeholder="searchRepositories" />
 				<CommandList>
-					<CommandEmpty>No repositories found.</CommandEmpty>
+					<CommandEmpty>
+						<I18nText source="noRepositoriesFound" />
+					</CommandEmpty>
 					<CommandItem
 						value="all repositories"
 						data-checked={selectedRepoIds.length === 0}
 						onSelect={() => onRepoFilterChange?.([])}
 					>
 						<Folder className="size-4 shrink-0 text-muted-foreground" />
-						<span className="truncate">All repositories</span>
+						<span className="truncate">{t("allRepositories")}</span>
 					</CommandItem>
 					{sortedRepositories.map((repo) => {
 						const checked = selectedRepoIdSet.has(repo.id);
@@ -178,6 +182,7 @@ export function SidebarViewPopover({
 	onRepoFilterChange,
 	onSortChange,
 }: SidebarViewPopoverProps) {
+	const { t } = useI18n();
 	return (
 		<Popover open={open} onOpenChange={onOpenChange}>
 			<Tooltip>
@@ -185,7 +190,7 @@ export function SidebarViewPopover({
 					<PopoverTrigger asChild>
 						<Button
 							type="button"
-							aria-label="Filter and sort sidebar"
+							aria-label="filterSortSidebar"
 							variant="ghost"
 							size="icon-xs"
 							className="text-muted-foreground"
@@ -197,9 +202,9 @@ export function SidebarViewPopover({
 				<TooltipContent
 					side="top"
 					sideOffset={4}
-					className="flex h-[24px] items-center gap-2 rounded-md px-2 text-[12px] leading-none"
+					className="flex h-[24px] items-center gap-2 rounded-md px-2 text-small leading-none"
 				>
-					<span>Filter and sort</span>
+					<span>{t("filterSort")}</span>
 					{shortcut ? (
 						<InlineShortcutDisplay
 							hotkey={shortcut}
@@ -210,8 +215,8 @@ export function SidebarViewPopover({
 			</Tooltip>
 			<PopoverContent align="start" className="w-[260px] gap-2 p-2">
 				<div className="grid gap-1 px-1">
-					<div className="text-[12px] font-medium text-muted-foreground">
-						Repository
+					<div className="text-mini font-medium text-muted-foreground">
+						<I18nText source="repository" />
 					</div>
 					<SidebarRepoFilterPicker
 						repositories={repositories}
@@ -220,13 +225,13 @@ export function SidebarViewPopover({
 					/>
 				</div>
 				<div className="h-px bg-border/60" />
-				<div className="px-1 text-[12px] font-medium text-muted-foreground">
-					Group by
+				<div className="px-1 text-mini font-medium text-muted-foreground">
+					<I18nText source="groupBy" />
 				</div>
 				<div className="grid gap-0.5">
 					{[
-						{ value: "status", label: "Status", icon: Rows3 },
-						{ value: "repo", label: "Repository", icon: FolderGit2 },
+						{ value: "status", label: "status", icon: Rows3 },
+						{ value: "repo", label: "repository", icon: FolderGit2 },
 					].map((option) => {
 						const Icon = option.icon;
 						const checked = grouping === option.value;
@@ -236,13 +241,15 @@ export function SidebarViewPopover({
 								type="button"
 								role="radio"
 								aria-checked={checked}
-								className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[13px] hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
+								className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-ui leading-4 hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
 								onClick={() =>
 									onGroupingChange?.(option.value as SidebarGrouping)
 								}
 							>
 								<Icon className="size-3.5 shrink-0 text-muted-foreground" />
-								<span className="min-w-0 flex-1 truncate">{option.label}</span>
+								<span className="min-w-0 flex-1 truncate">
+									{t(option.label)}
+								</span>
 								{checked ? (
 									<Check className="size-3.5" strokeWidth={2.2} />
 								) : null}
@@ -251,8 +258,8 @@ export function SidebarViewPopover({
 					})}
 				</div>
 				<div className="h-px bg-border/60" />
-				<div className="px-1 text-[12px] font-medium text-muted-foreground">
-					Sort by
+				<div className="px-1 text-mini font-medium text-muted-foreground">
+					<I18nText source="sortBy" />
 				</div>
 				<div className="grid gap-0.5">
 					{SIDEBAR_SORT_OPTIONS.map((option) => {
@@ -264,11 +271,13 @@ export function SidebarViewPopover({
 								type="button"
 								role="radio"
 								aria-checked={checked}
-								className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[13px] hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
+								className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-ui leading-4 hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
 								onClick={() => onSortChange?.(option.value)}
 							>
 								<Icon className="size-3.5 shrink-0 text-muted-foreground" />
-								<span className="min-w-0 flex-1 truncate">{option.label}</span>
+								<span className="min-w-0 flex-1 truncate">
+									{t(option.label)}
+								</span>
 								{checked ? (
 									<Check className="size-3.5" strokeWidth={2.2} />
 								) : null}

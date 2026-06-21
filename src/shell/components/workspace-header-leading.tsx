@@ -11,41 +11,51 @@ import {
 import { InlineShortcutDisplay } from "@/features/shortcuts/shortcut-display";
 import { AppUpdateButton } from "@/features/updater/app-update-button";
 import type { AppUpdateStatus } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 type Props = {
 	appUpdateStatus: AppUpdateStatus | null;
 	leftSidebarToggleShortcut: string | null;
+	showOnDesktop: boolean;
 	onExpandSidebar: () => void;
 };
 
 export function WorkspaceHeaderLeading({
 	appUpdateStatus,
 	leftSidebarToggleShortcut,
+	showOnDesktop,
 	onExpandSidebar,
 }: Props) {
+	const { t } = useI18n();
 	return (
-		<>
+		<div
+			className={cn(
+				"flex h-full shrink-0 items-center",
+				showOnDesktop ? "" : "min-[961px]:hidden",
+			)}
+		>
 			{/* Spacer to avoid macOS traffic lights */}
-			<div className="w-[52px] shrink-0" />
+			<div className="w-[62px] shrink-0 max-[960px]:hidden" />
 			<div className="flex items-center gap-[2px]">
-				<AppUpdateButton status={appUpdateStatus} />
+				<AppUpdateButton status={showOnDesktop ? appUpdateStatus : null} />
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<Button
-							aria-label="Expand left sidebar"
+							aria-label="expandLeftSidebar"
 							onClick={onExpandSidebar}
 							variant="ghost"
 							size="icon-xs"
-							className="text-muted-foreground hover:text-foreground"
+							className="text-muted-foreground hover:text-foreground max-[960px]:hidden"
 						>
 							<PanelLeftOpen className="size-4" strokeWidth={1.8} />
 						</Button>
 					</TooltipTrigger>
 					<TooltipContent
 						side="bottom"
-						className="flex h-[24px] items-center gap-2 rounded-md px-2 text-[12px] leading-none"
+						className="flex h-[24px] items-center gap-2 rounded-md px-2 text-small leading-none"
 					>
-						<span>Expand left sidebar</span>
+						<span>{t("expandLeftSidebar")}</span>
 						{leftSidebarToggleShortcut ? (
 							<InlineShortcutDisplay
 								hotkey={leftSidebarToggleShortcut}
@@ -55,6 +65,6 @@ export function WorkspaceHeaderLeading({
 					</TooltipContent>
 				</Tooltip>
 			</div>
-		</>
+		</div>
 	);
 }

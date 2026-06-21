@@ -5,6 +5,7 @@ import {
 	GitPullRequestArrow,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { I18nText } from "@/lib/i18n";
 import { mockInspector } from "./data";
 import {
 	InspectorActionGroupTitleUI,
@@ -39,12 +40,12 @@ export function MockInspector({
 						? "rounded-tr-[16px] relative z-40 isolate bg-sidebar"
 						: "rounded-tr-[16px]"
 				}
-				bodyClassName="bg-muted/20 font-mono text-[11.5px]"
+				bodyClassName="bg-muted/20 font-mono text-mini"
 				rightSlot={
 					<Button
 						variant="outline"
 						size="sm"
-						className="h-6 gap-1 px-2 text-[12px]"
+						className="h-6 gap-1 px-2 text-small"
 					>
 						<GitPullRequestArrow className="size-3.5" />
 						Create PR
@@ -86,9 +87,11 @@ export function MockInspector({
 			<InspectorSectionUI
 				title="Actions"
 				containerClassName="h-[250px]"
-				bodyClassName="bg-muted/18 text-[11.5px]"
+				bodyClassName="bg-muted/18 text-mini"
 			>
-				<InspectorActionGroupTitleUI>Git</InspectorActionGroupTitleUI>
+				<InspectorActionGroupTitleUI>
+					<I18nText source="git" />
+				</InspectorActionGroupTitleUI>
 				{mockInspector.gitActions.map((item) => (
 					<InspectorActionRowUI
 						key={item.label}
@@ -97,7 +100,9 @@ export function MockInspector({
 						actionLabel={item.action}
 					/>
 				))}
-				<InspectorActionGroupTitleUI>Review</InspectorActionGroupTitleUI>
+				<InspectorActionGroupTitleUI>
+					<I18nText source="review2" />
+				</InspectorActionGroupTitleUI>
 				{mockInspector.reviewActions.map((item) => (
 					<InspectorActionRowUI
 						key={item.label}

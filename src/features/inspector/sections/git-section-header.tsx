@@ -21,6 +21,8 @@ import type {
 	ForgeActionStatus,
 	ForgeDetection,
 } from "@/lib/api";
+import type { MergeBlockedReason } from "@/lib/commit-button-logic";
+import { I18nText, useI18n } from "@/lib/i18n";
 import { useSettings } from "@/lib/settings";
 import { useMinDisplayDuration } from "@/lib/use-min-display-duration";
 import { cn } from "@/lib/utils";
@@ -32,7 +34,7 @@ import {
 import { ForgeCliTrigger } from "./forge-cli-onboarding";
 
 const SHIMMER_MIN_DISPLAY_MS = 1500;
-const CONTINUE_LABEL = "Continue";
+const CONTINUE_LABEL_KEY = "inspectorContinue";
 const CONTINUE_BUTTON_PADDING_X_PX = 8;
 const CONTINUE_BUTTON_GAP_PX = 4;
 const CONTINUE_ICON_SIZE_PX = 13;
@@ -71,6 +73,8 @@ export type GitSectionHeaderProps = {
 	commitButtonMode: WorkspaceCommitButtonMode;
 	commitButtonState?: CommitButtonState;
 	changeRequest: ChangeRequestInfo | null;
+	/** Forwarded to the commit button when `commitButtonMode === "merge-blocked"`. */
+	mergeBlockedReason?: MergeBlockedReason | null;
 	hasChanges?: boolean;
 	/**
 	 * Whether change request data is currently being (re)fetched. Drives the
@@ -100,6 +104,7 @@ export function GitSectionHeader({
 	commitButtonMode,
 	commitButtonState,
 	changeRequest,
+	mergeBlockedReason = null,
 	hasChanges = false,
 	isRefreshing = false,
 	changeRequestName = "PR",
@@ -112,6 +117,7 @@ export function GitSectionHeader({
 	isContinuingWorkspace = false,
 	className,
 }: GitSectionHeaderProps) {
+	const { t, f } = useI18n();
 	const { settings } = useSettings();
 	const gitHeaderHighlightClass =
 		getGitSectionHeaderHighlightClass(commitButtonMode);
@@ -276,8 +282,8 @@ export function GitSectionHeader({
 				className="flex shrink-0 items-center gap-1.5"
 			>
 				{!showChangeRequest ? (
-					<span className={cn(INSPECTOR_SECTION_TITLE_CLASS, "translate-y-px")}>
-						Git
+					<span className={INSPECTOR_SECTION_TITLE_CLASS}>
+						<I18nText source="git" />
 					</span>
 				) : (
 					(() => {
@@ -287,7 +293,7 @@ export function GitSectionHeader({
 								variant="outline"
 								size="xs"
 								className={cn(
-									"self-center rounded-md bg-transparent font-normal tracking-[0.01em] transition-[background-color,border-color,color,box-shadow,opacity] duration-300 ease-out hover:bg-transparent hover:opacity-80",
+									"self-center rounded-md bg-transparent font-medium transition-[background-color,border-color,color,box-shadow,opacity] duration-300 ease-out hover:bg-transparent hover:opacity-80",
 									(commitButtonMode === "fix" ||
 										commitButtonMode === "merge-blocked" ||
 										commitButtonMode === "closed") &&
@@ -311,7 +317,7 @@ export function GitSectionHeader({
 											<GithubBrandIcon size={12} />
 										)}
 									</span>
-									<span className="inline-flex h-4 min-w-0 items-center truncate leading-4 tabular-nums text-[13px] font-light">
+									<span className="inline-flex h-4 min-w-0 items-center truncate leading-4 tabular-nums text-ui font-medium">
 										{isMergeRequest ? "!" : "#"}
 										{changeRequest.number}
 									</span>
@@ -324,14 +330,14 @@ export function GitSectionHeader({
 							</Button>
 						);
 						const openLabel = isMergeRequest
-							? "Open merge request"
-							: "Open pull request";
+							? t("inspectorOpenMergeRequest")
+							: t("inspectorOpenPullRequest");
 						return (
 							<Tooltip>
 								<TooltipTrigger asChild>{button}</TooltipTrigger>
 								<TooltipContent
 									side="bottom"
-									className="flex max-w-[320px] items-center gap-2 rounded-md px-2 py-1 text-[12px] leading-tight"
+									className="flex max-w-[320px] items-center gap-2 rounded-md px-2 py-1 text-small leading-tight"
 								>
 									<span className="truncate">{openLabel}</span>
 									{openChangeRequestShortcut ? (
@@ -358,9 +364,9 @@ export function GitSectionHeader({
 								type="button"
 								variant="outline"
 								size="xs"
-								aria-label="Continue workspace"
+								aria-label="continueWorkspace"
 								className={cn(
-									"shrink-0 justify-start overflow-hidden self-center rounded-md border-dashed border-[var(--workspace-pr-merged-accent)] bg-transparent px-0 font-normal text-[var(--workspace-pr-merged-accent)] transition-[background-color,border-color,color,box-shadow,opacity] duration-200 ease-out hover:bg-transparent hover:text-[var(--workspace-pr-merged-accent)] hover:opacity-80",
+									"shrink-0 justify-start overflow-hidden self-center rounded-md border-dashed border-[var(--workspace-pr-merged-accent)] bg-transparent px-0 font-medium text-[var(--workspace-pr-merged-accent)] transition-[background-color,border-color,color,box-shadow,opacity] duration-200 ease-out hover:bg-transparent hover:text-[var(--workspace-pr-merged-accent)] hover:opacity-80",
 								)}
 								style={{ width: continueWidth }}
 								disabled={isContinuingWorkspace}
@@ -377,7 +383,7 @@ export function GitSectionHeader({
 									className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left leading-none"
 									style={{ maxWidth: labelMaxWidth }}
 								>
-									{CONTINUE_LABEL}
+									{t(CONTINUE_LABEL_KEY)}
 								</span>
 							</Button>
 						)}
@@ -389,6 +395,7 @@ export function GitSectionHeader({
 											mode={commitButtonMode}
 											state={commitButtonState}
 											changeRequestName={changeRequestName}
+											mergeBlockedReason={mergeBlockedReason}
 											className="self-center rounded-md"
 											onCommit={onCommit}
 										/>
@@ -397,13 +404,16 @@ export function GitSectionHeader({
 								{commitShortcut ? (
 									<TooltipContent
 										side="bottom"
-										className="flex h-[24px] items-center gap-2 rounded-md px-2 text-[12px] leading-none"
+										className="flex h-[24px] items-center gap-2 rounded-md px-2 text-small leading-none"
 									>
 										<span>
 											{getCommitButtonLabel(
 												commitButtonMode,
 												"idle",
 												changeRequestName,
+												t,
+												f,
+												mergeBlockedReason,
 											)}
 										</span>
 										<InlineShortcutDisplay

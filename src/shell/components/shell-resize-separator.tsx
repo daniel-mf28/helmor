@@ -1,7 +1,14 @@
 // Vertical drag handle used between the workspace sidebar / main pane and
 // between the main pane / inspector. Identical visuals + behaviour, only
 // the side (`"sidebar"` vs `"inspector"`) and offset rules differ.
-import type { CSSProperties, KeyboardEvent, MouseEvent } from "react";
+import {
+	type CSSProperties,
+	type KeyboardEvent,
+	type PointerEvent as ReactPointerEvent,
+	useLayoutEffect,
+	useRef,
+} from "react";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
 	MAX_SIDEBAR_WIDTH,
@@ -14,7 +21,7 @@ type Props = {
 	collapsed: boolean;
 	resizing: boolean;
 	width: number;
-	onMouseDown: (event: MouseEvent<HTMLDivElement>) => void;
+	onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
 	onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
 };
 
@@ -23,24 +30,30 @@ export function ShellResizeSeparator({
 	collapsed,
 	resizing,
 	width,
-	onMouseDown,
+	onPointerDown,
 	onKeyDown,
 }: Props) {
-	// Position also CSS-var driven so the handle follows the pane during drag without React renders.
-	const containerStyle: CSSProperties =
-		side === "sidebar"
-			? {
-					left: collapsed
-						? `${-SIDEBAR_RESIZE_HIT_AREA / 2}px`
-						: `calc(var(--shell-sidebar-width, ${width}px) - ${SIDEBAR_RESIZE_HIT_AREA / 2}px)`,
-					width: `${SIDEBAR_RESIZE_HIT_AREA}px`,
-				}
-			: {
-					right: collapsed
-						? `${-SIDEBAR_RESIZE_HIT_AREA}px`
-						: `calc(var(--shell-inspector-width, ${width}px) - ${SIDEBAR_RESIZE_HIT_AREA}px)`,
-					width: `${SIDEBAR_RESIZE_HIT_AREA}px`,
-				};
+	const { t } = useI18n();
+	// Inline position written via ref so each remount re-applies it; the
+	// drag pipeline updates the same node per-frame.
+	const ref = useRef<HTMLDivElement>(null);
+	useLayoutEffect(() => {
+		const node = ref.current;
+		if (!node) return;
+		if (side === "sidebar") {
+			node.style.left = collapsed
+				? `${-SIDEBAR_RESIZE_HIT_AREA / 2}px`
+				: `${width - SIDEBAR_RESIZE_HIT_AREA / 2}px`;
+		} else {
+			node.style.right = collapsed
+				? `${-SIDEBAR_RESIZE_HIT_AREA}px`
+				: `${width - SIDEBAR_RESIZE_HIT_AREA}px`;
+		}
+	}, [side, collapsed, width]);
+
+	const containerStyle: CSSProperties = {
+		width: `${SIDEBAR_RESIZE_HIT_AREA}px`,
+	};
 
 	const transitionAxis = side === "sidebar" ? "left" : "right";
 	const handleClass =
@@ -50,18 +63,24 @@ export function ShellResizeSeparator({
 
 	return (
 		<div
+			ref={ref}
 			role="separator"
 			tabIndex={collapsed ? -1 : 0}
 			aria-hidden={collapsed}
-			aria-label={`Resize ${side === "sidebar" ? "sidebar" : "inspector sidebar"}`}
+			aria-label={
+				side === "sidebar"
+					? t("miscResizeSidebar")
+					: t("miscResizeInspectorSidebar")
+			}
 			aria-orientation="vertical"
 			aria-valuemin={MIN_SIDEBAR_WIDTH}
 			aria-valuemax={MAX_SIDEBAR_WIDTH}
 			aria-valuenow={width}
-			onMouseDown={onMouseDown}
+			data-shell-resize={side}
+			onPointerDown={onPointerDown}
 			onKeyDown={onKeyDown}
 			className={cn(
-				"group absolute inset-y-0 z-30 cursor-ew-resize touch-none outline-none",
+				"group absolute inset-y-0 z-30 cursor-ew-resize touch-none outline-none max-[960px]:hidden",
 				resizing
 					? "transition-none"
 					: `transition-[${transitionAxis},opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]`,

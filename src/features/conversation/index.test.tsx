@@ -7,7 +7,7 @@ const streamingMocks = vi.hoisted(() => ({
 	handleComposerSubmit: vi.fn(),
 }));
 const composerMocks = vi.hoisted(() => ({
-	props: [] as Array<{ sending?: boolean }>,
+	props: [] as Array<{ sending?: boolean; disabled?: boolean }>,
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -19,7 +19,10 @@ vi.mock("@/lib/api", async (importOriginal) => {
 });
 
 vi.mock("@/features/composer/container", () => ({
-	WorkspaceComposerContainer: (props: { sending?: boolean }) => {
+	WorkspaceComposerContainer: (props: {
+		sending?: boolean;
+		disabled?: boolean;
+	}) => {
 		composerMocks.props.push(props);
 		return <div data-testid="composer" />;
 	},
@@ -46,6 +49,7 @@ vi.mock("./hooks/use-streaming", () => ({
 		restoreImages: [],
 		restoreNonce: 0,
 		activeFastPreludes: {},
+		clearFastPrelude: vi.fn(),
 		busySessionIds: new Set(),
 	}),
 }));
@@ -67,6 +71,9 @@ function renderContainer(
 		busySessionIds?: Set<string>;
 		stoppableSessionIds?: Set<string>;
 		workspaceRootPath?: string | null;
+		displayedWorkspaceId?: string | null;
+		displayedSessionId?: string | null;
+		pendingRepoId?: string | null;
 	} = {},
 ) {
 	const queryClient = new QueryClient({
@@ -77,9 +84,9 @@ function renderContainer(
 		<QueryClientProvider client={queryClient}>
 			<WorkspaceConversationContainer
 				selectedWorkspaceId="workspace-1"
-				displayedWorkspaceId="workspace-1"
+				displayedWorkspaceId={options.displayedWorkspaceId ?? "workspace-1"}
 				selectedSessionId="session-1"
-				displayedSessionId="session-1"
+				displayedSessionId={options.displayedSessionId ?? "session-1"}
 				repoId="repo-1"
 				activeStreams={[]}
 				onSelectSession={vi.fn()}
@@ -90,6 +97,9 @@ function renderContainer(
 					sessionId: "session-1",
 					payload: pendingPayload,
 					finalized: options.finalized ?? true,
+					...(options.pendingRepoId !== undefined
+						? { repoId: options.pendingRepoId }
+						: {}),
 				}}
 				onPendingCreatedWorkspaceSubmitConsumed={onConsumed}
 				busySessionIds={options.busySessionIds}
@@ -142,6 +152,73 @@ describe("WorkspaceConversationContainer", () => {
 			);
 		});
 		expect(onConsumed).toHaveBeenCalledWith("pending-1");
+	});
+
+	it("dispatches even after the user navigated to another workspace before finalize", async () => {
+		// Regression: dispatch was gated on the pending target matching the
+		// displayed workspace, so switching away during finalize stranded the
+		// first turn. It must fire regardless of focus.
+		const onConsumed = vi.fn();
+		const pendingPayload: ComposerSubmitPayload = {
+			prompt: "Build this now",
+			imagePaths: [],
+			filePaths: [],
+			customTags: [],
+			model: MODEL,
+			workingDirectory: "/tmp/new-workspace",
+			effortLevel: "high",
+			permissionMode: "default",
+			fastMode: false,
+		};
+
+		renderContainer(pendingPayload, onConsumed, {
+			displayedWorkspaceId: "workspace-2",
+			displayedSessionId: "session-2",
+		});
+
+		await waitFor(() => {
+			expect(streamingMocks.handleComposerSubmit).toHaveBeenCalledWith(
+				pendingPayload,
+				{
+					sessionId: "session-1",
+					workspaceId: "workspace-1",
+					contextKey: "session:session-1",
+				},
+			);
+		});
+		expect(onConsumed).toHaveBeenCalledWith("pending-1");
+	});
+
+	it("forwards the pending repoId into the override", async () => {
+		const pendingPayload: ComposerSubmitPayload = {
+			prompt: "Build this now",
+			imagePaths: [],
+			filePaths: [],
+			customTags: [],
+			model: MODEL,
+			workingDirectory: "/tmp/new-workspace",
+			effortLevel: "high",
+			permissionMode: "default",
+			fastMode: false,
+		};
+
+		renderContainer(pendingPayload, vi.fn(), {
+			displayedWorkspaceId: "workspace-2",
+			displayedSessionId: "session-2",
+			pendingRepoId: "repo-new",
+		});
+
+		await waitFor(() => {
+			expect(streamingMocks.handleComposerSubmit).toHaveBeenCalledWith(
+				pendingPayload,
+				{
+					sessionId: "session-1",
+					workspaceId: "workspace-1",
+					contextKey: "session:session-1",
+					repoId: "repo-new",
+				},
+			);
+		});
 	});
 
 	it("uses payload.workingDirectory verbatim even when workspaceRootPath is null", async () => {
@@ -224,5 +301,55 @@ describe("WorkspaceConversationContainer", () => {
 		});
 
 		expect(composerMocks.props.at(-1)?.sending).toBe(true);
+	});
+
+	// Stage A selectionPending narrowing: a workspace-level divergence (the
+	// one-frame display-flip / hold window) keeps the composer bound to the
+	// still-displayed old session and USABLE; only a session-level hold within
+	// the same workspace is "pending".
+	it("keeps the composer enabled during a workspace-level selection divergence", () => {
+		const pendingPayload: ComposerSubmitPayload = {
+			prompt: "Build this now",
+			imagePaths: [],
+			filePaths: [],
+			customTags: [],
+			model: MODEL,
+			workingDirectory: null,
+			effortLevel: "high",
+			permissionMode: "default",
+			fastMode: false,
+		};
+
+		// selected = workspace-1/session-1 (router intent), displayed =
+		// workspace-2/session-2 (paint track) → workspace-level divergence.
+		renderContainer(pendingPayload, vi.fn(), {
+			displayedWorkspaceId: "workspace-2",
+			displayedSessionId: "session-2",
+		});
+
+		expect(composerMocks.props.at(-1)?.disabled).toBe(false);
+	});
+
+	it("disables the composer while a session-level hold within the same workspace is pending", () => {
+		const pendingPayload: ComposerSubmitPayload = {
+			prompt: "Build this now",
+			imagePaths: [],
+			filePaths: [],
+			customTags: [],
+			model: MODEL,
+			workingDirectory: null,
+			effortLevel: "high",
+			permissionMode: "default",
+			fastMode: false,
+		};
+
+		// Same workspace, but the displayed session lags the selected one
+		// (selectSession hold-until-ready) → composer must be disabled.
+		renderContainer(pendingPayload, vi.fn(), {
+			displayedWorkspaceId: "workspace-1",
+			displayedSessionId: "session-2",
+		});
+
+		expect(composerMocks.props.at(-1)?.disabled).toBe(true);
 	});
 });

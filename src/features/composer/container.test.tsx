@@ -60,6 +60,8 @@ const composerMockState = vi.hoisted(() => ({
 	lastOnSelectEffort: null as ((level: string) => void) | null,
 	lastOnChangePermissionMode: null as ((mode: string) => void) | null,
 	lastOnChangeFastMode: null as ((enabled: boolean) => void) | null,
+	lastTerminalMode: null as boolean | null,
+	lastOnChangeTerminalMode: null as ((enabled: boolean) => void) | null,
 }));
 
 vi.mock("./index", async () => {
@@ -91,6 +93,8 @@ vi.mock("./index", async () => {
 			permissionMode?: string;
 			onChangePermissionMode?: (mode: string) => void;
 			onChangeFastMode?: (enabled: boolean) => void;
+			terminalMode?: boolean;
+			onChangeTerminalMode?: (enabled: boolean) => void;
 		}) => {
 			composerMockState.renders.push(props.contextKey);
 			composerMockState.lastSlashCommands = [...(props.slashCommands ?? [])];
@@ -110,6 +114,9 @@ vi.mock("./index", async () => {
 			composerMockState.lastOnChangePermissionMode =
 				props.onChangePermissionMode ?? null;
 			composerMockState.lastOnChangeFastMode = props.onChangeFastMode ?? null;
+			composerMockState.lastTerminalMode = props.terminalMode ?? null;
+			composerMockState.lastOnChangeTerminalMode =
+				props.onChangeTerminalMode ?? null;
 			React.useEffect(() => {
 				composerMockState.mounts += 1;
 				return () => {
@@ -161,6 +168,18 @@ const MODEL_SECTIONS = [
 				cliModel: "gpt-5.4",
 				effortLevels: ["low", "medium", "high"],
 				supportsFastMode: true,
+			},
+		],
+	},
+	{
+		id: "opencode",
+		label: "OpenCode",
+		options: [
+			{
+				id: "opencode/big-pickle",
+				provider: "opencode",
+				label: "OpenCode Zen · Big Pickle",
+				cliModel: "opencode/big-pickle",
 			},
 		],
 	},
@@ -229,6 +248,24 @@ const WORKSPACE_SESSIONS = [
 		isHidden: false,
 		active: false,
 	},
+	{
+		id: "session-3",
+		workspaceId: "workspace-1",
+		title: "Session 3",
+		agentType: "opencode",
+		status: "idle",
+		model: "opencode/big-pickle",
+		permissionMode: "default",
+		providerSessionId: null,
+		unreadCount: 0,
+		codexThinkingLevel: null,
+		fastMode: false,
+		createdAt: "2026-04-05T00:00:00Z",
+		updatedAt: "2026-04-05T00:00:00Z",
+		lastUserMessageAt: null,
+		isHidden: false,
+		active: false,
+	},
 ];
 
 describe("WorkspaceComposerContainer", () => {
@@ -241,6 +278,8 @@ describe("WorkspaceComposerContainer", () => {
 		composerMockState.lastOnSelectEffort = null;
 		composerMockState.lastOnChangePermissionMode = null;
 		composerMockState.lastOnChangeFastMode = null;
+		composerMockState.lastTerminalMode = null;
+		composerMockState.lastOnChangeTerminalMode = null;
 		apiMockState.listSlashCommands.mockReset();
 		apiMockState.listWorkspaceLinkedDirectories.mockReset();
 		apiMockState.listWorkspaceLinkedDirectories.mockResolvedValue([]);
@@ -343,7 +382,9 @@ describe("WorkspaceComposerContainer", () => {
 					restoreImages={[]}
 					restoreFiles={[]}
 					restoreNonce={0}
-					modelSelections={{ "start:repo:repo-1": "gpt-5.4" }}
+					modelSelections={{
+						"start:repo:repo-1": { provider: "codex", modelId: "gpt-5.4" },
+					}}
 					effortLevels={{}}
 					permissionModes={{}}
 					fastModes={{}}
@@ -362,9 +403,12 @@ describe("WorkspaceComposerContainer", () => {
 
 		composerMockState.lastOnSelectModel?.("opus-1m");
 
+		// Provider rides along with the pick (derived here from the option since
+		// the mock omitted it) so the slug routes to the right section.
 		expect(handleSelectModel).toHaveBeenCalledWith(
 			"start:repo:repo-1",
 			"opus-1m",
+			"claude",
 		);
 	});
 
@@ -392,7 +436,9 @@ describe("WorkspaceComposerContainer", () => {
 					restoreImages={[]}
 					restoreFiles={[]}
 					restoreNonce={0}
-					modelSelections={{ "start:repo:repo-1": "gpt-5.4" }}
+					modelSelections={{
+						"start:repo:repo-1": { provider: "codex", modelId: "gpt-5.4" },
+					}}
 					effortLevels={{ "start:repo:repo-1": "low" }}
 					permissionModes={{ "start:repo:repo-1": "plan" }}
 					fastModes={{ "start:repo:repo-1": true }}
@@ -548,6 +594,229 @@ describe("WorkspaceComposerContainer", () => {
 				createState: "in-progress",
 			},
 		});
+	});
+
+	it("persists the start composer's terminal toggle in settings", () => {
+		const queryClient = createHelmorQueryClient();
+		const updateSettings = vi.fn();
+		queryClient.setQueryData(
+			helmorQueryKeys.agentModelSections,
+			MODEL_SECTIONS,
+		);
+
+		const settings = {
+			...DEFAULT_SETTINGS,
+			enableTerminalMode: true,
+			startSurfacePreferences: {
+				...DEFAULT_SETTINGS.startSurfacePreferences,
+				terminalModeActive: true,
+			},
+		};
+
+		render(
+			<SettingsContext.Provider
+				value={{ settings, isLoaded: true, updateSettings }}
+			>
+				<QueryClientProvider client={queryClient}>
+					<WorkspaceComposerContainer
+						displayedWorkspaceId={null}
+						displayedSessionId={null}
+						disabled={false}
+						forceAvailable
+						focusScope="start-composer"
+						contextKeyOverride="start:repo:repo-1"
+						sending={false}
+						sendError={null}
+						restoreDraft={null}
+						restoreImages={[]}
+						restoreFiles={[]}
+						restoreNonce={0}
+						modelSelections={{}}
+						effortLevels={{}}
+						permissionModes={{}}
+						fastModes={{}}
+						onSelectModel={vi.fn()}
+						onSelectEffort={vi.fn()}
+						onChangePermissionMode={vi.fn()}
+						onChangeFastMode={vi.fn()}
+						onSubmit={vi.fn()}
+					/>
+				</QueryClientProvider>
+			</SettingsContext.Provider>,
+		);
+
+		// Persisted preference drives the toggle on mount (not local state).
+		expect(composerMockState.lastTerminalMode).toBe(true);
+
+		composerMockState.lastOnChangeTerminalMode?.(false);
+
+		expect(updateSettings).toHaveBeenCalledWith({
+			startSurfacePreferences: {
+				...settings.startSurfacePreferences,
+				terminalModeActive: false,
+			},
+		});
+	});
+
+	it("hides the terminal toggle on chat surfaces (no repo to spawn the PTY in)", () => {
+		const queryClient = createHelmorQueryClient();
+		queryClient.setQueryData(
+			helmorQueryKeys.agentModelSections,
+			MODEL_SECTIONS,
+		);
+
+		const settings = {
+			...DEFAULT_SETTINGS,
+			enableTerminalMode: true,
+			startSurfacePreferences: {
+				...DEFAULT_SETTINGS.startSurfacePreferences,
+				terminalModeActive: true,
+			},
+		};
+
+		const sharedProps = {
+			disabled: false,
+			sending: false,
+			sendError: null,
+			restoreDraft: null,
+			restoreImages: [],
+			restoreFiles: [],
+			restoreNonce: 0,
+			modelSelections: {},
+			effortLevels: {},
+			permissionModes: {},
+			fastModes: {},
+			onSelectModel: vi.fn(),
+			onSelectEffort: vi.fn(),
+			onChangePermissionMode: vi.fn(),
+			onChangeFastMode: vi.fn(),
+			onSubmit: vi.fn(),
+		};
+
+		// Chat-mode start page: availability threaded in via the prop.
+		render(
+			<SettingsContext.Provider
+				value={{ settings, isLoaded: true, updateSettings: vi.fn() }}
+			>
+				<QueryClientProvider client={queryClient}>
+					<WorkspaceComposerContainer
+						{...sharedProps}
+						displayedWorkspaceId={null}
+						displayedSessionId={null}
+						forceAvailable
+						focusScope="start-composer"
+						contextKeyOverride="start:chat"
+						terminalModeAvailable={false}
+					/>
+				</QueryClientProvider>
+			</SettingsContext.Provider>,
+		);
+		expect(composerMockState.lastOnChangeTerminalMode).toBeNull();
+
+		// Chat workspace: derived from the workspace detail row's mode.
+		queryClient.setQueryData(helmorQueryKeys.workspaceDetail("workspace-1"), {
+			...WORKSPACE_DETAIL,
+			mode: "chat",
+			repoId: "",
+		});
+		render(
+			<SettingsContext.Provider
+				value={{ settings, isLoaded: true, updateSettings: vi.fn() }}
+			>
+				<QueryClientProvider client={queryClient}>
+					<WorkspaceComposerContainer
+						{...sharedProps}
+						displayedWorkspaceId="workspace-1"
+						displayedSessionId="session-1"
+					/>
+				</QueryClientProvider>
+			</SettingsContext.Provider>,
+		);
+		expect(composerMockState.lastOnChangeTerminalMode).toBeNull();
+	});
+
+	it("hides the terminal toggle for custom (BYOK) Claude models", () => {
+		const queryClient = createHelmorQueryClient();
+		// Same official Claude option plus a custom (BYOK) one carrying a
+		// providerKey — the terminal CLI can't carry its base URL / auth.
+		const sections = [
+			{
+				id: "claude",
+				label: "Claude",
+				options: [
+					...MODEL_SECTIONS[0].options,
+					{
+						id: "claude-custom|minimax|MiniMax-M2.7",
+						provider: "claude",
+						providerKey: "minimax",
+						label: "MiniMax M2.7",
+						cliModel: "MiniMax-M2.7",
+						effortLevels: ["low", "medium", "high"],
+					},
+				],
+			},
+			...MODEL_SECTIONS.slice(1),
+		];
+		queryClient.setQueryData(helmorQueryKeys.agentModelSections, sections);
+
+		const settings = {
+			...DEFAULT_SETTINGS,
+			enableTerminalMode: true,
+			startSurfacePreferences: {
+				...DEFAULT_SETTINGS.startSurfacePreferences,
+				// Persisted "on" — must be masked when a custom model is selected.
+				terminalModeActive: true,
+			},
+		};
+
+		const sharedProps = {
+			displayedWorkspaceId: null,
+			displayedSessionId: null,
+			disabled: false,
+			forceAvailable: true as const,
+			focusScope: "start-composer" as const,
+			contextKeyOverride: "start:repo:repo-1",
+			sending: false,
+			sendError: null,
+			restoreDraft: null,
+			restoreImages: [],
+			restoreFiles: [],
+			restoreNonce: 0,
+			effortLevels: {},
+			permissionModes: {},
+			fastModes: {},
+			onSelectModel: vi.fn(),
+			onSelectEffort: vi.fn(),
+			onChangePermissionMode: vi.fn(),
+			onChangeFastMode: vi.fn(),
+			onSubmit: vi.fn(),
+		};
+
+		const renderWith = (modelId: string) =>
+			render(
+				<SettingsContext.Provider
+					value={{ settings, isLoaded: true, updateSettings: vi.fn() }}
+				>
+					<QueryClientProvider client={queryClient}>
+						<WorkspaceComposerContainer
+							{...sharedProps}
+							modelSelections={{
+								"start:repo:repo-1": { provider: "claude", modelId },
+							}}
+						/>
+					</QueryClientProvider>
+				</SettingsContext.Provider>,
+			);
+
+		// Control: an official Claude model keeps the terminal toggle.
+		renderWith("opus-1m");
+		expect(composerMockState.lastOnChangeTerminalMode).not.toBeNull();
+		expect(composerMockState.lastTerminalMode).toBe(true);
+
+		// Custom model: toggle hidden and the persisted "on" is masked to GUI.
+		renderWith("claude-custom|minimax|MiniMax-M2.7");
+		expect(composerMockState.lastOnChangeTerminalMode).toBeNull();
+		expect(composerMockState.lastTerminalMode).toBe(false);
 	});
 
 	it("auto-submits queued CLI prompts using the model + permission_mode pinned on the session row", async () => {
@@ -706,7 +975,7 @@ describe("WorkspaceComposerContainer", () => {
 				value={{
 					settings: {
 						...DEFAULT_SETTINGS,
-						defaultModelId: "gpt-5.4",
+						defaultModel: { provider: null, modelId: "gpt-5.4" },
 						defaultFastMode: true,
 					},
 					isLoaded: true,
@@ -967,6 +1236,7 @@ describe("WorkspaceComposerContainer", () => {
 				expect(composerMockState.lastSlashCommands.map((c) => c.name)).toEqual([
 					"add-dir",
 					"goal",
+					"workflows",
 					"compact",
 					"clear",
 				]);
@@ -1009,6 +1279,28 @@ describe("WorkspaceComposerContainer", () => {
 			});
 		});
 
+		it("adds a built-in /compact command for OpenCode sessions", async () => {
+			apiMockState.listSlashCommands.mockResolvedValue({
+				commands: [],
+				isComplete: true,
+			});
+
+			renderWithLinkedDirs([], "session-3");
+
+			await waitFor(() => {
+				expect(composerMockState.lastSlashCommands.map((c) => c.name)).toEqual([
+					"add-dir",
+					"compact",
+				]);
+			});
+			expect(composerMockState.lastSlashCommands[1]).toEqual({
+				name: "compact",
+				description: "Compact this conversation's context",
+				source: "builtin",
+				providers: ["opencode", "mimo"],
+			});
+		});
+
 		it("adds a built-in /goal command for Claude sessions without duplicating an agent-provided goal", async () => {
 			apiMockState.listSlashCommands.mockResolvedValue({
 				commands: [
@@ -1032,6 +1324,7 @@ describe("WorkspaceComposerContainer", () => {
 				expect(composerMockState.lastSlashCommands.map((c) => c.name)).toEqual([
 					"add-dir",
 					"goal",
+					"workflows",
 					"clear",
 				]);
 			});
@@ -1077,7 +1370,11 @@ describe("WorkspaceComposerContainer", () => {
 			updatedAt: 0,
 		};
 
-		function setupCodexSessionWithGoal(): {
+		function setupCodexSessionWithGoal({
+			seedCapabilities = true,
+		}: {
+			seedCapabilities?: boolean;
+		} = {}): {
 			queryClient: ReturnType<typeof createHelmorQueryClient>;
 		} {
 			const queryClient = createHelmorQueryClient();
@@ -1085,6 +1382,25 @@ describe("WorkspaceComposerContainer", () => {
 				helmorQueryKeys.agentModelSections,
 				MODEL_SECTIONS,
 			);
+			// Explicitly seed the provider-capability table for the steady-
+			// state tests. When omitted (`seedCapabilities: false`) the
+			// query falls back to `providerCapabilitiesQueryOptions`'
+			// `initialData`, which mirrors the Rust default table — that is
+			// the cold-start path the dedicated test below exercises.
+			if (seedCapabilities) {
+				queryClient.setQueryData(helmorQueryKeys.providerCapabilities, [
+					{
+						provider: "codex",
+						displayName: "Codex",
+						supportsPlanMode: true,
+						supportsActiveGoal: true,
+						supportsContextUsage: true,
+						supportsSteer: true,
+						supportsSlashCommands: true,
+						requiresApiKey: false,
+					},
+				]);
+			}
 			queryClient.setQueryData(
 				helmorQueryKeys.workspaceDetail("workspace-1"),
 				WORKSPACE_DETAIL,
@@ -1128,7 +1444,12 @@ describe("WorkspaceComposerContainer", () => {
 								restoreImages={[]}
 								restoreFiles={[]}
 								restoreNonce={0}
-								modelSelections={{ "session:session-2": "gpt-5.4" }}
+								modelSelections={{
+									"session:session-2": {
+										provider: "codex",
+										modelId: "gpt-5.4",
+									},
+								}}
 								effortLevels={{}}
 								permissionModes={{}}
 								fastModes={{}}
@@ -1198,6 +1519,32 @@ describe("WorkspaceComposerContainer", () => {
 			expect(onSubmit).toHaveBeenCalledWith(
 				expect.objectContaining({ prompt: "/goal resume" }),
 			);
+		});
+
+		// Cold-start regression: before the capability table hydrates from
+		// the persisted cache / IPC, the composer must still treat Codex as
+		// an active-goal provider via the query's `initialData`. With an
+		// empty/unhydrated table this `/goal pause` would have leaked to the
+		// agent stream (mis-parsed as `{kind: "set", objective: "pause"}`).
+		it("intercepts /goal pause via initialData before the capability table hydrates", async () => {
+			const { queryClient } = setupCodexSessionWithGoal({
+				seedCapabilities: false,
+			});
+			const onSubmit = vi.fn<ContainerOnSubmit>();
+			renderCodexComposer(queryClient, onSubmit);
+
+			await waitFor(() =>
+				expect(composerMockState.lastOnSubmit).not.toBeNull(),
+			);
+
+			composerMockState.lastOnSubmit?.("/goal pause", [], [], []);
+
+			expect(apiMockState.mutateCodexGoal).toHaveBeenCalledTimes(1);
+			expect(apiMockState.mutateCodexGoal).toHaveBeenCalledWith(
+				"session-2",
+				"pause",
+			);
+			expect(onSubmit).not.toHaveBeenCalled();
 		});
 	});
 });

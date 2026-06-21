@@ -2,6 +2,7 @@ import { ArrowRight, ChevronDown, GitBranch } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { HyperText } from "@/components/ui/hyper-text";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { branchToneClasses, type WorkspaceBranchTone } from "./shared";
 
@@ -30,13 +31,14 @@ export function ConversationHeaderUI({
 	rightSlot,
 	leadingSlot,
 }: ConversationHeaderUIProps) {
+	const { t } = useI18n();
 	return (
 		<div
-			aria-label="Workspace header"
+			aria-label={t("workspaceHeader")}
 			className="flex h-9 items-center justify-between gap-3 px-[18px]"
 			data-tauri-drag-region
 		>
-			<div className="relative z-0 flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-[12.5px]">
+			<div className="relative z-0 flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-small">
 				{leadingSlot}
 				<span className="group/branch relative inline-flex items-center gap-1 overflow-hidden px-1 py-0.5 font-medium text-foreground">
 					<GitBranch

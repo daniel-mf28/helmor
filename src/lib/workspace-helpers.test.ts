@@ -61,13 +61,16 @@ const MODEL_SECTIONS: AgentModelSection[] = [
 ];
 
 describe("inferDefaultModelId", () => {
-	it("returns session model when session has history", () => {
+	it("returns session model (provider from agent_type) when session has history", () => {
 		const session = {
 			model: "opus",
 			agentType: "claude",
 			lastUserMessageAt: "2026-04-15T00:00:00Z",
 		} as WorkspaceSessionSummary;
-		expect(inferDefaultModelId(session, MODEL_SECTIONS)).toBe("opus");
+		expect(inferDefaultModelId(session, MODEL_SECTIONS)).toEqual({
+			provider: "claude",
+			modelId: "opus",
+		});
 	});
 
 	it("returns settings default for new session", () => {
@@ -76,23 +79,34 @@ describe("inferDefaultModelId", () => {
 			agentType: null,
 			lastUserMessageAt: null,
 		} as unknown as WorkspaceSessionSummary;
-		expect(inferDefaultModelId(session, MODEL_SECTIONS, "gpt-4o")).toBe(
-			"gpt-4o",
-		);
+		expect(
+			inferDefaultModelId(session, MODEL_SECTIONS, {
+				provider: "codex",
+				modelId: "gpt-4o",
+			}),
+		).toEqual({ provider: "codex", modelId: "gpt-4o" });
 	});
 
 	it("falls back to the first catalog model when no settings default is provided", () => {
-		expect(inferDefaultModelId(null, MODEL_SECTIONS)).toBe("default");
+		expect(inferDefaultModelId(null, MODEL_SECTIONS)).toEqual({
+			provider: "claude",
+			modelId: "default",
+		});
 	});
 
 	it("falls back to the first catalog model when the settings model ID is invalid", () => {
-		expect(inferDefaultModelId(null, MODEL_SECTIONS, "nonexistent")).toBe(
-			"default",
-		);
+		expect(
+			inferDefaultModelId(null, MODEL_SECTIONS, {
+				provider: "claude",
+				modelId: "nonexistent",
+			}),
+		).toEqual({ provider: "claude", modelId: "default" });
 	});
 
 	it("returns null when model sections are empty", () => {
-		expect(inferDefaultModelId(null, [], "default")).toBeNull();
+		expect(
+			inferDefaultModelId(null, [], { provider: "claude", modelId: "default" }),
+		).toBeNull();
 	});
 });
 
@@ -633,6 +647,128 @@ describe("splitTextWithFiles", () => {
 			{ type: "file-mention", id: "m1:mention:1", path: image },
 		]);
 	});
+
+	it("carves pasted ranges into pasted-text parts", () => {
+		const text = "帮我看看这个\nconst a = 1;\nconst b = 2;\n谢谢";
+		const start = 7; // after the 6 CJK chars + newline
+		const end = start + "const a = 1;\nconst b = 2;".length;
+		const result = splitTextWithFiles(text, [], "m1", [], [{ start, end }]);
+		expect(result).toEqual([
+			{ type: "text", id: "m1:txt:0", text: "帮我看看这个\n" },
+			{
+				type: "pasted-text",
+				id: "m1:pasted:0",
+				text: "const a = 1;\nconst b = 2;",
+			},
+			{ type: "text", id: "m1:txt:1", text: "\n谢谢" },
+		]);
+	});
+
+	it("drops invalid and overlapping pasted ranges", () => {
+		const text = "before PASTED after";
+		const result = splitTextWithFiles(
+			text,
+			[],
+			"m1",
+			[],
+			[
+				{ start: 7, end: 13 }, // valid: "PASTED"
+				{ start: 10, end: 16 }, // overlaps the first — dropped
+				{ start: 5, end: 5 }, // empty — dropped
+				{ start: 40, end: 500 }, // out of bounds — dropped
+			],
+		);
+		expect(result).toEqual([
+			{ type: "text", id: "m1:txt:0", text: "before " },
+			{ type: "pasted-text", id: "m1:pasted:0", text: "PASTED" },
+			{ type: "text", id: "m1:txt:1", text: " after" },
+		]);
+	});
+
+	it("ignores @path needles inside a pasted span", () => {
+		const text = "see @a.ts then PASTE WITH @a.ts INSIDE";
+		const result = splitTextWithFiles(
+			text,
+			["a.ts"],
+			"m1",
+			[],
+			[{ start: 15, end: 38 }],
+		);
+		expect(result).toEqual([
+			{ type: "text", id: "m1:txt:0", text: "see " },
+			{ type: "file-mention", id: "m1:mention:0", path: "a.ts" },
+			{ type: "text", id: "m1:txt:1", text: " then " },
+			{
+				type: "pasted-text",
+				id: "m1:pasted:0",
+				text: "PASTE WITH @a.ts INSIDE",
+			},
+		]);
+	});
+
+	// Parity with the Rust adapter's `user_prompt_with_pasted_range_mid_surrogate`
+	// snapshot: ranges landing inside a surrogate pair drop (their span stays
+	// plain text) instead of producing lone-surrogate chips.
+	it("drops ranges that split a surrogate pair (parity with Rust)", () => {
+		const text = "看 😀😀 ok"; // UTF-16: 看=0, sp=1, 😀=2..4, 😀=4..6, sp=6, o=7, k=8
+		const result = splitTextWithFiles(
+			text,
+			[],
+			"m1",
+			[],
+			[
+				{ start: 2, end: 5 }, // end lands mid-surrogate — dropped
+				{ start: 3, end: 6 }, // start lands mid-surrogate — dropped
+				{ start: 7, end: 9 }, // valid: "ok", ends at end-of-string
+			],
+		);
+		expect(result).toEqual([
+			{ type: "text", id: "m1:txt:0", text: "看 😀😀 " },
+			{ type: "pasted-text", id: "m1:pasted:0", text: "ok" },
+		]);
+	});
+
+	// Parity with Rust's (start, end) tuple sort: equal-start overlap keeps
+	// the smaller end regardless of input order.
+	it("keeps the smaller end when overlapping ranges share a start (parity with Rust)", () => {
+		const text = "before PASTED after";
+		const result = splitTextWithFiles(
+			text,
+			[],
+			"m1",
+			[],
+			[
+				{ start: 7, end: 13 }, // listed first, but the longer span loses
+				{ start: 7, end: 10 },
+			],
+		);
+		expect(result).toEqual([
+			{ type: "text", id: "m1:txt:0", text: "before " },
+			{ type: "pasted-text", id: "m1:pasted:0", text: "PAS" },
+			{ type: "text", id: "m1:txt:1", text: "TED after" },
+		]);
+	});
+
+	// Parity with the Rust adapter's `user_prompt_with_adjacent_pasted_ranges`
+	// snapshot: a shared boundary is not an overlap.
+	it("keeps adjacent ranges as separate chips (parity with Rust)", () => {
+		const text = "see AABBB";
+		const result = splitTextWithFiles(
+			text,
+			[],
+			"m1",
+			[],
+			[
+				{ start: 4, end: 6 },
+				{ start: 6, end: 9 },
+			],
+		);
+		expect(result).toEqual([
+			{ type: "text", id: "m1:txt:0", text: "see " },
+			{ type: "pasted-text", id: "m1:pasted:0", text: "AA" },
+			{ type: "pasted-text", id: "m1:pasted:1", text: "BBB" },
+		]);
+	});
 });
 
 describe("createLiveThreadMessage with image paths", () => {
@@ -668,6 +804,45 @@ describe("findModelOption", () => {
 	it("returns null for null modelId", () => {
 		expect(findModelOption(MODEL_SECTIONS, null)).toBeNull();
 	});
+
+	it("disambiguates a slug shared by opencode and mimo via provider", () => {
+		// Same `anthropic/x` slug configured under both forks — id alone is
+		// ambiguous; the provider picks the right section.
+		const sections: AgentModelSection[] = [
+			{
+				id: "opencode",
+				label: "OpenCode",
+				options: [
+					{
+						id: "anthropic/x",
+						provider: "opencode",
+						label: "OC",
+						cliModel: "anthropic/x",
+					},
+				],
+			},
+			{
+				id: "mimo",
+				label: "MiMo Code",
+				options: [
+					{
+						id: "anthropic/x",
+						provider: "mimo",
+						label: "MiMo",
+						cliModel: "anthropic/x",
+					},
+				],
+			},
+		];
+		expect(findModelOption(sections, "anthropic/x", "mimo")?.provider).toBe(
+			"mimo",
+		);
+		expect(findModelOption(sections, "anthropic/x", "opencode")?.provider).toBe(
+			"opencode",
+		);
+		// No provider → first section wins (opencode), the pre-fix behavior.
+		expect(findModelOption(sections, "anthropic/x")?.provider).toBe("opencode");
+	});
 });
 
 describe("resolveSessionSelectedModelId", () => {
@@ -681,11 +856,11 @@ describe("resolveSessionSelectedModelId", () => {
 					lastUserMessageAt: null,
 				},
 				modelSelections: {
-					"session:session-1": "gpt-4o",
+					"session:session-1": { provider: "codex", modelId: "gpt-4o" },
 				},
 				modelSections: MODEL_SECTIONS,
 			}),
-		).toBe("gpt-4o");
+		).toEqual({ provider: "codex", modelId: "gpt-4o" });
 	});
 
 	it("prefers the composer-selected model for a custom context key", () => {
@@ -693,13 +868,13 @@ describe("resolveSessionSelectedModelId", () => {
 			resolveSessionSelectedModelId({
 				session: null,
 				modelSelections: {
-					"start:repo:repo-1": "gpt-4o",
+					"start:repo:repo-1": { provider: "codex", modelId: "gpt-4o" },
 				},
 				modelSections: MODEL_SECTIONS,
-				settingsDefaultModelId: "default",
+				settingsDefaultModel: { provider: "claude", modelId: "default" },
 				contextKey: "start:repo:repo-1",
 			}),
-		).toBe("gpt-4o");
+		).toEqual({ provider: "codex", modelId: "gpt-4o" });
 	});
 
 	it("falls back to the persisted session model", () => {
@@ -713,7 +888,7 @@ describe("resolveSessionSelectedModelId", () => {
 				},
 				modelSelections: {},
 				modelSections: MODEL_SECTIONS,
-			}),
+			})?.modelId,
 		).toBe("default");
 	});
 
@@ -728,9 +903,52 @@ describe("resolveSessionSelectedModelId", () => {
 				},
 				modelSelections: {},
 				modelSections: MODEL_SECTIONS,
-				settingsDefaultModelId: "gpt-4o",
+				settingsDefaultModel: { provider: "codex", modelId: "gpt-4o" },
 			}),
-		).toBe("gpt-4o");
+		).toEqual({ provider: "codex", modelId: "gpt-4o" });
+	});
+
+	it("drops a persisted pick that's no longer in the catalog", () => {
+		// Cursor key removed → the persisted cursor model is gone; fall back
+		// to a valid default instead of returning the dangling id.
+		expect(
+			resolveSessionSelectedModelId({
+				session: {
+					id: "session-5",
+					agentType: "claude",
+					model: null,
+					lastUserMessageAt: null,
+				},
+				modelSelections: {
+					"session:session-5": {
+						provider: "cursor",
+						modelId: "cursor-removed-model",
+					},
+				},
+				modelSections: MODEL_SECTIONS,
+				settingsDefaultModel: { provider: "claude", modelId: "opus" },
+			})?.modelId,
+		).toBe("opus");
+	});
+
+	it("keeps a persisted pick while the catalog is still loading (empty)", () => {
+		expect(
+			resolveSessionSelectedModelId({
+				session: {
+					id: "session-6",
+					agentType: "claude",
+					model: null,
+					lastUserMessageAt: null,
+				},
+				modelSelections: {
+					"session:session-6": {
+						provider: "cursor",
+						modelId: "cursor-removed-model",
+					},
+				},
+				modelSections: [],
+			})?.modelId,
+		).toBe("cursor-removed-model");
 	});
 
 	it("falls back to the first available model when no session or settings model is available", () => {
@@ -744,14 +962,14 @@ describe("resolveSessionSelectedModelId", () => {
 				},
 				modelSelections: {},
 				modelSections: MODEL_SECTIONS,
-				settingsDefaultModelId: null,
-			}),
+				settingsDefaultModel: null,
+			})?.modelId,
 		).toBe("default");
 	});
 });
 
 describe("resolveSessionDisplayProvider", () => {
-	it("maps the resolved model to the provider", () => {
+	it("uses the session's provider, ignoring the composer model selection", () => {
 		expect(
 			resolveSessionDisplayProvider({
 				session: {
@@ -761,26 +979,77 @@ describe("resolveSessionDisplayProvider", () => {
 					lastUserMessageAt: null,
 				},
 				modelSelections: {
-					"session:session-1": "gpt-4o",
+					"session:session-1": { provider: "codex", modelId: "gpt-4o" },
 				},
 				modelSections: MODEL_SECTIONS,
 			}),
-		).toBe("codex");
+		).toBe("claude");
 	});
 
-	it("falls back to persisted agent type when model resolution is unavailable", () => {
+	it("returns a custom Codex provider id (codex:<id>) from the session agent", () => {
 		expect(
 			resolveSessionDisplayProvider({
 				session: {
-					id: "session-2",
-					agentType: "claude",
+					id: "session-codex-custom",
+					agentType: "codex:hundun",
 					model: null,
 					lastUserMessageAt: null,
 				},
 				modelSelections: {},
-				modelSections: [],
+				modelSections: MODEL_SECTIONS,
 			}),
-		).toBe("claude");
+		).toBe("codex:hundun");
+	});
+
+	it("keeps the opencode icon regardless of the selected sub-provider model", () => {
+		expect(
+			resolveSessionDisplayProvider({
+				session: {
+					id: "session-2",
+					agentType: "opencode",
+					model: null,
+					lastUserMessageAt: null,
+				},
+				modelSelections: {
+					"session:session-2": { provider: "codex", modelId: "gpt-4o" },
+				},
+				modelSections: MODEL_SECTIONS,
+			}),
+		).toBe("opencode");
+	});
+
+	it("keeps the mimo icon regardless of the selected sub-provider model", () => {
+		expect(
+			resolveSessionDisplayProvider({
+				session: {
+					id: "session-2",
+					agentType: "mimo",
+					model: null,
+					lastUserMessageAt: null,
+				},
+				modelSelections: {
+					"session:session-2": { provider: "codex", modelId: "gpt-4o" },
+				},
+				modelSections: MODEL_SECTIONS,
+			}),
+		).toBe("mimo");
+	});
+
+	it("falls back to the selected model's provider when the session has no agent", () => {
+		expect(
+			resolveSessionDisplayProvider({
+				session: {
+					id: "session-3",
+					agentType: null,
+					model: null,
+					lastUserMessageAt: null,
+				},
+				modelSelections: {
+					"session:session-3": { provider: "codex", modelId: "gpt-4o" },
+				},
+				modelSections: MODEL_SECTIONS,
+			}),
+		).toBe("codex");
 	});
 });
 
@@ -886,6 +1155,67 @@ describe("findReplacementWorkspaceIdAfterRemoval", () => {
 			removedWorkspaceId: "ghost",
 		});
 		expect(next).toBe("a");
+	});
+
+	// Last row in a group falls back to the previous sibling, not the next group.
+	it("falls back inside the same group before jumping to the next group", () => {
+		const currentGroups = [
+			group("ai-tasks", ["t1", "t2", "t3"]),
+			group("progress", ["p1", "p2"]),
+		];
+		const nextGroups = [
+			group("ai-tasks", ["t1", "t2"]),
+			group("progress", ["p1", "p2"]),
+		];
+		// t3 was the last in ai-tasks → fall back to t2 (NOT p1, which
+		// the old flat-index algorithm would have picked).
+		expect(
+			findReplacementWorkspaceIdAfterRemoval({
+				currentGroups,
+				currentArchivedRows: [],
+				nextGroups,
+				nextArchivedRows: [],
+				removedWorkspaceId: "t3",
+			}),
+		).toBe("t2");
+	});
+
+	// Group-aware: when the removed workspace's group becomes empty,
+	// fall back to the first row of the first non-empty group.
+	it("jumps to the next non-empty group when the removed group is exhausted", () => {
+		const currentGroups = [
+			group("ai-tasks", ["t1"]),
+			group("progress", ["p1", "p2"]),
+		];
+		const nextGroups = [group("ai-tasks", []), group("progress", ["p1", "p2"])];
+		expect(
+			findReplacementWorkspaceIdAfterRemoval({
+				currentGroups,
+				currentArchivedRows: [],
+				nextGroups,
+				nextArchivedRows: [],
+				removedWorkspaceId: "t1",
+			}),
+		).toBe("p1");
+	});
+
+	// Group-aware: archived rows are their own bucket — removing one
+	// stays inside the archived lane while it has siblings.
+	it("treats archived rows as their own bucket for same-bucket fallback", () => {
+		const currentGroups = [group("progress", ["p1"])];
+		const currentArchived = [row("z1"), row("z2"), row("z3")];
+		const nextGroups = [group("progress", ["p1"])];
+		const nextArchived = [row("z1"), row("z2")];
+		// z3 was last archived → fall back to z2 (NOT p1).
+		expect(
+			findReplacementWorkspaceIdAfterRemoval({
+				currentGroups,
+				currentArchivedRows: currentArchived,
+				nextGroups,
+				nextArchivedRows: nextArchived,
+				removedWorkspaceId: "z3",
+			}),
+		).toBe("z2");
 	});
 
 	// Regression: caller MUST pass currentGroups and nextGroups in the same

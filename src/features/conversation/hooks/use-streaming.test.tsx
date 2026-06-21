@@ -3,6 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PendingUserInput } from "@/features/conversation/pending-user-input";
+import { __resetStreamingStoreForTests } from "@/features/conversation/state/streaming-store";
 import type {
 	ActiveStreamSummary,
 	AgentModelOption,
@@ -15,6 +16,7 @@ import type {
 	QueuedSubmitContext,
 	SubmitQueueApi,
 } from "@/lib/use-submit-queue";
+import { __resetSubmitQueueForTests } from "@/lib/use-submit-queue";
 import { WorkspaceToastProvider } from "@/lib/workspace-toast-context";
 import { useConversationStreaming } from "./use-streaming";
 
@@ -172,6 +174,8 @@ function assistantMessage(
 
 describe("useConversationStreaming", () => {
 	beforeEach(() => {
+		__resetStreamingStoreForTests();
+		__resetSubmitQueueForTests();
 		apiMocks.generateSessionTitle.mockReset();
 		apiMocks.loadRepoPreferences.mockReset();
 		apiMocks.loadSessionThreadMessages.mockReset();
@@ -332,6 +336,7 @@ describe("useConversationStreaming", () => {
 			"tool-1",
 			"submit",
 			{ questions: [], answers: { Q: "A" } },
+			undefined,
 		);
 		expect(apiMocks.startAgentMessageStream).not.toHaveBeenCalled();
 	});
@@ -505,7 +510,7 @@ describe("useConversationStreaming", () => {
 		expect(apiMocks.startAgentMessageStream).not.toHaveBeenCalled();
 	});
 
-	it("scopes the local sending flag to its own context key so siblings stay idle", async () => {
+	it("isSending scopes to its own context; busySessionIds is the shared app-level set", async () => {
 		const streamCallbacks: Array<(event: unknown) => void> = [];
 		apiMocks.startAgentMessageStream.mockImplementation(
 			async (_payload: unknown, onEvent: (event: unknown) => void) => {
@@ -556,8 +561,14 @@ describe("useConversationStreaming", () => {
 
 		expect(result.current.running.isSending).toBe(true);
 		expect(result.current.running.busySessionIds.has("session-1")).toBe(true);
+		// `isSending` stays scoped to the consuming context — the sibling at
+		// a different contextKey is NOT sending.
 		expect(result.current.emptySibling.isSending).toBe(false);
-		expect(result.current.emptySibling.busySessionIds.size).toBe(0);
+		// `busySessionIds` is the app-wide busy set derived from the shared
+		// streaming store; both hook instances see the same answer here.
+		expect(result.current.emptySibling.busySessionIds.has("session-1")).toBe(
+			true,
+		);
 
 		act(() => {
 			streamCallbacks[0]({
@@ -628,6 +639,144 @@ describe("useConversationStreaming", () => {
 				prompt: "Fix the failing tests.",
 				promptPrefix:
 					"IMPORTANT: The following are the user's custom preferences. These preferences take precedence over any default guidelines or instructions provided above. When there is a conflict, always follow the user's preferences.\n\n### User Preferences\n\nAlways summarize the repo conventions first.",
+			}),
+			expect.any(Function),
+		);
+	});
+
+	it("sends selected prior sessions via promptPrefix on the first prompt", async () => {
+		apiMocks.startAgentMessageStream.mockImplementation(async () => {});
+		const getSessionContextReferences = vi.fn().mockReturnValue([
+			{
+				id: "session-prior",
+				title: "Plan auth flow",
+				workspaceId: "workspace-1",
+			},
+		]);
+
+		const { Wrapper, queryClient } = createWrapper();
+		queryClient.setQueryData(helmorQueryKeys.workspaceSessions("workspace-1"), [
+			{
+				id: "session-1",
+				title: "Untitled",
+			},
+		]);
+		queryClient.setQueryData(sessionThreadCacheKey("session-1"), []);
+
+		const { result } = renderHook(
+			() =>
+				useConversationStreaming({
+					composerContextKey: "session:session-1",
+					displayedSelectedModelId: MODEL.id,
+					displayedSessionId: "session-1",
+					displayedWorkspaceId: "workspace-1",
+					repoId: "repo-1",
+					selectionPending: false,
+					followUpBehavior: "steer",
+					submitQueue: noopSubmitQueue,
+					activeStreams: NO_ACTIVE_STREAMS,
+					getSessionContextReferences,
+				}),
+			{ wrapper: Wrapper },
+		);
+
+		await act(async () => {
+			await result.current.handleComposerSubmit({
+				prompt: "Continue the work.",
+				imagePaths: [],
+				filePaths: [],
+				customTags: [],
+				model: MODEL,
+				workingDirectory: "/tmp/repo",
+				effortLevel: "high",
+				permissionMode: "default",
+				fastMode: false,
+			});
+		});
+
+		expect(getSessionContextReferences).toHaveBeenCalledWith("session-1");
+		expect(apiMocks.startAgentMessageStream).toHaveBeenCalledWith(
+			expect.objectContaining({
+				prompt: "Continue the work.",
+				promptPrefix: expect.stringContaining(
+					"session get-messages session-prior --position tail --limit 12 --body-limit 2000 --json",
+				),
+			}),
+			expect.any(Function),
+		);
+		expect(apiMocks.startAgentMessageStream).toHaveBeenCalledWith(
+			expect.objectContaining({
+				promptPrefix: expect.stringContaining(
+					"Stop once you have enough context",
+				),
+			}),
+			expect.any(Function),
+		);
+	});
+
+	it("uses the latest selected session references when the selection changes before submit", async () => {
+		apiMocks.startAgentMessageStream.mockImplementation(async () => {});
+
+		const { Wrapper, queryClient } = createWrapper();
+		queryClient.setQueryData(helmorQueryKeys.workspaceSessions("workspace-1"), [
+			{
+				id: "session-1",
+				title: "Untitled",
+			},
+		]);
+		queryClient.setQueryData(sessionThreadCacheKey("session-1"), []);
+
+		const emptyReferences = vi.fn().mockReturnValue([]);
+		const selectedReferences = vi.fn().mockReturnValue([
+			{
+				id: "session-prior",
+				title: "Plan auth flow",
+				workspaceId: "workspace-1",
+			},
+		]);
+		const { result, rerender } = renderHook(
+			({ getSessionContextReferences }) =>
+				useConversationStreaming({
+					composerContextKey: "session:session-1",
+					displayedSelectedModelId: MODEL.id,
+					displayedSessionId: "session-1",
+					displayedWorkspaceId: "workspace-1",
+					repoId: "repo-1",
+					selectionPending: false,
+					followUpBehavior: "steer",
+					submitQueue: noopSubmitQueue,
+					activeStreams: NO_ACTIVE_STREAMS,
+					getSessionContextReferences,
+				}),
+			{
+				wrapper: Wrapper,
+				initialProps: { getSessionContextReferences: emptyReferences },
+			},
+		);
+
+		rerender({ getSessionContextReferences: selectedReferences });
+
+		await act(async () => {
+			await result.current.handleComposerSubmit({
+				prompt: "Continue after the prior session.",
+				imagePaths: [],
+				filePaths: [],
+				customTags: [],
+				model: MODEL,
+				workingDirectory: "/tmp/repo",
+				effortLevel: "high",
+				permissionMode: "default",
+				fastMode: false,
+			});
+		});
+
+		expect(emptyReferences).not.toHaveBeenCalled();
+		expect(selectedReferences).toHaveBeenCalledWith("session-1");
+		expect(apiMocks.startAgentMessageStream).toHaveBeenCalledWith(
+			expect.objectContaining({
+				promptPrefix: expect.stringContaining(
+					"session get-messages session-prior --position tail --limit 12 --body-limit 2000 --json",
+				),
 			}),
 			expect.any(Function),
 		);
@@ -1082,6 +1231,95 @@ describe("useConversationStreaming", () => {
 		expect(result.current.isSending).toBe(false);
 	});
 
+	it("does not orphan the changes-refresh interval when the send RPC rejects", async () => {
+		// LEAK FIX regression guard. `handleComposerSubmit` starts a
+		// `setInterval(..., 7000)` (the workspaceChanges refresh) BEFORE
+		// awaiting `startAgentMessageStream`. When that RPC rejects, control
+		// jumps to the catch — which previously never ran `cleanup()`, so the
+		// interval ticked forever (one leaked interval per failed send). The
+		// catch now calls `cleanup?.()`; this test instruments
+		// setInterval/clearInterval and asserts no changes-refresh interval survives.
+		// Key on the raw timer handle (jsdom/Node returns a Timeout *object*,
+		// not a number, so don't assume `number`). Reference equality holds:
+		// cleanup() passes back the exact handle setInterval handed out.
+		const created = new Map<unknown, number>(); // handle -> delay
+		const cleared = new Set<unknown>();
+		// Capture the originals first — in jsdom `window.setInterval` and
+		// `globalThis.setInterval` are the same reference, so the spy must call
+		// the saved original (not the live binding) to avoid infinite recursion.
+		const realSetInterval = window.setInterval.bind(window);
+		const realClearInterval = window.clearInterval.bind(window);
+		const setIntervalSpy = vi.spyOn(window, "setInterval").mockImplementation(((
+			handler: TimerHandler,
+			delay?: number,
+		) => {
+			// Hand off to the real timer so behavior is otherwise unchanged,
+			// then record the (handle, delay) pair we just minted.
+			const handle = realSetInterval(handler as () => void, delay);
+			created.set(handle, delay ?? 0);
+			return handle;
+		}) as typeof window.setInterval);
+		const clearIntervalSpy = vi
+			.spyOn(window, "clearInterval")
+			.mockImplementation(((handle?: unknown) => {
+				cleared.add(handle);
+				realClearInterval(handle as Parameters<typeof realClearInterval>[0]);
+			}) as typeof window.clearInterval);
+
+		try {
+			apiMocks.startAgentMessageStream.mockRejectedValue(
+				new Error("RPC transport closed"),
+			);
+
+			const { Wrapper } = createWrapper();
+			const { result } = renderHook(
+				() =>
+					useConversationStreaming({
+						composerContextKey: "session:session-1",
+						displayedSelectedModelId: MODEL.id,
+						displayedSessionId: "session-1",
+						displayedWorkspaceId: "workspace-1",
+						selectionPending: false,
+						followUpBehavior: "steer",
+						submitQueue: noopSubmitQueue,
+						activeStreams: NO_ACTIVE_STREAMS,
+					}),
+				{ wrapper: Wrapper },
+			);
+
+			await act(async () => {
+				await result.current.handleComposerSubmit({
+					prompt: "this send will fail",
+					imagePaths: [],
+					filePaths: [],
+					customTags: [],
+					model: MODEL,
+					workingDirectory: "/tmp/helmor",
+					effortLevel: "medium",
+					permissionMode: "default",
+					fastMode: false,
+				});
+			});
+
+			// The catch ran (RPC rejected): the draft is preserved + error set.
+			expect(result.current.activeSendError).toBe("RPC transport closed");
+			expect(result.current.isSending).toBe(false);
+
+			// The changes-refresh interval was created exactly once and then
+			// cleared — no orphan survives the failed send.
+			const changesRefreshIntervals = [...created.entries()]
+				.filter(([, delay]) => delay === 7_000)
+				.map(([handle]) => handle);
+			expect(changesRefreshIntervals).toHaveLength(1);
+			for (const handle of changesRefreshIntervals) {
+				expect(cleared.has(handle)).toBe(true);
+			}
+		} finally {
+			setIntervalSpy.mockRestore();
+			clearIntervalSpy.mockRestore();
+		}
+	});
+
 	it("hides the message of an internal sidecar error from the composer", async () => {
 		// `internal: true` indicates a sidecar bug — the underlying
 		// message would just confuse the user, so we drop it. The hook
@@ -1483,6 +1721,7 @@ describe("useConversationStreaming", () => {
 			"elicitation-1",
 			"submit",
 			{ name: "Helmor" },
+			undefined,
 		);
 		expect(result.current.pendingUserInput).toBeNull();
 		expect(result.current.isSending).toBe(true);

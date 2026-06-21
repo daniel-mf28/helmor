@@ -4,6 +4,7 @@ import type {
 	ThreadMessageLike,
 	ToolCallPart,
 } from "@/lib/api";
+import { formatSource, translateSource } from "@/lib/i18n";
 
 type ToolCategory = "search" | "read" | "shell" | "other";
 type CollapseCategory = "search" | "read" | "shell" | "mixed";
@@ -192,6 +193,17 @@ function collapseAssistantParts(
 ): ExtendedMessagePart[] {
 	const result: ExtendedMessagePart[] = [];
 	const currentGroup: ToolCallPart[] = [];
+	// A streaming turn's thinking block surfaces in BOTH the stable base
+	// snapshot and the pending partial when this run is merged — the same
+	// reasoning lands twice. Same `__part_id` → duplicate copy (later wins);
+	// different adjacent ids → consecutive segments of one thinking phase
+	// (omitted thinking splits a phase into many blocks), merged into one
+	// chip exactly like Rust `collapse.rs::merge_adjacent_reasoning`.
+	const reasoningIndexById = new Map<string, number>();
+	// Tool calls dedupe by toolCallId: the pending partial re-sends a tool
+	// the base already finalized — without this a phantom copy (empty args,
+	// no result, live spinner) renders next to the real card.
+	const toolIndexById = new Map<string, number>();
 
 	const flushGroup = () => {
 		if (currentGroup.length === 0) {
@@ -205,23 +217,117 @@ function collapseAssistantParts(
 		currentGroup.length = 0;
 	};
 
+	const pushGroupTool = (tool: ToolCallPart) => {
+		const seen = currentGroup.findIndex(
+			(t) => t.toolCallId === tool.toolCallId,
+		);
+		if (seen === -1) {
+			currentGroup.push(tool);
+			return;
+		}
+		// Prefer the copy that carries a result.
+		if (tool.result != null || currentGroup[seen]!.result == null) {
+			currentGroup[seen] = tool;
+		}
+	};
+
 	for (const part of parts) {
 		if (part.type === "collapsed-group") {
-			currentGroup.push(...part.tools);
+			for (const tool of part.tools) {
+				pushGroupTool(tool);
+			}
 			continue;
 		}
 		if (
 			part.type === "tool-call" &&
 			isCollapsibleWithArgs(part.toolName, part.args)
 		) {
-			currentGroup.push(part);
+			pushGroupTool(part);
 			continue;
 		}
 		if (part.type === "reasoning") {
+			// Flush first — mirrors Rust collapse.rs: a group of reads must
+			// render BEFORE thinking that happened after them.
+			flushGroup();
+			const seenIdx = reasoningIndexById.get(part.id);
+			if (seenIdx !== undefined) {
+				// Same logical block already shown — keep the latest copy so
+				// newer duration / content wins.
+				result[seenIdx] = part;
+				continue;
+			}
+			const prev = result[result.length - 1];
+			if (prev?.type === "reasoning") {
+				// Adjacent segment of the same thinking phase — fold into the
+				// previous chip. Skip the text concat when the previous chip
+				// already ends with this text: the pending partial re-sends
+				// the in-flight segment the base snapshot already absorbed.
+				const text =
+					part.text && !prev.text.endsWith(part.text)
+						? prev.text
+							? `${prev.text}\n\n${part.text}`
+							: part.text
+						: prev.text;
+				const durationMs =
+					prev.durationMs != null || part.durationMs != null
+						? (prev.durationMs ?? 0) + (part.durationMs ?? 0)
+						: undefined;
+				const streaming =
+					prev.streaming === true || part.streaming === true
+						? true
+						: (prev.streaming ?? part.streaming);
+				result[result.length - 1] = {
+					...prev,
+					text,
+					durationMs,
+					streaming,
+				};
+				continue;
+			}
+			reasoningIndexById.set(part.id, result.length);
 			result.push(part);
 			continue;
 		}
+		if (part.type === "text") {
+			// A streaming turn exposes the same assistant text twice when this
+			// run is merged: the stable base snapshot carries it (the backend
+			// Full includes the in-flight partial) AND the pending partial
+			// re-sends it. Text parts have no shared id to dedupe on (unlike
+			// reasoning / tool-call), so collapse an adjacent text part when one
+			// side is a prefix of the other — keep the longer (newer) copy.
+			flushGroup();
+			const prev = result[result.length - 1];
+			if (prev?.type === "text") {
+				const prevText = prev.text ?? "";
+				const curText = part.text ?? "";
+				if (curText.startsWith(prevText) || prevText.startsWith(curText)) {
+					if (curText.length >= prevText.length) {
+						result[result.length - 1] = part;
+					}
+					continue;
+				}
+			}
+			result.push(part);
+			continue;
+		}
+		// Flush so the group stays BEFORE this part — letting reads straddle
+		// a reasoning/text block reorders the thread.
 		flushGroup();
+		if (part.type === "tool-call") {
+			const seenIdx = toolIndexById.get(part.toolCallId);
+			if (seenIdx !== undefined) {
+				const existing = result[seenIdx];
+				if (
+					existing?.type !== "tool-call" ||
+					part.result != null ||
+					existing.result == null
+				) {
+					result[seenIdx] = part;
+				}
+				continue;
+			}
+			toolIndexById.set(part.toolCallId, result.length);
+		}
 		result.push(part);
 	}
 
@@ -308,17 +414,24 @@ function buildGroupSummary(tools: ToolCallPart[], active: boolean): string {
 		}
 
 		if (patterns.length === 1) {
-			const verb = active ? "Searching for" : "Searched for";
+			const verb = active
+				? translateSource("composerSearchingFor")
+				: translateSource("composerSearchedFor");
 			const suffix = searchTools.length > 1 ? ` (${searchTools.length}×)` : "";
 			parts.push(`${verb} '${patterns[0]}'${suffix}`);
 		} else if (patterns.length > 1) {
 			parts.push(
-				`${active ? "Searching" : "Searched"} ${searchTools.length} patterns`,
+				formatSource(
+					active ? "composerSearchingPatterns" : "composerSearchedPatterns",
+					{ count: searchTools.length },
+				),
 			);
 		} else {
-			const plural = searchTools.length > 1 ? "s" : "";
 			parts.push(
-				`${active ? "Searching" : "Searched"} ${searchTools.length} time${plural}`,
+				formatSource(
+					active ? "composerSearchingTimes" : "composerSearchedTimes",
+					{ count: searchTools.length },
+				),
 			);
 		}
 	}
@@ -330,33 +443,33 @@ function buildGroupSummary(tools: ToolCallPart[], active: boolean): string {
 			if (filePath) paths.add(filePath);
 		}
 		const count = paths.size > 0 ? paths.size : readTools.length;
-		const verb =
+		const key =
 			parts.length === 0
 				? active
-					? "Reading"
-					: "Read"
+					? "composerReadingFiles"
+					: "composerReadFiles"
 				: active
-					? "reading"
-					: "read";
-		const plural = count > 1 ? "s" : "";
-		parts.push(`${verb} ${count} file${plural}`);
+					? "composerReadingFilesLower"
+					: "composerReadFilesLower";
+		parts.push(formatSource(key, { count }));
 	}
 
 	if (shellTools.length > 0) {
-		const verb =
+		const key =
 			parts.length === 0
 				? active
-					? "Running"
-					: "Ran"
+					? "composerRunningCommands"
+					: "composerRanCommands"
 				: active
-					? "running"
-					: "ran";
-		const plural = shellTools.length > 1 ? "s" : "";
-		parts.push(`${verb} ${shellTools.length} read-only command${plural}`);
+					? "composerRunningCommandsLower"
+					: "composerRanCommandsLower";
+		parts.push(formatSource(key, { count: shellTools.length }));
 	}
 
 	if (parts.length === 0) {
-		return active ? "Working..." : "Done";
+		return active
+			? translateSource("composerWorking")
+			: translateSource("done");
 	}
 	return active ? `${parts.join(", ")}...` : parts.join(", ");
 }

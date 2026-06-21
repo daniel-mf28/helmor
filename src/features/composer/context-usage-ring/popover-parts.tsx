@@ -1,15 +1,15 @@
+import { I18nText } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
 	formatResetsAt,
 	formatTokens,
+	formatUsd,
 	type RateLimitWindowDisplay,
 	type RingTier,
 	ringTier,
 } from "./parse";
 
-/** Top-of-card "Context — 12.4k/1.0M · 8%" row. Pass `used`/`max` as
- *  `null` when window size is unknown (fresh session placeholder) — only
- *  the percentage shows on the right. */
+/** "Context — used/max · %". Unknown max → show only the raw used count. */
 export function UsageHeader({
 	used,
 	max,
@@ -19,18 +19,29 @@ export function UsageHeader({
 	max: number | null;
 	percentage: number;
 }) {
-	const hasTokens = used !== null && max !== null;
+	const hasUsed = used !== null && used > 0;
+	const hasMax = max !== null && max > 0;
 	return (
 		<div className="flex items-center justify-between">
-			<div className="text-[14px] font-semibold text-foreground">Context</div>
-			<div className="text-[12px] tabular-nums text-muted-foreground">
-				{hasTokens ? (
+			<div className="text-body font-semibold text-foreground">
+				<I18nText source="context" />
+			</div>
+			<div className="text-small tabular-nums text-muted-foreground">
+				{hasUsed && hasMax ? (
 					<>
 						{formatTokens(used)}/{formatTokens(max)}
 						<span className="mx-1.5 opacity-60">·</span>
+						<span className="text-foreground">
+							{formatPercentage(percentage)}
+						</span>
 					</>
-				) : null}
-				<span className="text-foreground">{formatPercentage(percentage)}</span>
+				) : hasUsed ? (
+					<span className="text-foreground">{formatTokens(used)}</span>
+				) : (
+					<span className="text-foreground">
+						{formatPercentage(percentage)}
+					</span>
+				)}
 			</div>
 		</div>
 	);
@@ -67,6 +78,18 @@ export function UsageBar({
 	);
 }
 
+/** "Spent · $0.00" row (opencode only). */
+export function SpentRow({ cost }: { cost: number }) {
+	return (
+		<div className="flex items-center justify-between text-small">
+			<span className="text-muted-foreground">
+				<I18nText source="spent" />
+			</span>
+			<span className="tabular-nums text-foreground">{formatUsd(cost)}</span>
+		</div>
+	);
+}
+
 /** Thin divider between sub-sections inside the card. */
 export function Divider() {
 	return <div className="h-px w-full bg-border/60" />;
@@ -87,10 +110,11 @@ export function LimitRow({ window }: { window: RateLimitWindowDisplay }) {
 				: "bg-foreground/70";
 	return (
 		<div className={cn("flex flex-col gap-1", muted && "opacity-60")}>
-			<div className="flex items-center justify-between text-[12px]">
+			<div className="flex items-center justify-between text-small">
 				<span className="text-foreground">{window.label ?? "Limit"}</span>
 				<span className="font-medium tabular-nums text-foreground">
-					{Math.round(window.leftPercent)}% left
+					{Math.round(window.leftPercent)}
+					<I18nText source="left" />
 				</span>
 			</div>
 			<div className="h-1 w-full overflow-hidden rounded-full bg-muted">
@@ -100,8 +124,12 @@ export function LimitRow({ window }: { window: RateLimitWindowDisplay }) {
 				/>
 			</div>
 			{window.resetsAt !== null ? (
-				<div className="text-[11px] text-muted-foreground">
-					{window.expired ? "Pending refresh — " : "Resets "}
+				<div className="text-mini text-muted-foreground">
+					{window.expired ? (
+						<I18nText source="pendingRefresh" />
+					) : (
+						<I18nText source="resets" />
+					)}{" "}
 					{formatResetsAt(window.resetsAt)}
 				</div>
 			) : null}
@@ -109,8 +137,7 @@ export function LimitRow({ window }: { window: RateLimitWindowDisplay }) {
 	);
 }
 
-/** Claude rich breakdown: muted name + percentage per row, no dividers.
- *  Matches the original context-usage card style. */
+/** Per-category breakdown: % of window when the limit is known, raw token count otherwise. */
 export function CategoryList({
 	categories,
 	maxTokens,
@@ -125,11 +152,11 @@ export function CategoryList({
 			{sorted.map((c) => (
 				<div
 					key={c.name}
-					className="flex items-center justify-between text-[12px]"
+					className="flex items-center justify-between text-small"
 				>
 					<span className="truncate text-muted-foreground">{c.name}</span>
 					<span className="tabular-nums text-muted-foreground">
-						{formatCategoryPercent(c.tokens, maxTokens)}
+						{formatCategoryValue(c.tokens, maxTokens)}
 					</span>
 				</div>
 			))}
@@ -137,8 +164,8 @@ export function CategoryList({
 	);
 }
 
-function formatCategoryPercent(tokens: number, maxTokens: number): string {
-	if (!(maxTokens > 0)) return "—";
+function formatCategoryValue(tokens: number, maxTokens: number): string {
+	if (!(maxTokens > 0)) return formatTokens(tokens);
 	const pct = (tokens / maxTokens) * 100;
 	if (pct <= 0) return "0.0%";
 	return `${pct.toFixed(1)}%`;
@@ -147,8 +174,8 @@ function formatCategoryPercent(tokens: number, maxTokens: number): string {
 /** Footer note shown when the Claude session has auto-compact enabled. */
 export function AutoCompactNote() {
 	return (
-		<div className="text-[11px] text-muted-foreground">
-			Auto-compacts older turns when the window fills.
+		<div className="text-mini text-muted-foreground">
+			<I18nText source="autoCompactsOlderTurnsWhenWindow" />
 		</div>
 	);
 }

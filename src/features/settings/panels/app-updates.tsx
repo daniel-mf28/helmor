@@ -1,4 +1,3 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -10,32 +9,43 @@ import {
 	installDownloadedAppUpdate,
 	listenAppUpdateStatus,
 } from "@/lib/api";
+import { I18nText, useI18n } from "@/lib/i18n";
+import { openUrl } from "@/lib/platform-bridge";
 import { SettingsNotice, SettingsRow } from "../components/settings-row";
 
-function formatStatusDescription(status: AppUpdateStatus): string {
+function formatStatusDescription(
+	status: AppUpdateStatus,
+	t: (source: string) => string,
+): string {
 	if (!status.configured) {
-		return "Updater is not configured in this build.";
+		return t("updaterNotConfiguredBuild");
 	}
 
 	switch (status.stage) {
 		case "checking":
-			return "Checking GitHub releases in the background.";
+			return t("checkingGithubReleasesBackground");
 		case "downloading":
 			return status.update
-				? `Downloading ${status.update.version} in the background.`
-				: "Downloading an update in the background.";
+				? t("downloadingVersionBackground").replace(
+						"{version}",
+						status.update.version,
+					)
+				: t("downloadingUpdateBackground");
 		case "downloaded":
 			return status.update
-				? `${status.update.version} has been downloaded and is ready to install.`
-				: "The latest update has been downloaded and is ready to install.";
+				? t("versionHasBeenDownloadedReadyInstall").replace(
+						"{version}",
+						status.update.version,
+					)
+				: t("latestUpdateHasBeenDownloadedReady");
 		case "error":
-			return status.lastError ?? "The last update check failed.";
+			return status.lastError ?? t("lastUpdateCheckFailed");
 		case "disabled":
 			return status.autoUpdateEnabled
-				? "Automatic update checks are waiting for updater configuration."
-				: "Automatic update checks are disabled.";
+				? t("automaticUpdateChecksWaitingUpdaterConfiguration")
+				: t("automaticUpdateChecksDisabled");
 		default:
-			return "Checks GitHub releases, downloads updates quietly, then prompts when ready.";
+			return t("checksGithubReleasesDownloadsUpdatesQuietly");
 	}
 }
 
@@ -67,7 +77,7 @@ function DownloadProgressBar({ status }: { status: AppUpdateStatus }) {
 					<div className="h-full w-1/3 animate-pulse bg-foreground/50" />
 				)}
 			</div>
-			<div className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+			<div className="mt-1 text-mini tabular-nums text-muted-foreground">
 				{hasTotal
 					? `${formatBytes(downloaded)} / ${formatBytes(total)} · ${percent}%`
 					: formatBytes(downloaded)}
@@ -77,6 +87,7 @@ function DownloadProgressBar({ status }: { status: AppUpdateStatus }) {
 }
 
 export function AppUpdatesPanel() {
+	const { t } = useI18n();
 	const [status, setStatus] = useState<AppUpdateStatus | null>(null);
 	const [checking, setChecking] = useState(false);
 	const [installing, setInstalling] = useState(false);
@@ -92,6 +103,14 @@ export function AppUpdatesPanel() {
 		void listenAppUpdateStatus((nextStatus) => {
 			if (mounted) setStatus(nextStatus);
 		}).then((unlisten) => {
+			// If the panel unmounted before listen() resolved, the cleanup
+			// below already ran with cleanup still undefined, so detach this
+			// unlisten now instead of leaking a backend listener. Mirrors
+			// use-ui-sync-bridge.ts.
+			if (!mounted) {
+				unlisten();
+				return;
+			}
 			cleanup = unlisten;
 		});
 
@@ -110,23 +129,25 @@ export function AppUpdatesPanel() {
 	const anyBusy = checkBusy || isDownloading || installBusy;
 
 	const checkLabel = isDownloading
-		? "Downloading"
+		? t("downloading")
 		: installBusy
-			? "Installing"
+			? t("installing")
 			: checkBusy
-				? "Checking"
-				: "Check now";
+				? t("checking")
+				: t("checkNow");
 
 	return (
 		<SettingsRow
 			align="start"
-			title="App Updates"
+			title="appUpdates"
 			description={
 				<>
-					{status ? formatStatusDescription(status) : "Loading updater status…"}
+					{status
+						? formatStatusDescription(status, t)
+						: t("loadingUpdaterStatus")}
 					{status?.update ? (
 						<SettingsNotice tone="info">
-							Current {status.update.currentVersion} · Available{" "}
+							{t("current")} {status.update.currentVersion} · {t("available")}{" "}
 							{status.update.version}
 						</SettingsNotice>
 					) : null}
@@ -144,12 +165,12 @@ export function AppUpdatesPanel() {
 							.then((nextStatus) => {
 								setStatus(nextStatus);
 								if (nextStatus.stage === "idle") {
-									toast.success("Helmor is up to date");
+									toast.success(t("helmorUpDate"));
 								}
 								if (nextStatus.stage === "error") {
-									toast.error("Update check failed", {
+									toast.error(t("updateCheckFailed"), {
 										description:
-											nextStatus.lastError ?? "Unable to check for updates.",
+											nextStatus.lastError ?? t("unableCheckUpdates"),
 									});
 								}
 							})
@@ -172,18 +193,18 @@ export function AppUpdatesPanel() {
 							void installDownloadedAppUpdate()
 								.then(setStatus)
 								.catch((error: unknown) => {
-									toast.error("Install failed", {
+									toast.error(t("installFailed"), {
 										description:
 											error instanceof Error
 												? error.message
-												: "Unable to install the downloaded update.",
+												: t("unableInstallDownloadedUpdate"),
 									});
 								})
 								.finally(() => setInstalling(false));
 						}}
 						disabled={anyBusy}
 					>
-						Update and restart
+						<I18nText source="updateRestart" />
 					</Button>
 				)}
 				{status?.update?.releaseUrl && (
@@ -192,7 +213,7 @@ export function AppUpdatesPanel() {
 						size="sm"
 						onClick={() => void openUrl(status.update?.releaseUrl ?? "")}
 					>
-						Change log
+						<I18nText source="changeLog" />
 					</Button>
 				)}
 			</div>

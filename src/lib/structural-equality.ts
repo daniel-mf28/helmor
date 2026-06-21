@@ -28,12 +28,15 @@ import type {
 	FileMentionPart,
 	ImagePart,
 	MessagePart,
+	PastedTextPart,
 	PlanReviewPart,
 	PromptSuggestionPart,
 	SystemNoticePart,
 	ThreadMessageLike,
 	TodoListPart,
 	ToolCallPart,
+	UserQuestionPart,
+	WorkflowPart,
 } from "./api";
 
 export function partsStructurallyEqual(
@@ -120,6 +123,35 @@ export function partStructurallyEqual(
 			}
 			return true;
 		}
+		case "workflow": {
+			const wb = b as WorkflowPart;
+			if (
+				a.id !== wb.id ||
+				a.name !== wb.name ||
+				a.status !== wb.status ||
+				a.totalTokens !== wb.totalTokens ||
+				a.durationMs !== wb.durationMs
+			)
+				return false;
+			const aa = a.agents ?? [];
+			const ba = wb.agents ?? [];
+			if (aa.length !== ba.length) return false;
+			for (let i = 0; i < aa.length; i += 1) {
+				if (
+					aa[i]!.label !== ba[i]!.label ||
+					aa[i]!.status !== ba[i]!.status ||
+					aa[i]!.resultPreview !== ba[i]!.resultPreview ||
+					aa[i]!.phaseIndex !== ba[i]!.phaseIndex ||
+					aa[i]!.phaseTitle !== ba[i]!.phaseTitle ||
+					aa[i]!.model !== ba[i]!.model ||
+					aa[i]!.tokens !== ba[i]!.tokens ||
+					aa[i]!.toolCalls !== ba[i]!.toolCalls ||
+					aa[i]!.durationMs !== ba[i]!.durationMs
+				)
+					return false;
+			}
+			return true;
+		}
 		case "image": {
 			const ib = b as ImagePart;
 			if (a.mediaType !== ib.mediaType) return false;
@@ -144,6 +176,25 @@ export function partStructurallyEqual(
 		case "file-mention": {
 			const fb = b as FileMentionPart;
 			return a.path === fb.path;
+		}
+		case "pasted-text": {
+			const pb = b as PastedTextPart;
+			return a.text === pb.text;
+		}
+		case "user-question": {
+			const qb = b as UserQuestionPart;
+			if (a.id !== qb.id) return false;
+			if (a.source !== qb.source) return false;
+			if (a.status !== qb.status) return false;
+			// Questions are immutable per id; answers flip exactly once
+			// (pending → resolved, captured by `status`) but compare the
+			// serialized map anyway so a re-render with different answers
+			// can't be skipped.
+			if (
+				JSON.stringify(a.answers ?? null) !== JSON.stringify(qb.answers ?? null)
+			)
+				return false;
+			return JSON.stringify(a.questions) === JSON.stringify(qb.questions);
 		}
 		case "plan-review": {
 			const pb = b as PlanReviewPart;

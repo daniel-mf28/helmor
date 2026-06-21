@@ -12,11 +12,22 @@ import type {
 	TextPart,
 	ThreadMessageLike,
 	TodoListPart,
+	WorkflowPart,
 } from "@/lib/api";
 
 function serializeTextPart(part: TextPart): string | null {
 	const text = part.text.trim();
 	return text.length > 0 ? text : null;
+}
+
+function serializeWorkflowPart(part: WorkflowPart): string | null {
+	const lines = [`Workflow: ${part.name} (${part.status})`];
+	for (const agent of part.agents ?? []) {
+		const marker = agent.status === "done" ? "[x]" : "[ ]";
+		const preview = agent.resultPreview ? ` — ${agent.resultPreview}` : "";
+		lines.push(`- ${marker} ${agent.label}${preview}`);
+	}
+	return lines.join("\n");
 }
 
 function serializeTodoListPart(part: TodoListPart): string | null {
@@ -85,6 +96,8 @@ function serializeMessagePart(
 			return serializeTextPart(part);
 		case "todo-list":
 			return serializeTodoListPart(part);
+		case "workflow":
+			return serializeWorkflowPart(part);
 		case "plan-review":
 			return serializePlanReviewPart(part);
 		case "system-notice":
@@ -93,6 +106,10 @@ function serializeMessagePart(
 			return serializePromptSuggestionPart(part);
 		case "file-mention":
 			return serializeFileMentionPart(part);
+		// A pasted tag is still prompt text — copying the message must
+		// reproduce the full content, chip or not.
+		case "pasted-text":
+			return part.text;
 		case "reasoning":
 		case "tool-call":
 		case "collapsed-group":
@@ -115,7 +132,7 @@ export function serializeMessageForClipboard(
 export function CopyMessageButton({
 	message,
 	className,
-	ariaLabel = "Copy message",
+	ariaLabel = "panelCopyMessage",
 }: {
 	message: Pick<ThreadMessageLike, "content">;
 	className?: string;

@@ -15,6 +15,7 @@ import {
 	type RepoPreferences,
 	updateRepoPreferences,
 } from "@/lib/api";
+import { I18nText, useI18n } from "@/lib/i18n";
 import { helmorQueryKeys } from "@/lib/query-client";
 import {
 	REPO_PREFERENCE_DESCRIPTIONS,
@@ -33,6 +34,7 @@ const PREFERENCE_KEYS: RepoPreferenceKey[] = [
 ];
 
 export function RepositoryPreferencesSection({ repoId }: { repoId: string }) {
+	const { t, f } = useI18n();
 	const queryClient = useQueryClient();
 	const preferencesQuery = useQuery({
 		queryKey: helmorQueryKeys.repoPreferences(repoId),
@@ -59,11 +61,11 @@ export function RepositoryPreferencesSection({ repoId }: { repoId: string }) {
 	return (
 		<>
 			<div className="py-5">
-				<div className="text-[13px] font-medium leading-snug text-foreground">
-					Preferences
+				<div className="text-ui font-medium leading-snug text-foreground">
+					<I18nText source="preferences" />
 				</div>
-				<div className="mt-1 text-[12px] leading-snug text-muted-foreground">
-					Repo-level built-in prompts used by Helmor actions and new chats.
+				<div className="mt-1 text-small leading-snug text-muted-foreground">
+					<I18nText source="repoLevelBuiltPromptsUsedBy" />
 				</div>
 				<div className="mt-4 divide-y divide-app-border/20">
 					{PREFERENCE_KEYS.map((key) => {
@@ -82,11 +84,13 @@ export function RepositoryPreferencesSection({ repoId }: { repoId: string }) {
 											className="flex w-full cursor-interactive items-start justify-between gap-4 text-left"
 										>
 											<div>
-												<div className="text-[13px] font-medium text-app-foreground">
-													{REPO_PREFERENCE_LABELS[key]}
+												<div className="text-ui font-medium text-app-foreground">
+													<I18nText source={REPO_PREFERENCE_LABELS[key]} />
 												</div>
-												<div className="mt-1 text-[12px] leading-snug text-muted-foreground">
-													{REPO_PREFERENCE_DESCRIPTIONS[key]}
+												<div className="mt-1 text-small leading-snug text-muted-foreground">
+													<I18nText
+														source={REPO_PREFERENCE_DESCRIPTIONS[key]}
+													/>
 												</div>
 											</div>
 											<ChevronDown
@@ -99,11 +103,11 @@ export function RepositoryPreferencesSection({ repoId }: { repoId: string }) {
 									</CollapsibleTrigger>
 									<CollapsibleContent className="pt-4">
 										<Textarea
-											className="min-h-[140px] resize-y bg-app-base/30 font-mono text-[12px] placeholder:text-[12px]"
+											className="min-h-[140px] resize-y bg-app-base/30 font-mono text-small placeholder:text-small"
 											placeholder={
 												key === "general"
-													? "Add custom instructions for all agents working in this repo."
-													: "Add your preferences here. The agent will be told to prioritize these instructions over its default instructions."
+													? "addCustomInstructionsAllAgentsWorking"
+													: "addPreferencesHereAgentWillTold"
 											}
 											value={value}
 											onChange={(event) =>
@@ -116,11 +120,13 @@ export function RepositoryPreferencesSection({ repoId }: { repoId: string }) {
 										<div className="mt-3 flex items-center justify-between gap-3">
 											<button
 												type="button"
-												className="inline-flex cursor-interactive items-center gap-2 text-[12px] text-app-muted transition-colors hover:text-app-foreground"
+												className="inline-flex cursor-interactive items-center gap-2 text-small text-app-muted transition-colors hover:text-app-foreground"
 												onClick={() => setPreviewKey(key)}
 											>
 												<Eye className="size-3.5" strokeWidth={1.8} />
-												<span>Preview</span>
+												<span>
+													<I18nText source="preview" />
+												</span>
 											</button>
 											<Button
 												size="sm"
@@ -140,7 +146,7 @@ export function RepositoryPreferencesSection({ repoId }: { repoId: string }) {
 														.finally(() => setSavingKey(null));
 												}}
 											>
-												{savingKey === key ? "Saving..." : "Save"}
+												{savingKey === key ? t("saving") : t("settingsSave")}
 											</Button>
 										</div>
 									</CollapsibleContent>
@@ -157,14 +163,16 @@ export function RepositoryPreferencesSection({ repoId }: { repoId: string }) {
 			>
 				<DialogContent className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-[min(76vw,760px)] sm:max-w-[760px] rounded-2xl border-border/60 bg-background p-0 shadow-2xl">
 					<div className="px-6 pt-4">
-						<DialogTitle className="text-[18px] font-semibold text-foreground">
+						<DialogTitle className="text-heading font-semibold text-foreground">
 							{previewKey
-								? `${REPO_PREFERENCE_LABELS[previewKey]} prompt`
-								: "Prompt preview"}
+								? f("namePrompt", {
+										name: t(REPO_PREFERENCE_LABELS[previewKey]),
+									})
+								: t("promptPreview")}
 						</DialogTitle>
 					</div>
 					<div className="max-h-[78vh] overflow-y-auto px-6 pb-5 pt-1">
-						<div className="conversation-markdown max-w-none break-words text-[13px] leading-6 text-foreground">
+						<div className="conversation-markdown max-w-none break-words text-ui leading-6 text-foreground">
 							<Suspense
 								fallback={
 									<pre className="whitespace-pre-wrap break-words">

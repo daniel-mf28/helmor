@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,8 +14,8 @@ export type SettingsReleaseMarker = {
 };
 
 const RELEASE_MARKER_LABELS: Record<SettingsReleaseMarker["kind"], string> = {
-	feature: "New feature",
-	update: "New update",
+	feature: "settingsNewFeature",
+	update: "settingsNewUpdate",
 };
 
 const RELEASE_MARKER_CLASSES: Record<SettingsReleaseMarker["kind"], string> = {
@@ -30,18 +31,19 @@ export function SettingsReleaseBadge({
 	marker?: SettingsReleaseMarker;
 	className?: string;
 }) {
+	const { t } = useI18n();
 	if (!marker) return null;
 
 	return (
 		<Badge
 			variant="secondary"
 			className={cn(
-				"h-4 rounded-full px-1.5 py-0 text-[10px] font-medium leading-none",
+				"h-4 rounded-full px-1.5 py-0 text-micro font-medium leading-none",
 				RELEASE_MARKER_CLASSES[marker.kind],
 				className,
 			)}
 		>
-			{RELEASE_MARKER_LABELS[marker.kind]}
+			{t(RELEASE_MARKER_LABELS[marker.kind])}
 		</Badge>
 	);
 }

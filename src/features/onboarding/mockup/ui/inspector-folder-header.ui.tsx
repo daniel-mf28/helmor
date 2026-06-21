@@ -2,6 +2,7 @@ import { ChevronRightIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,8 +27,9 @@ export function InspectorFolderHeaderUI({
 	onToggle,
 	rightSlot,
 }: InspectorFolderHeaderUIProps) {
+	const { t } = useI18n();
 	return (
-		<div className="group/header flex w-full items-center gap-1 py-1 pl-1 pr-2 text-[11.5px] font-semibold tracking-[-0.01em] text-muted-foreground">
+		<div className="group/header flex w-full items-center gap-1 py-1 pl-1 pr-2 text-mini font-semibold tracking-[-0.01em] text-muted-foreground">
 			<Button
 				type="button"
 				variant="ghost"
@@ -45,12 +47,12 @@ export function InspectorFolderHeaderUI({
 					strokeWidth={2}
 				/>
 				{icon}
-				<span className="truncate">{label}</span>
+				<span className="truncate">{t(label)}</span>
 			</Button>
 			{rightSlot}
 			<Badge
 				variant="secondary"
-				className="h-4 min-w-[16px] justify-center rounded-full px-1 text-[9.5px] leading-none"
+				className="h-4 min-w-[16px] justify-center rounded-full px-1 text-nano leading-none"
 			>
 				{count}
 			</Badge>

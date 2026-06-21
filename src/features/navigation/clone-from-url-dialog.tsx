@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { I18nText, useI18n } from "@/lib/i18n";
 import { describeUnknownError } from "@/lib/workspace-helpers";
 
 type SubmitArgs = {
@@ -34,6 +35,7 @@ export function CloneFromUrlDialog({
 	const [cloneDirectory, setCloneDirectory] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const { t } = useI18n();
 	// Track whether the user has explicitly edited the location so the default
 	// only seeds the field once per open session — reopening after a manual
 	// change shouldn't wipe their choice.
@@ -110,8 +112,8 @@ export function CloneFromUrlDialog({
 		>
 			<DialogContent className="gap-3 p-4 sm:max-w-sm">
 				<DialogHeader>
-					<DialogTitle className="text-[13px] font-medium tracking-[-0.01em]">
-						Clone from URL
+					<DialogTitle className="text-ui font-medium tracking-[-0.01em]">
+						<I18nText source="cloneFromUrl" />
 					</DialogTitle>
 				</DialogHeader>
 				<form
@@ -124,9 +126,9 @@ export function CloneFromUrlDialog({
 					<div className="flex flex-col gap-1">
 						<Label
 							htmlFor="clone-git-url"
-							className="text-[12px] font-medium tracking-[-0.01em]"
+							className="text-small font-medium tracking-[-0.01em]"
 						>
-							Git URL
+							<I18nText source="gitUrl" />
 						</Label>
 						<Input
 							id="clone-git-url"
@@ -139,15 +141,15 @@ export function CloneFromUrlDialog({
 							autoCorrect="off"
 							spellCheck={false}
 							disabled={isSubmitting}
-							className="h-7 text-[13px] md:text-[13px]"
+							className="h-7 text-ui"
 						/>
 					</div>
 					<div className="flex flex-col gap-1">
 						<Label
 							htmlFor="clone-location"
-							className="text-[12px] font-medium tracking-[-0.01em]"
+							className="text-small font-medium tracking-[-0.01em]"
 						>
-							Clone location
+							<I18nText source="cloneLocation" />
 						</Label>
 						<div className="flex items-center gap-1.5">
 							<Input
@@ -162,7 +164,7 @@ export function CloneFromUrlDialog({
 								autoCorrect="off"
 								spellCheck={false}
 								disabled={isSubmitting}
-								className="h-7 text-[13px] md:text-[13px]"
+								className="h-7 text-ui"
 							/>
 							<Button
 								type="button"
@@ -173,14 +175,14 @@ export function CloneFromUrlDialog({
 								}}
 								disabled={isSubmitting}
 							>
-								Browse…
+								<I18nText source="browse" />
 							</Button>
 						</div>
 					</div>
 					{errorMessage ? (
 						<p
 							role="alert"
-							className="text-destructive text-[12px] leading-snug"
+							className="text-destructive text-small leading-snug"
 						>
 							{errorMessage}
 						</p>
@@ -190,10 +192,10 @@ export function CloneFromUrlDialog({
 							{isSubmitting ? (
 								<>
 									<LoaderCircle className="animate-spin" strokeWidth={2.1} />
-									Cloning…
+									{t("cloning")}
 								</>
 							) : (
-								"Clone repository"
+								t("navCloneRepository")
 							)}
 						</Button>
 					</div>

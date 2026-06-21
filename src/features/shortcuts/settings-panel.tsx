@@ -13,6 +13,7 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { I18nText, useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { normalizeShortcutEvent } from "./format";
 import {
@@ -30,16 +31,20 @@ import { InlineShortcutDisplay } from "./shortcut-display";
 import type { ShortcutDefinition, ShortcutGroup, ShortcutId } from "./types";
 
 const GROUPS: ShortcutGroup[] = [
-	"Navigation",
-	"Session",
-	"Workspace",
-	"Actions",
-	"System",
-	"Composer",
-	"Editor",
-	"Terminal",
+	"navigation",
+	"session",
+	"workspace",
+	"actions",
+	"system",
+	"miscComposer",
+	"miscStartSurface",
+	"miscEditor",
+	"terminal",
 ];
-const PINNED_SHORTCUT_IDS: ShortcutId[] = ["global.hotkey"];
+const PINNED_SHORTCUT_IDS: ShortcutId[] = [
+	"global.hotkey",
+	"quickPanel.hotkey",
+];
 const PINNED_SHORTCUT_ID_SET = new Set<ShortcutId>(PINNED_SHORTCUT_IDS);
 
 const MODIFIER_KEYS = new Set(["Alt", "Control", "Meta", "Shift"]);
@@ -71,6 +76,7 @@ export function ShortcutsSettingsPanel({
 	overrides,
 	onChange,
 }: ShortcutsSettingsPanelProps) {
+	const { t } = useI18n();
 	const [query, setQuery] = useState("");
 	const [recordingId, setRecordingId] = useState<ShortcutId | null>(null);
 	const [shakeId, setShakeId] = useState<ShortcutId | null>(null);
@@ -81,11 +87,11 @@ export function ShortcutsSettingsPanel({
 			SHORTCUT_DEFINITIONS.filter((definition) => {
 				if (!normalizedQuery) return true;
 				const hotkey = getShortcut(overrides, definition.id) ?? "";
-				return `${definition.title} ${definition.description ?? ""} ${definition.group} ${hotkey}`
+				return `${definition.title} ${t(definition.title)} ${definition.description ?? ""} ${definition.description ? t(definition.description) : ""} ${definition.group} ${t(definition.group)} ${hotkey}`
 					.toLowerCase()
 					.includes(normalizedQuery);
 			}),
-		[normalizedQuery, overrides],
+		[normalizedQuery, overrides, t],
 	);
 	const pinnedDefinitions = useMemo(
 		() =>
@@ -125,6 +131,7 @@ export function ShortcutsSettingsPanel({
 				setRecordingId(recording ? definition.id : null)
 			}
 			isLastInGroup={isLastInGroup}
+			t={t}
 		/>
 	);
 
@@ -139,15 +146,15 @@ export function ShortcutsSettingsPanel({
 					<Input
 						value={query}
 						onChange={(event) => setQuery(event.target.value)}
-						placeholder="Search shortcuts"
-						className="h-9 rounded-lg border-border/50 bg-muted/20 pl-8 text-[13px]"
+						placeholder="searchShortcuts"
+						className="h-9 rounded-lg border-border/50 bg-muted/20 pl-8 text-ui"
 					/>
 				</div>
 			</div>
 
 			<section className="pb-1">
-				<div className="pb-1 text-[12px] font-medium tracking-normal text-muted-foreground">
-					Global
+				<div className="pb-1 text-small font-medium tracking-normal text-muted-foreground">
+					{t("global")}
 				</div>
 				{pinnedDefinitions.map((definition, index) =>
 					renderShortcutRow(definition, index === pinnedDefinitions.length - 1),
@@ -162,8 +169,8 @@ export function ShortcutsSettingsPanel({
 
 				return (
 					<section key={group} className="pt-3 pb-1">
-						<div className="pb-1 text-[12px] font-medium tracking-normal text-muted-foreground">
-							{group}
+						<div className="pb-1 text-small font-medium tracking-normal text-muted-foreground">
+							{t(group)}
 						</div>
 						{definitions.map((definition, index) =>
 							renderShortcutRow(definition, index === definitions.length - 1),
@@ -186,6 +193,7 @@ type ShortcutRowProps = {
 	onConflictRecorded: () => void;
 	onRecordingChange: (recording: boolean) => void;
 	isLastInGroup: boolean;
+	t: (source: string) => string;
 };
 
 function ShortcutRow({
@@ -199,6 +207,7 @@ function ShortcutRow({
 	onConflictRecorded,
 	onRecordingChange,
 	isLastInGroup,
+	t,
 }: ShortcutRowProps) {
 	const shortcutButtonRef = useRef<HTMLButtonElement | null>(null);
 	const hasConflict = conflicts.length > 0;
@@ -302,12 +311,12 @@ function ShortcutRow({
 						}}
 					>
 						<div className="min-w-0">
-							<div className="truncate text-[13px] font-medium leading-snug text-foreground">
-								{definition.title}
+							<div className="truncate text-ui font-medium leading-snug text-foreground">
+								{t(definition.title)}
 							</div>
 							{definition.description ? (
-								<div className="mt-1 text-[11px] text-muted-foreground">
-									{definition.description}
+								<div className="mt-1 text-mini text-muted-foreground">
+									{t(definition.description)}
 								</div>
 							) : null}
 						</div>
@@ -318,7 +327,7 @@ function ShortcutRow({
 									<TooltipTrigger asChild>
 										<button
 											type="button"
-											aria-label="Shortcut conflict"
+											aria-label={t("shortcutConflict")}
 											className="cursor-default text-destructive"
 										>
 											<CircleAlert className="size-4" strokeWidth={2.2} />
@@ -326,11 +335,11 @@ function ShortcutRow({
 									</TooltipTrigger>
 									<TooltipContent
 										side="top"
-										className="max-w-xs whitespace-normal text-[11px] leading-snug"
+										className="max-w-xs whitespace-normal text-mini leading-snug"
 									>
-										Already used by{" "}
+										{t("alreadyUsedBy")}{" "}
 										{conflicts
-											.map((conflict) => `"${conflict.title}"`)
+											.map((conflict) => `"${t(conflict.title)}"`)
 											.join(", ")}
 									</TooltipContent>
 								</Tooltip>
@@ -340,18 +349,15 @@ function ShortcutRow({
 									<TooltipTrigger asChild>
 										<button
 											type="button"
-											aria-label="Reset to default"
+											aria-label={t("resetDefault")}
 											className="inline-flex size-[18px] cursor-interactive items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-border"
 											onClick={handleReset}
 										>
 											<RotateCcw className="size-[11px]" strokeWidth={2} />
 										</button>
 									</TooltipTrigger>
-									<TooltipContent
-										side="top"
-										className="text-[11px] leading-snug"
-									>
-										Reset to default
+									<TooltipContent side="top" className="text-mini leading-snug">
+										<I18nText source="resetDefault" />
 									</TooltipContent>
 								</Tooltip>
 							) : null}
@@ -359,7 +365,7 @@ function ShortcutRow({
 								ref={shortcutButtonRef}
 								type="button"
 								className={cn(
-									"inline-flex h-8 min-w-[3.75rem] shrink-0 cursor-interactive items-center justify-center rounded-lg border border-border/55 bg-background px-2 text-[12.5px] font-medium text-muted-foreground shadow-sm outline-none transition-[border-color,box-shadow,color,background-color] hover:border-primary/60 hover:bg-background focus:outline-none focus-visible:outline-none focus-visible:ring-0",
+									"inline-flex h-8 min-w-[3.75rem] shrink-0 cursor-interactive items-center justify-center rounded-lg border border-border/55 bg-background px-2 text-small font-medium text-muted-foreground shadow-sm outline-none transition-[border-color,box-shadow,color,background-color] hover:border-primary/60 hover:bg-background focus:outline-none focus-visible:outline-none focus-visible:ring-0",
 									isRecording &&
 										"shortcut-recording-pulse relative overflow-visible border-primary bg-background text-primary shadow-none hover:border-primary hover:bg-background hover:text-primary",
 									shake && "shortcut-conflict-shake",
@@ -374,7 +380,7 @@ function ShortcutRow({
 										className="text-current"
 									/>
 								) : (
-									<span className="text-[13px] tracking-[0.08em] text-muted-foreground">
+									<span className="text-ui tracking-[0.08em] text-muted-foreground">
 										---
 									</span>
 								)}
@@ -389,10 +395,10 @@ function ShortcutRow({
 							onChange(updateShortcutOverride(overrides, definition.id, null))
 						}
 					>
-						Remove Shortcut
+						<I18nText source="removeShortcut" />
 					</ContextMenuItem>
 					<ContextMenuItem className="px-2" onSelect={handleReset}>
-						Reset Shortcut to Default
+						<I18nText source="resetShortcutDefault" />
 					</ContextMenuItem>
 				</ContextMenuContent>
 			</ContextMenu>

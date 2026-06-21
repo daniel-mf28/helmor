@@ -9,7 +9,14 @@ import {
 	type LucideIcon,
 	MessageCircle,
 } from "lucide-react";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {
+	Suspense,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { HelmorThinkingIndicator } from "@/components/helmor-thinking-indicator";
 import {
 	LazyStreamdown,
@@ -26,6 +33,7 @@ import type {
 	WorkspaceRow,
 	WorkspaceSessionSummary,
 } from "@/lib/api";
+import { I18nText, useI18n } from "@/lib/i18n";
 import {
 	workspaceGitActionStatusQueryOptions,
 	workspaceSessionsQueryOptions,
@@ -77,13 +85,14 @@ function CompactStat({
 			aria-label={label}
 		>
 			<Icon className="size-2.5 shrink-0" strokeWidth={2.2} />
-			<span className="text-[10px] tabular-nums leading-none">{value}</span>
+			<span className="text-micro tabular-nums leading-none">{value}</span>
 		</span>
 	);
 }
 
 /** Compact git status: chips when dirty, single green icon when clean. */
 function GitStats({ workspaceId }: { workspaceId: string }) {
+	const { f } = useI18n();
 	const { data, isLoading, isError } = useQuery(
 		workspaceGitActionStatusQueryOptions(workspaceId),
 	);
@@ -101,7 +110,10 @@ function GitStats({ workspaceId }: { workspaceId: string }) {
 				key="uncommitted"
 				icon={FileDiff}
 				value={String(uncommitted)}
-				label={`${uncommitted} uncommitted change${uncommitted === 1 ? "" : "s"}`}
+				label={f("countUncommittedChangelabel", {
+					count: uncommitted,
+					changeLabel: uncommitted === 1 ? "change" : "changes",
+				})}
 				tone="warning"
 			/>,
 		);
@@ -112,7 +124,11 @@ function GitStats({ workspaceId }: { workspaceId: string }) {
 				key="behind"
 				icon={ArrowDown}
 				value={String(behind)}
-				label={`${behind} commit${behind === 1 ? "" : "s"} behind ${targetLabel}`}
+				label={f("countCommitlabelBehindTarget", {
+					count: behind,
+					commitLabel: behind === 1 ? "commit" : "commits",
+					target: targetLabel,
+				})}
 				tone="danger"
 			/>,
 		);
@@ -123,7 +139,10 @@ function GitStats({ workspaceId }: { workspaceId: string }) {
 				key="ahead"
 				icon={ArrowUp}
 				value={String(ahead)}
-				label={`${ahead} unpushed commit${ahead === 1 ? "" : "s"}`}
+				label={f("countUnpushedCommitlabel", {
+					count: ahead,
+					commitLabel: ahead === 1 ? "commit" : "commits",
+				})}
 				tone="default"
 			/>,
 		);
@@ -133,8 +152,12 @@ function GitStats({ workspaceId }: { workspaceId: string }) {
 		return (
 			<span
 				className="inline-flex shrink-0 items-center"
-				title={`Branch up to date with ${targetLabel} · no uncommitted changes`}
-				aria-label={`Branch up to date with ${targetLabel}`}
+				title={f("branchUpDateTargetNoUncommitted", {
+					target: targetLabel,
+				})}
+				aria-label={f("branchUpDateTarget", {
+					target: targetLabel,
+				})}
 			>
 				<GitBranch className="size-3 text-emerald-500/90" strokeWidth={2} />
 			</span>
@@ -282,6 +305,7 @@ function StreamingElapsed({
 	workspaceId: string;
 	primarySessionId: string | null | undefined;
 }) {
+	const { f } = useI18n();
 	const queryClient = useQueryClient();
 	const busySessionIds = useBusySessionIds();
 	const { data: workspaceSessions } = useQuery(
@@ -335,9 +359,11 @@ function StreamingElapsed({
 
 	return (
 		<span
-			className="mt-0.5 shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/80"
-			title={`Running for ${formatElapsed(elapsed)}`}
-			aria-label={`Running for ${formatElapsed(elapsed)}`}
+			className="mt-0.5 shrink-0 font-mono text-micro tabular-nums text-muted-foreground/80"
+			title={f("navRunningForElapsed", { elapsed: formatElapsed(elapsed) })}
+			aria-label={f("navRunningForElapsed", {
+				elapsed: formatElapsed(elapsed),
+			})}
 		>
 			{formatElapsed(elapsed)}
 		</span>
@@ -409,8 +435,8 @@ function LiveSessionPreview({
 
 	if (blocks.length === 0) {
 		return (
-			<span className="text-[11px] italic text-muted-foreground/70">
-				Thinking…
+			<span className="text-mini italic text-muted-foreground/70">
+				<I18nText source="thinking3" />
 			</span>
 		);
 	}
@@ -421,11 +447,11 @@ function LiveSessionPreview({
 	return (
 		<div
 			className={cn(
-				"flex max-h-32 flex-col-reverse gap-1.5 overflow-hidden text-[11px] leading-[1.4]",
+				"flex max-h-32 flex-col-reverse gap-1.5 overflow-hidden text-mini leading-[1.4]",
 				// Compact streamdown prose so default rhythm fits the small pane.
 				"[&_p]:my-0 [&_pre]:my-1 [&_pre]:max-h-20 [&_pre]:overflow-hidden",
-				"[&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-[12px] [&_h2]:text-[12px] [&_h3]:text-[12px]",
-				"[&_h1]:my-1 [&_h2]:my-1 [&_h3]:my-1 [&_code]:text-[10px]",
+				"[&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-small [&_h2]:text-small [&_h3]:text-small",
+				"[&_h1]:my-1 [&_h2]:my-1 [&_h3]:my-1 [&_code]:text-micro",
 			)}
 			style={{
 				maskImage: "linear-gradient(to top, black 88%, transparent 100%)",
@@ -437,7 +463,7 @@ function LiveSessionPreview({
 					return (
 						<div
 							key={block.key}
-							className="flex items-baseline gap-1 font-mono text-[10px] text-muted-foreground"
+							className="flex items-baseline gap-1 font-mono text-micro text-muted-foreground"
 						>
 							<span className="text-muted-foreground/50">›</span>
 							<span className="truncate">{block.label}</span>
@@ -472,6 +498,18 @@ function LiveSessionPreview({
 const HOVER_CARD_DIVIDER_GAP = 8;
 const HOVER_CARD_DEFAULT_SIDE_OFFSET = 10;
 
+function rectContainsPoint(
+	rect: DOMRect,
+	point: { x: number; y: number },
+): boolean {
+	return (
+		point.x >= rect.left &&
+		point.x <= rect.right &&
+		point.y >= rect.top &&
+		point.y <= rect.bottom
+	);
+}
+
 export function WorkspaceHoverCard({
 	row,
 	isSending,
@@ -481,9 +519,55 @@ export function WorkspaceHoverCard({
 	isSending?: boolean;
 	children: React.ReactNode;
 }) {
+	const { t, f } = useI18n();
 	// Measured on open so the card's left edge snaps to the sidebar divider.
 	const [sideOffset, setSideOffset] = useState(HOVER_CARD_DEFAULT_SIDE_OFFSET);
 	const [open, setOpen] = useState(false);
+	// Ref on the inner wrapper of HoverCardContent, used both to read the
+	// rendered content rect and to attach a ResizeObserver for the layout-
+	// shrink watchdog below.
+	const contentWrapRef = useRef<HTMLDivElement>(null);
+	// Last known cursor position while the card is open. Browsers don't
+	// dispatch pointermove when only layout changes, so we use this together
+	// with a ResizeObserver to detect "card shrank out from under the cursor"
+	// (most commonly: streaming ends → LiveSessionPreview unmounts).
+	const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
+	useEffect(() => {
+		if (!open) return;
+		const onMove = (event: PointerEvent) => {
+			lastPointerRef.current = { x: event.clientX, y: event.clientY };
+		};
+		window.addEventListener("pointermove", onMove, { passive: true });
+		return () => window.removeEventListener("pointermove", onMove);
+	}, [open]);
+	useEffect(() => {
+		if (!open) return;
+		const wrap = contentWrapRef.current;
+		if (!wrap) return;
+		const contentEl = wrap.closest<HTMLElement>(
+			'[data-slot="hover-card-content"]',
+		);
+		if (!contentEl) return;
+		const observer = new ResizeObserver(() => {
+			const pos = lastPointerRef.current;
+			if (!pos) return;
+			const triggerEl = document.querySelector<HTMLElement>(
+				`[data-workspace-row-id="${row.id}"]`,
+			);
+			const inContent = rectContainsPoint(
+				contentEl.getBoundingClientRect(),
+				pos,
+			);
+			const inTrigger = triggerEl
+				? rectContainsPoint(triggerEl.getBoundingClientRect(), pos)
+				: false;
+			if (!inContent && !inTrigger) {
+				setOpen(false);
+			}
+		});
+		observer.observe(contentEl);
+		return () => observer.disconnect();
+	}, [open, row.id]);
 	useEffect(() => {
 		const closeDuringDrag = () => {
 			if (
@@ -552,10 +636,10 @@ export function WorkspaceHoverCard({
 		row.lastUserMessageAt ?? row.updatedAt ?? row.createdAt ?? null;
 	const lastActivity = relativeTime(lastActivityIso);
 	const lastActivityLabel = row.lastUserMessageAt
-		? "Last message"
+		? t("navLastMessage")
 		: row.updatedAt
-			? "Last changed"
-			: "Created";
+			? t("navLastChanged")
+			: t("created");
 	const createdAt = relativeTime(row.createdAt);
 	const sessionCount = row.sessionCount ?? 0;
 
@@ -571,9 +655,9 @@ export function WorkspaceHoverCard({
 				side="right"
 				align="start"
 				sideOffset={sideOffset}
-				className="w-72 p-3"
+				className="w-72 bg-sidebar p-3 text-sidebar-foreground"
 			>
-				<div className="flex flex-col gap-2.5">
+				<div ref={contentWrapRef} className="flex flex-col gap-2.5">
 					{/* Header: repo › branch | git status + status dot. */}
 					<div className="flex items-start justify-between gap-2">
 						<div className="flex min-w-0 items-center gap-2">
@@ -590,12 +674,12 @@ export function WorkspaceHoverCard({
 								}
 							/>
 							{subtitle ? (
-								<span className="truncate text-[11px] text-muted-foreground">
+								<span className="truncate text-mini text-muted-foreground">
 									{subtitle}
 								</span>
 							) : null}
 						</div>
-						{/* Chat workspaces have no git context and no kanban
+						{/* Chat workspaces have no git context and no workspace
 						 *  status — the entire right-side cluster (branch +
 						 *  diff chips + status dot) is meaningless for them. */}
 						{row.mode !== "chat" ? (
@@ -618,7 +702,7 @@ export function WorkspaceHoverCard({
 						{isSending ? (
 							<HelmorThinkingIndicator size={14} className="mt-0.5 shrink-0" />
 						) : null}
-						<div className="min-w-0 flex-1 text-sm font-semibold leading-snug text-foreground line-clamp-2">
+						<div className="min-w-0 flex-1 text-body font-semibold leading-snug text-foreground line-clamp-2">
 							{title}
 						</div>
 						{isSending ? (
@@ -638,18 +722,19 @@ export function WorkspaceHoverCard({
 
 					{/* PR title (only when it isn't already the main title). */}
 					{trimmedPrTitle && trimmedPrTitle !== title ? (
-						<div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+						<div className="flex items-center gap-1.5 text-mini text-muted-foreground">
 							<GitPullRequest className="size-3 shrink-0" strokeWidth={1.8} />
 							<span className="truncate">{trimmedPrTitle}</span>
 						</div>
 					) : null}
 
 					{/* Footer: session count on the left, last-activity timestamp on the right. */}
-					<div className="flex items-center justify-between gap-2 pt-1 text-[11px] text-muted-foreground/80">
+					<div className="flex items-center justify-between gap-2 pt-1 text-mini text-muted-foreground/80">
 						<div className="flex items-center gap-2.5">
 							{sessionCount > 0 ? (
 								<span className="tabular-nums">
-									{sessionCount} {sessionCount === 1 ? "session" : "sessions"}
+									{sessionCount}{" "}
+									{sessionCount === 1 ? t("session") : t("sessions")}
 								</span>
 							) : null}
 						</div>
@@ -657,7 +742,10 @@ export function WorkspaceHoverCard({
 							<span
 								title={
 									createdAt
-										? `${lastActivityLabel} · created ${createdAt}`
+										? f("activityCreatedCreatedat", {
+												activity: lastActivityLabel,
+												createdAt,
+											})
 										: lastActivityLabel
 								}
 							>

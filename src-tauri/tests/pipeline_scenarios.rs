@@ -141,6 +141,72 @@ fn user_prompt_with_file_mention_at_start() {
 }
 
 #[test]
+fn user_prompt_with_pasted_text() {
+    // Composer pasted-text tag: the prompt carries the full paste inline and
+    // `pastedTexts` marks its UTF-16 span. The instruction is non-ASCII on
+    // purpose — it shifts UTF-16 and byte offsets apart, exercising the
+    // adapter's offset conversion. Expect Text("帮我看看这个\n") +
+    // PastedText(code) + Text("\n谢谢").
+    let text = "帮我看看这个\nconst a = 1;\nconst b = 2;\n谢谢";
+    let paste_start = 7u64; // after 6 CJK chars + newline (1 UTF-16 unit each)
+    let paste_end = paste_start + ("const a = 1;\nconst b = 2;".len() as u64);
+    let msgs = vec![user_prompt_with_pasted_texts(
+        "u1",
+        text,
+        &[(paste_start, paste_end)],
+    )];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+#[test]
+fn user_prompt_with_invalid_pasted_ranges() {
+    // Defensive degradation: out-of-bounds, empty, and overlapping ranges are
+    // dropped rather than corrupting the split. Only the first valid range
+    // becomes a PastedText part; the rest of the prompt stays plain text.
+    let text = "before PASTED after";
+    let msgs = vec![user_prompt_with_pasted_texts(
+        "u1",
+        text,
+        &[
+            (7, 13),   // valid: "PASTED"
+            (10, 16),  // overlaps the first — dropped
+            (5, 5),    // empty — dropped
+            (40, 500), // out of bounds — dropped
+        ],
+    )];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+#[test]
+fn user_prompt_with_pasted_range_mid_surrogate() {
+    // Emoji are surrogate pairs in UTF-16. A range boundary inside one can
+    // never map to a char boundary, so those ranges drop (their span stays
+    // plain text); a valid range past the emoji still resolves — and ends
+    // exactly at end-of-string. Expect Text("看 😀😀 ") + PastedText("ok").
+    let text = "看 😀😀 ok"; // UTF-16: 看=0, sp=1, 😀=2..4, 😀=4..6, sp=6, o=7, k=8
+    let msgs = vec![user_prompt_with_pasted_texts(
+        "u1",
+        text,
+        &[
+            (2, 5), // end lands mid-surrogate — dropped
+            (3, 6), // start lands mid-surrogate — dropped
+            (7, 9), // valid: "ok"
+        ],
+    )];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+#[test]
+fn user_prompt_with_adjacent_pasted_ranges() {
+    // Ranges sharing a boundary don't overlap — both survive as separate
+    // chips with no text part between them. Expect Text("see ") +
+    // PastedText("AA") + PastedText("BBB").
+    let text = "see AABBB";
+    let msgs = vec![user_prompt_with_pasted_texts("u1", text, &[(4, 6), (6, 9)])];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+#[test]
 fn user_prompt_with_dotfile_mention() {
     // Dotfile (no `/`) — the picker can produce these from workspace root.
     let msgs = vec![user_prompt_with_files(
@@ -376,6 +442,163 @@ fn res_large_tokens() {
             "usage": { "input_tokens": 1_234_567, "output_tokens": 98_765 }
         }),
     )];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+// opencode reload: an assistant turn (opencode_message) followed by the
+// synthesized turn/completed footer round-trips to assistant text + the
+// "Ns" duration row, matching claude/codex.
+#[test]
+fn opencode_turn_renders_text_and_duration_footer() {
+    let assistant = json!({
+        "type": "opencode_message",
+        "session_id": "ses_1",
+        "role": "assistant",
+        "model": "anthropic/claude-sonnet-4-6",
+        "parts": [{ "type": "text", "text": "Hello world" }],
+    });
+    let msgs = vec![
+        make_record(
+            "om1",
+            "assistant",
+            &serde_json::to_string(&assistant).unwrap(),
+        ),
+        make_record(
+            "tc1",
+            "assistant",
+            r#"{"type":"turn/completed","duration_ms":125000}"#,
+        ),
+    ];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+// opencode reasoning on reload: a closed reasoning block's `time` round-trips
+// to a "Thought for Ns" duration on the reasoning part.
+#[test]
+fn opencode_reasoning_carries_thought_duration() {
+    let assistant = json!({
+        "type": "opencode_message",
+        "session_id": "ses_1",
+        "role": "assistant",
+        "parts": [
+            { "type": "reasoning", "text": "let me think",
+              "time": { "start": 1_000_000u64, "end": 1_004_000u64 } },
+            { "type": "text", "text": "Answer" },
+        ],
+    });
+    let msgs = vec![make_record(
+        "om1",
+        "assistant",
+        &serde_json::to_string(&assistant).unwrap(),
+    )];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+#[test]
+fn opencode_session_error_notice_round_trips() {
+    let assistant = json!({
+        "type": "opencode_message",
+        "session_id": "ses_1",
+        "role": "assistant",
+        "parts": [{
+            "type": "system-notice",
+            "severity": "error",
+            "label": "OpenCode error",
+            "body": "Quota exceeded. Try again in 5 hours.",
+        }],
+    });
+    let msgs = vec![make_record(
+        "om1",
+        "assistant",
+        &serde_json::to_string(&assistant).unwrap(),
+    )];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+// opencode write/edit/apply_patch carry opencode's per-file unified diff
+// (`fileDiffs`), which the adapter reshapes into the shared apply_patch
+// `changes:[{path,diff}]` view so a colored diff renders on reload too.
+#[test]
+fn opencode_write_tool_renders_unified_diff() {
+    let assistant = json!({
+        "type": "opencode_message",
+        "session_id": "ses_1",
+        "role": "assistant",
+        "parts": [{
+            "type": "tool", "callID": "c1", "tool": "write", "status": "completed",
+            "input": { "filePath": "/tmp/a.txt", "content": "hi" },
+            "output": "Wrote file successfully.",
+            "fileDiffs": [
+                { "path": "a.txt", "diff": "--- a.txt\n+++ a.txt\n@@ -0,0 +1 @@\n+hi\n" },
+            ],
+        }],
+    });
+    let msgs = vec![make_record(
+        "om1",
+        "assistant",
+        &serde_json::to_string(&assistant).unwrap(),
+    )];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+// opencode bash output can arrive while the tool is still running under
+// `state.metadata.output`; the live accumulator maps that to `output` so
+// streaming renders don't wait for `status=completed`.
+#[test]
+fn opencode_running_tool_renders_output() {
+    let assistant = json!({
+        "type": "opencode_message",
+        "session_id": "ses_1",
+        "role": "assistant",
+        "parts": [{
+            "type": "tool", "callID": "c1", "tool": "bash", "status": "running",
+            "input": { "command": "printf hi" },
+            "output": "hi",
+        }],
+    });
+    let msgs = vec![make_record(
+        "om1",
+        "assistant",
+        &serde_json::to_string(&assistant).unwrap(),
+    )];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+// kimi reload: two turns each carrying a plan snapshot. The collapse pass
+// folds the repeated todo lists into one widget — anchored at the first
+// occurrence, showing the LATEST entries' statuses.
+#[test]
+fn kimi_plan_snapshots_collapse_to_latest() {
+    let turn = |id: &str, entries: serde_json::Value, text: &str| {
+        let parsed = json!({
+            "type": "kimi_message",
+            "session_id": "ses_1",
+            "role": "assistant",
+            "parts": [
+                { "type": "plan", "entries": entries },
+                { "type": "text", "text": text },
+            ],
+        });
+        make_record(id, "assistant", &serde_json::to_string(&parsed).unwrap())
+    };
+    let msgs = vec![
+        turn(
+            "k1",
+            json!([
+                { "content": "read config", "priority": "high", "status": "in_progress" },
+                { "content": "bump timeout", "priority": "medium", "status": "pending" },
+            ]),
+            "Reading.",
+        ),
+        turn(
+            "k2",
+            json!([
+                { "content": "read config", "priority": "high", "status": "completed" },
+                { "content": "bump timeout", "priority": "medium", "status": "completed" },
+            ]),
+            "Done.",
+        ),
+    ];
     assert_yaml_snapshot!(run_normalized(msgs));
 }
 
@@ -682,6 +905,285 @@ fn stream_thinking_lifecycle_end_to_end() {
 
     let fingerprint = replay_stream_events("claude", &events);
     assert_yaml_snapshot!(normalize_stream_fingerprint(&fingerprint));
+}
+
+#[test]
+fn stream_empty_text_blocks_emit_no_placeholder() {
+    // Newer Claude SDKs can open more than one text content block before
+    // any `text_delta` (or finalized `assistant` event) arrives, so two
+    // empty `StreamingBlock::Text` entries coexist in `acc.blocks`. The
+    // partial builder must NOT render a "..." placeholder per empty block
+    // (which produced the duplicate "..." rows users saw) — empty blocks
+    // emit nothing, and only real text ever reaches the thread.
+    let events = vec![
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text", "text": ""},
+            },
+            "session_id": "session-1",
+        }),
+        // Second empty text block opens — both are now live with no deltas.
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_start",
+                "index": 1,
+                "content_block": {"type": "text", "text": ""},
+            },
+            "session_id": "session-1",
+        }),
+        // First real text lands in block 1. Block 0 is still empty and must
+        // stay invisible — no leading "..." above the answer.
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "text_delta", "text": "Hello."},
+            },
+            "session_id": "session-1",
+        }),
+        json!({
+            "type": "assistant",
+            "message": {
+                "id": "msg_1",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Hello."}],
+            },
+            "session_id": "session-1",
+        }),
+    ];
+
+    let fingerprint = replay_stream_events("claude", &events);
+    assert_yaml_snapshot!(normalize_stream_fingerprint(&fingerprint));
+}
+
+#[test]
+fn stream_omitted_thinking_shows_thinking_chip() {
+    // Thinking Display = omitted: the SDK opens a `thinking` block and
+    // streams `thinking_delta`s whose text is ALWAYS empty (the content is
+    // redacted server-side), often for 60s+, before any answer text. The
+    // partial builder must surface the empty thinking block as a streaming
+    // reasoning part so the frontend shows its content-less "Thinking…" chip
+    // for the whole phase — NOT skip it (blank bubble) and NOT a "..."
+    // placeholder. Mirrors the real stream captured from Claude.
+    let events = vec![
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+            },
+            "session_id": "session-1",
+        }),
+        // Redacted thinking: delta text is empty but the block is live.
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": ""},
+            },
+            "session_id": "session-1",
+        }),
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "signature_delta", "signature": "sig"},
+            },
+            "session_id": "session-1",
+        }),
+        // Finalized thinking block — still empty text, carries the signature.
+        json!({
+            "type": "assistant",
+            "message": {
+                "id": "msg_1",
+                "role": "assistant",
+                "content": [{"type": "thinking", "thinking": "", "signature": "sig"}],
+            },
+            "session_id": "session-1",
+        }),
+        json!({
+            "type": "stream_event",
+            "event": {"type": "content_block_stop", "index": 0},
+            "session_id": "session-1",
+        }),
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_start",
+                "index": 1,
+                "content_block": {"type": "text", "text": ""},
+            },
+            "session_id": "session-1",
+        }),
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "text_delta", "text": "Answer."},
+            },
+            "session_id": "session-1",
+        }),
+        json!({
+            "type": "assistant",
+            "message": {
+                "id": "msg_1",
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "", "signature": "sig"},
+                    {"type": "text", "text": "Answer."},
+                ],
+            },
+            "session_id": "session-1",
+        }),
+        json!({
+            "type": "stream_event",
+            "event": {"type": "content_block_stop", "index": 1},
+            "session_id": "session-1",
+        }),
+    ];
+
+    let fingerprint = replay_stream_events("claude", &events);
+    assert_yaml_snapshot!(normalize_stream_fingerprint(&fingerprint));
+}
+
+#[test]
+fn stream_omitted_thinking_split_blocks_stay_distinct() {
+    // Omitted-thinking turns split ONE thinking phase into SEVERAL blocks,
+    // each finalized in its own `assistant` event with the SAME message.id
+    // and a distinct signature. The type-only cumulative-snapshot check used
+    // to misjudge block 2 as a re-send of block 1: it reused block 1's
+    // `__part_id`, inherited its `__duration_ms`, and `collect_message`
+    // appended a second copy — rendering N identical "Thought for Ns" chips
+    // (the SDK-0.3.170 regression this fixture family pins). Locks in:
+    //
+    //   1. Each finalized thinking block gets its OWN part id + duration.
+    //   2. The live final render shows ONE merged reasoning chip (collapse
+    //      merges adjacent reasoning segments, durations summed).
+    //   3. Persisted blocks keep both thinking blocks (no silent drop) so
+    //      the historical reload renders the same single merged chip.
+    let mk_block_start = |index: usize| {
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_start",
+                "index": index,
+                "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+            },
+            "session_id": "session-1",
+        })
+    };
+    let events = vec![
+        mk_block_start(0),
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "signature_delta", "signature": "sig-A"},
+            },
+            "session_id": "session-1",
+        }),
+        // Block 0 finalized — same message.id reused by every event below.
+        json!({
+            "type": "assistant",
+            "message": {
+                "id": "msg_1",
+                "role": "assistant",
+                "content": [{"type": "thinking", "thinking": "", "signature": "sig-A"}],
+            },
+            "session_id": "session-1",
+        }),
+        json!({
+            "type": "stream_event",
+            "event": {"type": "content_block_stop", "index": 0},
+            "session_id": "session-1",
+        }),
+        // Second thinking block of the SAME phase — distinct signature.
+        mk_block_start(1),
+        json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "signature_delta", "signature": "sig-B"},
+            },
+            "session_id": "session-1",
+        }),
+        json!({
+            "type": "assistant",
+            "message": {
+                "id": "msg_1",
+                "role": "assistant",
+                "content": [{"type": "thinking", "thinking": "", "signature": "sig-B"}],
+            },
+            "session_id": "session-1",
+        }),
+        json!({
+            "type": "stream_event",
+            "event": {"type": "content_block_stop", "index": 1},
+            "session_id": "session-1",
+        }),
+        // The phase ends in a tool call so the merged chip has a neighbor.
+        json!({
+            "type": "assistant",
+            "message": {
+                "id": "msg_1",
+                "role": "assistant",
+                "content": [{
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "Edit",
+                    "input": {"file_path": "a.go", "old_string": "x", "new_string": "y"},
+                }],
+            },
+            "session_id": "session-1",
+        }),
+        json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_1",
+                    "content": "ok",
+                }],
+            },
+            "session_id": "session-1",
+        }),
+    ];
+
+    let fingerprint = replay_stream_events("claude", &events);
+    assert_yaml_snapshot!(normalize_stream_fingerprint(&fingerprint));
+}
+
+#[test]
+fn collapse_group_stays_before_later_reasoning() {
+    // A collapsible read group followed by thinking followed by more reads
+    // must render in thread order: group, reasoning, group. Reasoning used
+    // to pass through WITHOUT flushing the group, so all reads straddling a
+    // thinking block merged into one group placed after it ("Read 5 files"
+    // rendered below the thoughts that came later).
+    let msgs = vec![assistant_json(
+        "a1",
+        json!([
+            { "type": "tool_use", "id": "t1", "name": "Read", "input": { "file_path": "a.go" } },
+            { "type": "tool_use", "id": "t2", "name": "Read", "input": { "file_path": "b.go" } },
+            { "type": "thinking", "thinking": "compare the two", "signature": "sig", "__duration_ms": 1200 },
+            { "type": "tool_use", "id": "t3", "name": "Read", "input": { "file_path": "c.go" } },
+            { "type": "tool_use", "id": "t4", "name": "Read", "input": { "file_path": "d.go" } },
+        ]),
+        None,
+    )];
+    assert_yaml_snapshot!(run_normalized(msgs));
 }
 
 #[test]
@@ -1619,5 +2121,379 @@ fn codex_collab_close_agent() {
         "assistant",
         &serde_json::to_string(&parsed).unwrap(),
     )];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+#[test]
+fn triage_priming_message_renders_as_assistant_text() {
+    // Exact content stored by `triage::workspace_factory::create_ai_workspace`
+    // (verified against a live DB row from a real triage tick). Notably:
+    //   - the `message` object has NO `role` field (production code only
+    //     writes `content`), so the adapter must not require it
+    //   - top-level `type: "assistant"` is what the adapter dispatches on
+    let raw_content = "{\"message\":{\"content\":[{\"text\":\"## Source\\nfoo\\n\\n## Repo\\nbar\\n\\n## Suggested Action\\nbaz\\n\\n## Confirm?\\nyes\",\"type\":\"text\"}]},\"type\":\"assistant\"}";
+    let msgs = vec![make_record("priming-1", "assistant", raw_content)];
+    let rendered = MessagePipeline::convert_historical(&msgs);
+    assert_eq!(
+        rendered.len(),
+        1,
+        "expected 1 rendered message, got {}",
+        rendered.len()
+    );
+    let msg = &rendered[0];
+    assert_eq!(role_str(&msg.role), "assistant");
+    // Expect at least one text content block carrying the plan_message body.
+    let has_plan_text = msg.content.iter().any(|part| {
+        let s = serde_json::to_string(part).unwrap_or_default();
+        s.contains("Source") && s.contains("Suggested Action")
+    });
+    assert!(
+        has_plan_text,
+        "priming text missing from rendered content: {:#?}",
+        msg.content
+    );
+}
+
+// ============================================================================
+// Subagent streaming partials must nest under the parent tool call.
+//
+// A subagent (Task/Agent/Workflow) streams its turns with
+// `parent_tool_use_id` set. The finalized render folds that work under the
+// parent tool call's children. The mid-stream PARTIAL must carry the same
+// `child:<parent>:<turn>` id so the frontend nests the live tokens inside the
+// card — otherwise the partial flashes as a second top-level bubble that then
+// "collapses" into the card on finalize (the two-blocks-then-one bug).
+// ============================================================================
+
+#[test]
+fn stream_subagent_partial_tagged_as_child() {
+    let events = vec![
+        // Parent assistant emits the Task tool_use (top-level, pt=null).
+        json!({
+            "type": "stream_event",
+            "event": {"type": "content_block_start", "index": 0,
+                "content_block": {"type": "tool_use", "id": "toolu_agent", "name": "Task", "input": {}}},
+            "session_id": "s1", "parent_tool_use_id": null,
+        }),
+        json!({
+            "type": "assistant",
+            "message": {"id": "msg_parent", "role": "assistant",
+                "content": [{"type": "tool_use", "id": "toolu_agent", "name": "Task", "input": {"description": "go"}}]},
+            "session_id": "s1", "parent_tool_use_id": null,
+        }),
+        // Subagent prompt + a streaming text turn (pt=toolu_agent).
+        json!({
+            "type": "user",
+            "message": {"role": "user", "content": [{"type": "text", "text": "Investigate the repo"}]},
+            "session_id": "s1", "parent_tool_use_id": "toolu_agent",
+        }),
+        json!({
+            "type": "stream_event",
+            "event": {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+            "session_id": "s1", "parent_tool_use_id": "toolu_agent",
+        }),
+        json!({
+            "type": "stream_event",
+            "event": {"type": "content_block_delta", "index": 0,
+                "delta": {"type": "text_delta", "text": "Looking into the repo..."}},
+            "session_id": "s1", "parent_tool_use_id": "toolu_agent",
+        }),
+        json!({
+            "type": "assistant",
+            "message": {"id": "msg_sub", "role": "assistant",
+                "content": [{"type": "text", "text": "Looking into the repo. Found it."}]},
+            "session_id": "s1", "parent_tool_use_id": "toolu_agent",
+        }),
+    ];
+
+    let fp = replay_stream_events("claude", &events);
+
+    // The last streaming partial (the subagent text) must be tagged as a
+    // child of the Task tool — that's what lets the frontend nest it.
+    let last_partial = fp
+        .emissions
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            common::RawStreamEmission::Partial { message, .. } => Some(message),
+            _ => None,
+        })
+        .expect("expected a streaming partial for the subagent text");
+    assert!(
+        last_partial
+            .id
+            .as_deref()
+            .is_some_and(|id| id.starts_with("child:toolu_agent:")),
+        "subagent partial should carry a `child:toolu_agent:` id, got {:?}",
+        last_partial.id
+    );
+
+    // The finalized render keeps a single top-level Task message with the
+    // subagent work folded into the tool call's children — no standalone
+    // bubble. Pin the nesting itself so a grouping regression is caught.
+    use helmor_lib::pipeline::types::{ExtendedMessagePart, MessagePart};
+    assert_eq!(
+        fp.historical_render.len(),
+        1,
+        "subagent work must stay nested under the Task tool call"
+    );
+    let task_children = fp.historical_render[0]
+        .content
+        .iter()
+        .find_map(|part| match part {
+            ExtendedMessagePart::Basic(MessagePart::ToolCall { children, .. }) => Some(children),
+            _ => None,
+        })
+        .expect("top-level message should hold the Task tool call");
+    assert!(
+        task_children
+            .iter()
+            .any(|c| matches!(c, ExtendedMessagePart::Basic(MessagePart::Text { .. }))),
+        "the subagent's finalized text must nest as a Task child, got {task_children:?}"
+    );
+}
+
+#[test]
+fn stream_top_level_partial_stays_top_level() {
+    // A normal (pt=null) turn must NOT gain a `child:` id — only subagents do.
+    let events = vec![
+        json!({
+            "type": "stream_event",
+            "event": {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+            "session_id": "s1", "parent_tool_use_id": null,
+        }),
+        json!({
+            "type": "stream_event",
+            "event": {"type": "content_block_delta", "index": 0,
+                "delta": {"type": "text_delta", "text": "Hello"}},
+            "session_id": "s1", "parent_tool_use_id": null,
+        }),
+    ];
+    let fp = replay_stream_events("claude", &events);
+    let partial = fp
+        .emissions
+        .iter()
+        .find_map(|e| match e {
+            common::RawStreamEmission::Partial { message, .. } => Some(message),
+            _ => None,
+        })
+        .expect("expected a streaming partial");
+    assert!(
+        !partial.id.as_deref().unwrap_or("").starts_with("child:"),
+        "top-level partial must not be tagged as a child, got {:?}",
+        partial.id
+    );
+}
+
+// ============================================================================
+// AskUserQuestion / user_question — unified Q&A card (#796)
+// ============================================================================
+
+fn auq_tool_use(id: &str, tool_use_id: &str) -> HistoricalRecord {
+    assistant_json(
+        id,
+        json!([
+            {"type": "text", "text": "Let me confirm one thing."},
+            {"type": "tool_use", "id": tool_use_id, "name": "AskUserQuestion", "input": {
+                "questions": [{
+                    "question": "Pick a color",
+                    "header": "Color",
+                    "multiSelect": false,
+                    "options": [
+                        {"label": "Red", "description": "warm"},
+                        {"label": "Blue", "description": "cool"}
+                    ]
+                }]
+            }}
+        ]),
+        None,
+    )
+}
+
+#[test]
+fn auq_claude_answered_uses_structured_tool_use_result() {
+    // The SDK user message carries BOTH the flat result string and the
+    // structured `tool_use_result` `{questions, answers}` — the card must
+    // take its answers from the structured form.
+    let result_msg = json!({
+        "type": "user",
+        "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "tu-auq-1",
+             "content": "Your questions have been answered: \"Pick a color\"=\"Red\". You can now continue with these answers in mind."}
+        ]},
+        "tool_use_result": {
+            "questions": [{"question": "Pick a color", "header": "Color"}],
+            "answers": {"Pick a color": "Red"}
+        }
+    });
+    let msgs = vec![
+        auq_tool_use("a1", "tu-auq-1"),
+        make_record("u1", "user", &serde_json::to_string(&result_msg).unwrap()),
+    ];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+#[test]
+fn auq_claude_answers_parsed_from_result_text() {
+    // No structured `tool_use_result` — fall back to parsing the flat
+    // `"q"="a"` result string.
+    let result_msg = json!({
+        "type": "user",
+        "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "tu-auq-1",
+             "content": "Your questions have been answered: \"Pick a color\"=\"Blue\". You can now continue with these answers in mind."}
+        ]}
+    });
+    let msgs = vec![
+        auq_tool_use("a1", "tu-auq-1"),
+        make_record("u1", "user", &serde_json::to_string(&result_msg).unwrap()),
+    ];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+#[test]
+fn auq_claude_decline_marks_declined() {
+    let result_msg = json!({
+        "type": "user",
+        "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "tu-auq-1",
+             "content": "User declined", "is_error": true}
+        ]}
+    });
+    let msgs = vec![
+        auq_tool_use("a1", "tu-auq-1"),
+        make_record("u1", "user", &serde_json::to_string(&result_msg).unwrap()),
+    ];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+#[test]
+fn auq_claude_open_question_stays_pending() {
+    // Question asked, turn still paused — no tool_result yet.
+    let msgs = vec![auq_tool_use("a1", "tu-auq-1")];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+#[test]
+fn user_question_row_renders_answered_card() {
+    // Persisted `user_question` row written by the accumulator when a
+    // Codex/OpenCode question resolves (questions already canonical).
+    let parsed = json!({
+        "type": "user_question",
+        "userInputId": "codex-input-1",
+        "source": "Codex",
+        "status": "answered",
+        "questions": [{
+            "question": "Apply the patch?",
+            "header": "Proceed",
+            "multiSelect": false,
+            "options": [{"label": "Yes"}, {"label": "No"}],
+            "allowFreeText": false
+        }],
+        "answers": {"Apply the patch?": "Yes"}
+    });
+    let msgs = vec![make_record(
+        "q1",
+        "assistant",
+        &serde_json::to_string(&parsed).unwrap(),
+    )];
+    assert_yaml_snapshot!(run_normalized(msgs));
+}
+
+#[test]
+fn stream_codex_user_question_event_persists_card() {
+    // Sidecar `user_question` marker mid-stream (Codex requestUserInput
+    // answered) — must persist as its own turn between items and render
+    // the same card on historical reload. Questions arrive provider-raw
+    // (Codex shape) and are normalized by the accumulator.
+    let events = vec![
+        json!({
+            "type": "item/completed",
+            "item": {"id": "item_0", "type": "agentMessage", "text": "Before the question."},
+            "thread_id": "thread-1",
+        }),
+        json!({
+            "type": "user_question",
+            "userInputId": "codex-input-1",
+            "source": "Codex",
+            "questions": [{
+                "id": "q0",
+                "header": "Mode",
+                "question": "Pick one",
+                "options": [{"label": "Fast", "description": "skip checks"}]
+            }],
+            "answers": {"Pick one": "Fast"},
+            "action": "submit",
+        }),
+        json!({
+            "type": "item/completed",
+            "item": {"id": "item_1", "type": "agentMessage", "text": "Continuing after the answer."},
+            "thread_id": "thread-1",
+        }),
+    ];
+
+    let fingerprint = replay_stream_events("codex", &events);
+    assert_yaml_snapshot!(normalize_stream_fingerprint(&fingerprint));
+}
+
+#[test]
+fn stream_opencode_user_question_declined() {
+    // OpenCode question rejected — the card persists with `declined`
+    // status and no answers. Raw opencode shape uses `multiple`.
+    let events = vec![json!({
+        "type": "user_question",
+        "userInputId": "oc-q-1",
+        "source": "OpenCode",
+        "questions": [{
+            "question": "Which files?",
+            "header": "Files",
+            "multiple": true,
+            "options": [{"label": "a.rs", "description": ""}]
+        }],
+        "action": "decline",
+    })];
+
+    let fingerprint = replay_stream_events("opencode", &events);
+    assert_yaml_snapshot!(normalize_stream_fingerprint(&fingerprint));
+}
+
+#[test]
+fn auq_claude_split_rows_still_merge_answers() {
+    // The userInputRequest pause can flush the turn mid-message, splitting
+    // thinking and the AUQ tool_use into separate persisted rows. The
+    // cross-row late-merge must still attach the structured answers.
+    let thinking_row = assistant_json(
+        "a1",
+        json!([{"type": "thinking", "thinking": "Deciding what to ask.", "signature": "sig"}]),
+        None,
+    );
+    let tool_use_row = assistant_json(
+        "a2",
+        json!([{"type": "tool_use", "id": "tu-auq-1", "name": "AskUserQuestion", "input": {
+            "questions": [{
+                "question": "Pick a color",
+                "header": "Color",
+                "multiSelect": false,
+                "options": [{"label": "Red"}, {"label": "Blue"}]
+            }]
+        }}]),
+        None,
+    );
+    let result_msg = json!({
+        "type": "user",
+        "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "tu-auq-1",
+             "content": "Your questions have been answered: \"Pick a color\"=\"Red\". You can now continue with these answers in mind."}
+        ]},
+        "tool_use_result": {
+            "questions": [{"question": "Pick a color", "header": "Color"}],
+            "answers": {"Pick a color": "Red"}
+        }
+    });
+    let msgs = vec![
+        thinking_row,
+        tool_use_row,
+        make_record("u1", "user", &serde_json::to_string(&result_msg).unwrap()),
+    ];
     assert_yaml_snapshot!(run_normalized(msgs));
 }

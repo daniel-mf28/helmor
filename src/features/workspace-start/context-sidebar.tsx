@@ -4,6 +4,7 @@ import { InboxSidebar } from "@/features/inbox";
 import type { RepositoryCreateOption } from "@/lib/api";
 import type { ComposerInsertTarget } from "@/lib/composer-insert";
 import { parseForgeRepoFilter } from "@/lib/forge-repo-filter";
+import { I18nText } from "@/lib/i18n";
 import type { ContextCard } from "@/lib/sources/types";
 
 type WorkspaceStartContextSidebarProps = {
@@ -51,8 +52,8 @@ export function WorkspaceStartContextSidebar({
 			style={{ contain: "layout paint style" }}
 		>
 			<div className="flex h-8 shrink-0 items-center border-border/60 border-b bg-muted/30 px-3">
-				<h2 className="text-[13px] font-medium leading-8 tracking-[-0.01em] text-muted-foreground">
-					Contexts
+				<h2 className="text-ui font-medium leading-8 tracking-[-0.01em] text-muted-foreground">
+					<I18nText source="contexts" />
 				</h2>
 			</div>
 			{inboxMounted ? (

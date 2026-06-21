@@ -2,7 +2,6 @@ import { getMaterialFileIcon } from "file-extension-icon-js";
 import {
 	AlertCircle,
 	Check,
-	ChevronDown,
 	FileText,
 	LoaderCircle,
 	Search,
@@ -14,22 +13,25 @@ import {
 	ReasoningContent,
 	ReasoningTrigger,
 } from "@/components/ai/reasoning";
-import { Button } from "@/components/ui/button";
 import {
+	type CollapsedGroupPart,
 	type ExtendedMessagePart,
 	partKey,
 	type ToolCallPart,
 } from "@/lib/api";
+import { I18nText, useI18n } from "@/lib/i18n";
 import { childrenStructurallyEqual } from "@/lib/structural-equality";
 import { cn } from "@/lib/utils";
-import { TodoList } from "./content-parts";
+import { TodoList, WorkflowCard } from "./content-parts";
 import { EditDiffTrigger } from "./edit-diff";
 import {
 	isLiveStreamingStatus,
 	isTodoListPart,
 	isToolCallPart,
+	isWorkflowPart,
 } from "./shared";
 import { getToolInfo } from "./tool-info";
+import { type TruncatedNoun, TruncatedToolList } from "./truncated-tool-list";
 
 // --- props & equality ---
 
@@ -89,7 +91,8 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 	compact = false,
 	childParts,
 }: AssistantToolCallProps) {
-	const info = getToolInfo(toolName, args);
+	const { t, f } = useI18n();
+	const info = getToolInfo(toolName, args, t, f);
 	const isEdit = toolName === "Edit";
 	const isApplyPatch = toolName === "apply_patch";
 	const oldStr =
@@ -169,7 +172,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 			{!hasDiff &&
 			!hasFiles &&
 			(info.diffAdd != null || info.diffDel != null) ? (
-				<span className="flex items-center gap-1 text-[11px]">
+				<span className="flex items-center gap-1 text-mini">
 					{info.diffAdd != null ? (
 						<span className="text-chart-2">+{info.diffAdd}</span>
 					) : null}
@@ -179,7 +182,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 				</span>
 			) : null}
 			{info.command ? (
-				<code className="inline-block min-w-0 truncate rounded bg-accent/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+				<code className="inline-block min-w-0 truncate rounded bg-accent/60 px-1.5 py-0.5 font-mono text-mini text-muted-foreground">
 					{info.command}
 				</code>
 			) : info.detail ? (
@@ -206,7 +209,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 	if (compact) {
 		const detail = info.file ?? info.command ?? info.detail ?? null;
 		return (
-			<div className="flex max-w-full items-center gap-1.5 py-0.5 text-[12px] text-muted-foreground">
+			<div className="flex max-w-full items-center gap-1.5 py-0.5 text-small text-muted-foreground">
 				<span className="shrink-0">{info.icon}</span>
 				<span className="shrink-0 font-medium">{info.action}</span>
 				{detail ? (
@@ -227,7 +230,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 			>
 				<summary
 					className={cn(
-						"flex max-w-full items-center gap-1.5 py-0.5 text-[12px] text-muted-foreground [&::-webkit-details-marker]:hidden",
+						"flex max-w-full items-center gap-1.5 py-0.5 text-small text-muted-foreground [&::-webkit-details-marker]:hidden",
 						canExpand ? "cursor-interactive" : "cursor-default",
 					)}
 				>
@@ -253,7 +256,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 				{canExpand && isOpen ? (
 					<div className="flex flex-col gap-1">
 						{hasOutput ? (
-							<div className="max-h-[16rem] overflow-auto rounded-md bg-accent/35 text-[11px] leading-5">
+							<div className="max-h-[16rem] overflow-auto rounded-md bg-accent/35 text-mini leading-5">
 								{info.fullCommand ? (
 									<div className="border-b border-border/20 px-2 py-1.5">
 										<span className="mr-1.5 text-chart-3/70">$</span>
@@ -292,7 +295,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 									) : (
 										<div
 											key={`${f.name}-${i}`}
-											className="flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-[12px] leading-4 text-muted-foreground transition-colors hover:bg-accent/60"
+											className="flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-small leading-4 text-muted-foreground transition-colors hover:bg-accent/60"
 										>
 											<img
 												src={getMaterialFileIcon(f.name)}
@@ -301,7 +304,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 											/>
 											<span className="min-w-0 truncate">{f.name}</span>
 											{f.diffAdd != null || f.diffDel != null ? (
-												<span className="flex shrink-0 items-center gap-1 text-[11px]">
+												<span className="flex shrink-0 items-center gap-1 text-mini">
 													{f.diffAdd != null ? (
 														<span className="text-chart-2">+{f.diffAdd}</span>
 													) : null}
@@ -405,19 +408,21 @@ const ToolCallErrorRow = memo(function ToolCallErrorRow({
 		>
 			<summary
 				className={cn(
-					"flex max-w-full items-center gap-1.5 py-0.5 text-[12px] text-destructive [&::-webkit-details-marker]:hidden",
+					"flex max-w-full items-center gap-1.5 py-0.5 text-small text-destructive [&::-webkit-details-marker]:hidden",
 					expandable ? "cursor-interactive" : "cursor-default",
 				)}
 			>
 				<AlertCircle className="size-3.5 shrink-0" strokeWidth={1.8} />
-				<span className="shrink-0 font-medium">Error</span>
+				<span className="shrink-0 font-medium">
+					<I18nText source="error" />
+				</span>
 				{exitCode != null ? (
-					<code className="shrink-0 rounded bg-destructive/10 px-1.5 py-0.5 font-mono text-[11px]">
-						Exit code {exitCode}
-					</code>
+					<span className="shrink-0 rounded bg-destructive/10 px-1.5 py-0.5 font-mono text-mini">
+						<I18nText source="exitCode" /> {exitCode}
+					</span>
 				) : null}
 				{preview ? (
-					<span className="min-w-0 truncate font-mono text-[11px] text-destructive/80">
+					<span className="min-w-0 truncate font-mono text-mini text-destructive/80">
 						{preview}
 					</span>
 				) : null}
@@ -440,7 +445,7 @@ const ToolCallErrorRow = memo(function ToolCallErrorRow({
 				) : null}
 			</summary>
 			{expandable && open ? (
-				<div className="mt-0.5 max-h-[16rem] overflow-auto rounded-md border border-destructive/15 bg-destructive/[0.05] text-[11px] leading-5">
+				<div className="mt-0.5 max-h-[16rem] overflow-auto rounded-md border border-destructive/15 bg-destructive/[0.05] text-mini leading-5">
 					<pre className="whitespace-pre-wrap break-words p-1.5 text-destructive/80">
 						{full!.slice(0, 4000)}
 						{full!.length > 4000 ? "…" : ""}
@@ -483,31 +488,27 @@ const AgentChildrenBlock = memo(function AgentChildrenBlock({
 	isRunning,
 	parts,
 }: AgentChildrenBlockProps) {
-	const [expanded, setExpanded] = useState(false);
+	const { t, f } = useI18n();
 	const isLive = isLiveStreamingStatus(streamingStatus);
 	const streaming = isLive || (!streamingStatus && !!isRunning);
-	const info = getToolInfo(toolName, toolArgs);
+	const info = getToolInfo(toolName, toolArgs, t, f);
 	const toolCallParts = useMemo(
 		() =>
 			parts.filter((part): part is ToolCallPart => part.type === "tool-call"),
 		[parts],
 	);
 	const toolUseCount = toolCallParts.length;
-	const visibleParts: ExtendedMessagePart[] = expanded
-		? parts
-		: toolCallParts.slice(-AGENT_PREVIEW_STEPS);
-	const collapsedVisibleCount = Math.min(
-		toolCallParts.length,
-		AGENT_PREVIEW_STEPS,
-	);
-	const hiddenCount = parts.length - collapsedVisibleCount;
-	const hasMore =
-		toolCallParts.length >= AGENT_PREVIEW_STEPS && hiddenCount > 0;
-	const canToggle = hasMore;
+	// While the sub-agent is live, surface the trailing text/reasoning block
+	// (the part currently streaming) in the collapsed preview. The collapsed
+	// view otherwise lists only tool calls, so a streaming text turn nested
+	// into the card would render nothing until the user expands it.
+	const lastPart = parts[parts.length - 1];
+	const liveTail =
+		streaming && lastPart && !isToolCallPart(lastPart) ? lastPart : null;
 
 	return (
 		<div className="flex flex-col">
-			<div className="flex max-w-full items-center gap-1.5 py-0.5 text-[12px] text-muted-foreground">
+			<div className="flex max-w-full items-center gap-1.5 py-0.5 text-small text-muted-foreground">
 				<span className="shrink-0">{info.icon}</span>
 				<span className="font-medium">{info.action}</span>
 				{info.detail ? (
@@ -521,88 +522,74 @@ const AgentChildrenBlock = memo(function AgentChildrenBlock({
 						strokeWidth={2}
 					/>
 				) : null}
-				<span className="shrink-0 text-[11px] text-muted-foreground/40">
+				<span className="shrink-0 text-mini text-muted-foreground/40">
 					{toolUseCount > 0
 						? `${toolUseCount} tool ${toolUseCount === 1 ? "use" : "uses"}`
 						: `${parts.length} steps`}
 				</span>
 			</div>
 
-			<div className="ml-5 flex flex-col gap-0.5 border-l border-border/30 pl-3 pt-1">
-				{canToggle ? (
-					<Button
-						type="button"
-						variant="ghost"
-						size="xs"
-						onClick={() => setExpanded((value) => !value)}
-						className="mb-0.5 h-auto items-center justify-start gap-1 px-0 text-[11px] text-muted-foreground/50 hover:bg-transparent hover:text-muted-foreground"
-					>
-						<ChevronDown
-							className={cn(
-								"size-3 transition-transform",
-								expanded && "rotate-180",
-							)}
-							strokeWidth={1.5}
-						/>
-						{expanded
-							? "Collapse"
-							: `Show ${hiddenCount} more step${hiddenCount > 1 ? "s" : ""}`}
-					</Button>
-				) : null}
-
-				<div className="flex flex-col gap-0.5">
-					{visibleParts.map((part) => {
-						const key = partKey(part);
-						if (isToolCallPart(part)) {
-							return (
-								<AssistantToolCall
-									key={key}
-									toolName={part.toolName ?? "unknown"}
-									args={part.args ?? {}}
-									result={part.result}
-									isError={part.isError}
-									compact={!expanded}
-									childParts={part.children}
-								/>
-							);
-						}
-						if (part.type === "text" && part.text) {
-							return (
-								<div
-									key={key}
-									className="text-[13px] leading-6 text-muted-foreground"
-								>
-									{part.text.slice(0, 300)}
-									{part.text.length > 300 ? "…" : ""}
-								</div>
-							);
-						}
-						if (part.type === "reasoning" && part.text) {
-							return (
-								<Reasoning key={key}>
-									<ReasoningTrigger />
-									<ReasoningContent>{part.text}</ReasoningContent>
-								</Reasoning>
-							);
-						}
-						if (isTodoListPart(part)) {
-							return <TodoList key={key} part={part} />;
-						}
-						return null;
-					})}
-				</div>
-			</div>
+			<TruncatedToolList
+				items={parts}
+				previewCount={AGENT_PREVIEW_STEPS}
+				previewFilter={(part) => part.type === "tool-call"}
+				previewTail={liveTail}
+				getKey={partKey}
+				renderItem={(part, { expanded }) => {
+					if (isToolCallPart(part)) {
+						return (
+							<AssistantToolCall
+								toolName={part.toolName ?? "unknown"}
+								args={part.args ?? {}}
+								result={part.result}
+								isError={part.isError}
+								compact={!expanded}
+								childParts={part.children}
+							/>
+						);
+					}
+					if (part.type === "text" && part.text) {
+						return (
+							<div className="text-ui leading-6 text-muted-foreground">
+								{part.text.slice(0, 300)}
+								{part.text.length > 300 ? "…" : ""}
+							</div>
+						);
+					}
+					if (part.type === "reasoning" && part.text) {
+						return (
+							<Reasoning>
+								<ReasoningTrigger />
+								<ReasoningContent>{part.text}</ReasoningContent>
+							</Reasoning>
+						);
+					}
+					if (isTodoListPart(part)) {
+						return <TodoList part={part} />;
+					}
+					if (isWorkflowPart(part)) {
+						return <WorkflowCard part={part} />;
+					}
+					return null;
+				}}
+			/>
 		</div>
 	);
 }, agentChildrenBlockPropsEqual);
 
 // --- CollapsedToolGroup ---
 
-export function CollapsedToolGroup({
-	group,
-}: {
-	group: import("@/lib/api").CollapsedGroupPart;
-}) {
+const COLLAPSED_GROUP_NOUNS: Record<
+	CollapsedGroupPart["category"],
+	TruncatedNoun
+> = {
+	shell: { one: "panelNounCommand", other: "panelNounCommands" },
+	search: { one: "panelNounSearch", other: "panelNounSearches" },
+	read: { one: "panelNounFile", other: "panelNounFiles" },
+	mixed: { one: "panelNounTool", other: "panelNounTools" },
+};
+
+export function CollapsedToolGroup({ group }: { group: CollapsedGroupPart }) {
 	const [open, setOpen] = useState(true);
 	const collapsedGroupIconClassName = "size-3.5 text-muted-foreground";
 
@@ -623,7 +610,7 @@ export function CollapsedToolGroup({
 			}}
 			open={open}
 		>
-			<summary className="flex max-w-full cursor-interactive items-center gap-1.5 py-0.5 text-[12px] text-muted-foreground [&::-webkit-details-marker]:hidden">
+			<summary className="flex max-w-full cursor-interactive items-center gap-1.5 py-0.5 text-small text-muted-foreground [&::-webkit-details-marker]:hidden">
 				<span className="shrink-0">{icon}</span>
 				<span className="font-medium">{group.summary}</span>
 				{group.active ? (
@@ -649,22 +636,24 @@ export function CollapsedToolGroup({
 						/>
 					</svg>
 				</span>
-				<span className="shrink-0 text-[11px] text-muted-foreground/40">
-					{group.tools.length} tools
+				<span className="shrink-0 text-mini text-muted-foreground/40">
+					{group.tools.length} <I18nText source={"tools"} />
 				</span>
 			</summary>
 			{open ? (
-				<div className="ml-5 flex flex-col gap-0.5 border-l border-border/30 pl-3 pt-1">
-					{group.tools.map((tool) => (
+				<TruncatedToolList
+					items={group.tools}
+					getKey={(tool) => tool.toolCallId}
+					noun={COLLAPSED_GROUP_NOUNS[group.category]}
+					renderItem={(tool) => (
 						<AssistantToolCall
-							key={tool.toolCallId}
 							toolName={tool.toolName}
 							args={tool.args}
 							result={tool.result}
 							isError={tool.isError}
 						/>
-					))}
-				</div>
+					)}
+				/>
 			) : null}
 		</details>
 	);

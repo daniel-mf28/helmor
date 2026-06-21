@@ -6,21 +6,21 @@ import {
 	useLayoutEffect,
 	useMemo,
 	useRef,
-	useState,
 } from "react";
+import { useShallow } from "zustand/react/shallow";
 import type { StartSubmitMode } from "@/features/composer/start-submit-mode";
+import type { PendingUserInput } from "@/features/conversation/pending-user-input";
 import {
-	buildPendingUserInput,
-	type PendingUserInput,
-} from "@/features/conversation/pending-user-input";
-import { stabilizeStreamingMessages } from "@/features/conversation/streaming-tail-collapse";
+	type PendingPermission as StorePendingPermission,
+	useStreamingStore,
+} from "@/features/conversation/state/streaming-store";
 import type {
 	ActiveStreamSummary,
 	AgentModelOption,
 	CodexGoalState,
-	ThreadMessageLike,
 } from "@/lib/api";
 import {
+	findProviderCapabilities,
 	generateSessionTitle,
 	loadRepoPreferences,
 	mutateCodexGoal,
@@ -31,18 +31,22 @@ import {
 	steerAgentStream,
 	stopAgentStream,
 } from "@/lib/api";
-import type { ComposerCustomTag } from "@/lib/composer-insert";
+import {
+	type ComposerCustomTag,
+	locatePastedTextRanges,
+} from "@/lib/composer-insert";
 import { extractError, isRecoverableByPurge } from "@/lib/errors";
+import { translateSource } from "@/lib/i18n";
 import {
 	agentModelSectionsQueryOptions,
 	helmorQueryKeys,
+	providerCapabilitiesQueryOptions,
 	sessionThreadMessagesQueryOptions,
 } from "@/lib/query-client";
 import { resolveGeneralPreferencePrefix } from "@/lib/repo-preferences-prompts";
 import {
 	appendUserMessage,
 	readSessionThread,
-	replaceStreamingTail,
 	restoreSnapshot,
 	type SessionThreadSnapshot,
 } from "@/lib/session-thread-cache";
@@ -55,47 +59,29 @@ import {
 	findModelOption,
 } from "@/lib/workspace-helpers";
 import { useWorkspaceToast } from "@/lib/workspace-toast-context";
-import { seedSessionTitle } from "./seed-session-title";
+import {
+	buildSessionContextPrompt,
+	type SessionContextReference,
+} from "../session-context-prompt";
+import {
+	createStreamEventDispatcher,
+	createStreamFlushers,
+	type StreamAccumulator,
+} from "./dispatch-stream-event";
+import { buildTitleSeed, seedSessionTitle } from "./seed-session-title";
 
 const EMPTY_IMAGES: string[] = [];
 const EMPTY_FILES: string[] = [];
 
-function buildTitleSeed(prompt: string): string {
-	const normalized = prompt
-		.trim()
-		.split(/\r?\n/g)[0]
-		?.trim()
-		.replace(/\s+/g, " ");
+/**
+ * Re-export from the streaming store — kept here so existing import
+ * sites in panels / composer don't have to change paths.
+ */
+export type PendingPermission = StorePendingPermission;
 
-	if (!normalized) {
-		return "Untitled";
-	}
-
-	if (normalized.length <= 36) {
-		return normalized;
-	}
-
-	return `${normalized.slice(0, 33).trimEnd()}...`;
-}
-
-export type PendingPermission = {
-	permissionId: string;
-	toolName: string;
-	toolInput: Record<string, unknown>;
-	title?: string | null;
-	description?: string | null;
-};
-
-const EMPTY_PENDING_PERMISSIONS: PendingPermission[] = [];
-
-type ComposerRestoreState = {
-	contextKey: string;
-	draft: string;
-	images: string[];
-	files: string[];
-	customTags: ComposerCustomTag[];
-	nonce: number;
-};
+const EMPTY_PENDING_PERMISSIONS: readonly PendingPermission[] = Object.freeze(
+	[],
+);
 
 type SubmitPayload = {
 	prompt: string;
@@ -127,6 +113,9 @@ type SubmitPayload = {
 	 *  `prepareChatWorkspace` / `prepareWorkspaceFromRepo` as
 	 *  `seedSessionId`; other paths ignore it. */
 	provisionalSessionId?: string;
+	/** Start composer only: once the created workspace finalizes, open the
+	 *  prompt in the agent's TUI instead of streaming a GUI turn. */
+	terminalMode?: boolean;
 };
 
 export type ComposerSubmitPayload = SubmitPayload;
@@ -150,6 +139,9 @@ type UseConversationStreamingArgs = {
 	 *  follow-up routing and the queue-drain trigger; survives this
 	 *  hook's unmount/remount. */
 	activeStreams: readonly ActiveStreamSummary[];
+	getSessionContextReferences?: (
+		sessionId: string,
+	) => readonly SessionContextReference[];
 	onInteractionSessionsChange?: (
 		sessionWorkspaceMap: Map<string, string>,
 		interactionCounts: Map<string, number>,
@@ -168,54 +160,85 @@ export function useConversationStreaming({
 	followUpBehavior,
 	submitQueue,
 	activeStreams,
+	getSessionContextReferences,
 	onInteractionSessionsChange,
 	onSessionCompleted,
 	onSessionAborted,
 }: UseConversationStreamingArgs) {
 	const queryClient = useQueryClient();
 	const pushToast = useWorkspaceToast();
-	const [composerRestoreState, setComposerRestoreState] =
-		useState<ComposerRestoreState | null>(null);
-	const [liveSessionsByContext, setLiveSessionsByContext] = useState<
-		Record<string, { provider: string; providerSessionId?: string | null }>
-	>({});
-	const [sendErrorsByContext, setSendErrorsByContext] = useState<
-		Record<string, string | null>
-	>({});
-	const [activeSessionByContext, setActiveSessionByContext] = useState<
-		Record<string, { stopSessionId: string; provider: string }>
-	>({});
-	const [sendingContextKeys, setSendingContextKeys] = useState<Set<string>>(
-		() => new Set(),
+	// All per-context state lives in the module-level Zustand store so the
+	// stream's Tauri Channel callback keeps writing to a target that
+	// outlives every component unmount / remount. The hook subscribes via
+	// selectors below; mutations go through `streamingStore.<action>()`.
+	const streamingStore = useStreamingStore;
+	// Cross-context slices the interaction-tracking effect / queue / steer
+	// fallback read off. Coalesced into a single `useShallow` subscription
+	// (was 6 separate store subscriptions): each field is a stable map/set
+	// reference, so a shallow compare of the bundle is identity-equivalent
+	// to the per-field reads while cutting the subscription count 6 → 1.
+	const {
+		pendingPermissionsByContext,
+		pendingUserInputByContext,
+		planReviewByContext,
+		interactionWorkspaceByContext,
+		sendingContextKeys,
+		activeFastPreludes,
+	} = useStreamingStore(
+		useShallow((state) => ({
+			pendingPermissionsByContext: state.pendingPermissionsByContext,
+			pendingUserInputByContext: state.pendingUserInputByContext,
+			planReviewByContext: state.planReviewByContext,
+			interactionWorkspaceByContext: state.interactionWorkspaceByContext,
+			sendingContextKeys: state.sendingContextKeys,
+			activeFastPreludes: state.activeFastPreludes,
+		})),
 	);
-	const sendingContextKeysRef = useRef<Set<string>>(new Set());
-	const [pendingPermissionsByContext, setPendingPermissionsByContext] =
-		useState<Record<string, PendingPermission[]>>({});
-	const [pendingUserInputByContext, setPendingUserInputByContext] = useState<
-		Record<string, PendingUserInput | null>
-	>({});
-	const [
-		userInputResponsePendingByContext,
-		setUserInputResponsePendingByContext,
-	] = useState<Record<string, boolean>>({});
-	const [interactionWorkspaceByContext, setInteractionWorkspaceByContext] =
-		useState<Record<string, string | null>>({});
-	const [planReviewByContext, setPlanReviewByContext] = useState<
-		Record<string, boolean>
-	>({});
-	const [activeFastPreludes, setActiveFastPreludes] = useState<
-		Record<string, boolean>
-	>({});
+	const activeSendError = useStreamingStore(
+		(state) => state.sendErrorsByContext[composerContextKey] ?? null,
+	);
+	const pendingUserInput = useStreamingStore(
+		(state) => state.pendingUserInputByContext[composerContextKey] ?? null,
+	);
+	const userInputResponsePending = useStreamingStore(
+		(state) =>
+			state.userInputResponsePendingByContext[composerContextKey] ?? false,
+	);
+	const composerRestoreState = useStreamingStore(
+		(state) => state.composerRestore,
+	);
+	// Action handles. `useShallow` keeps the returned object reference
+	// stable so handlers below don't churn their deps every keystroke.
+	const storeActions = useStreamingStore(
+		useShallow((state) => ({
+			setPendingUserInput: state.setPendingUserInput,
+			clearPendingUserInput: state.clearPendingUserInput,
+			setUserInputResponsePending: state.setUserInputResponsePending,
+			appendPendingPermission: state.appendPendingPermission,
+			removePendingPermission: state.removePendingPermission,
+			clearPendingPermissions: state.clearPendingPermissions,
+			markSendingState: state.markSendingState,
+			clearSendingState: state.clearSendingState,
+			setSendError: state.setSendError,
+			setActiveSession: state.setActiveSession,
+			clearActiveSession: state.clearActiveSession,
+			setLiveSession: state.setLiveSession,
+			rememberInteractionWorkspace: state.rememberInteractionWorkspace,
+			setPlanReviewActive: state.setPlanReviewActive,
+			clearPlanReview: state.clearPlanReview,
+			setFastPreludeActive: state.setFastPreludeActive,
+			clearFastPrelude: state.clearFastPrelude,
+			setComposerRestore: state.setComposerRestore,
+		})),
+	);
+	// Hook-local ref. Maps contextKey → workspaceId captured at send-start;
+	// the interaction-tracking effect uses it as a fallback when
+	// `interactionWorkspaceByContext` hasn't been populated yet.
 	const sendingWorkspaceMapRef = useRef<Map<string, string>>(new Map());
-	const activeSendError = sendErrorsByContext[composerContextKey] ?? null;
 	const isSending = sendingContextKeys.has(composerContextKey);
 	const pendingPermissions =
 		pendingPermissionsByContext[composerContextKey] ??
 		EMPTY_PENDING_PERMISSIONS;
-	const pendingUserInput =
-		pendingUserInputByContext[composerContextKey] ?? null;
-	const userInputResponsePending =
-		userInputResponsePendingByContext[composerContextKey] ?? false;
 	const hasPlanReview = planReviewByContext[composerContextKey] ?? false;
 
 	const seedSessionTitleCallback = useCallback(
@@ -226,6 +249,16 @@ export function useConversationStreaming({
 	);
 
 	const modelSectionsQuery = useQuery(agentModelSectionsQueryOptions());
+	// Provider capability table — looked up in `handleStop` to decide
+	// whether the active provider has a long-running goal loop that
+	// needs an out-of-band pause before the abort. Backed by a
+	// synchronous local default (`initialData`) so a cold start never
+	// reads stale flags, with a cheap background refetch to reconcile
+	// against the live Rust table; reads here are a ref-cell lookup.
+	const providerCapabilitiesQuery = useQuery(
+		providerCapabilitiesQueryOptions(),
+	);
+	const providerCapabilitiesTable = providerCapabilitiesQuery.data ?? null;
 	// Value-stable fingerprint for effects that only care about the set
 	// of active session ids, not the array's reference.
 	const activeSessionIdsKey = useMemo(
@@ -331,96 +364,21 @@ export function useConversationStreaming({
 			if (workspaceId === undefined) {
 				return;
 			}
-
-			setInteractionWorkspaceByContext((current) => {
-				if ((current[contextKey] ?? null) === (workspaceId ?? null)) {
-					return current;
-				}
-
-				return {
-					...current,
-					[contextKey]: workspaceId ?? null,
-				};
-			});
+			storeActions.rememberInteractionWorkspace(
+				contextKey,
+				workspaceId ?? null,
+			);
 		},
-		[],
+		[storeActions],
 	);
 
-	const clearPendingPermissions = useCallback((contextKey: string) => {
-		setPendingPermissionsByContext((current) => {
-			const existing = current[contextKey] ?? EMPTY_PENDING_PERMISSIONS;
-			if (existing.length === 0) {
-				return current;
-			}
-
-			const next = { ...current };
-			delete next[contextKey];
-			return next;
-		});
-	}, []);
-
-	const clearPendingUserInput = useCallback((contextKey: string) => {
-		setPendingUserInputByContext((current) => {
-			if (!(contextKey in current)) {
-				return current;
-			}
-
-			const next = { ...current };
-			delete next[contextKey];
-			return next;
-		});
-		setUserInputResponsePendingByContext((current) => {
-			if (!(contextKey in current)) {
-				return current;
-			}
-
-			const next = { ...current };
-			delete next[contextKey];
-			return next;
-		});
-	}, []);
-
-	const clearPlanReview = useCallback((contextKey: string) => {
-		setPlanReviewByContext((current) => {
-			if (!current[contextKey]) return current;
-			const next = { ...current };
-			delete next[contextKey];
-			return next;
-		});
-	}, []);
-
-	const setPlanReviewActive = useCallback((contextKey: string) => {
-		setPlanReviewByContext((current) => {
-			if (current[contextKey]) return current;
-			return { ...current, [contextKey]: true };
-		});
-	}, []);
-
-	const setFastPreludeActive = useCallback((contextKey: string) => {
-		setActiveFastPreludes((current) => {
-			if (current[contextKey]) return current;
-			return { ...current, [contextKey]: true };
-		});
-	}, []);
-
-	const clearFastPrelude = useCallback((contextKey: string) => {
-		setActiveFastPreludes((current) => {
-			if (!current[contextKey]) return current;
-			const next = { ...current };
-			delete next[contextKey];
-			return next;
-		});
-	}, []);
-
-	const appendPendingPermission = useCallback(
-		(contextKey: string, permission: PendingPermission) => {
-			setPendingPermissionsByContext((current) => ({
-				...current,
-				[contextKey]: [...(current[contextKey] ?? []), permission],
-			}));
-		},
-		[],
-	);
+	const clearPendingPermissions = storeActions.clearPendingPermissions;
+	const clearPendingUserInput = storeActions.clearPendingUserInput;
+	const clearPlanReview = storeActions.clearPlanReview;
+	const setPlanReviewActive = storeActions.setPlanReviewActive;
+	const setFastPreludeActive = storeActions.setFastPreludeActive;
+	const clearFastPrelude = storeActions.clearFastPrelude;
+	const appendPendingPermission = storeActions.appendPendingPermission;
 
 	const handleStopStream = useCallback(async () => {
 		// Source of truth: the backend's active-streams registry,
@@ -443,20 +401,26 @@ export function useConversationStreaming({
 		// the active-streams event lands on the same tick as registration.
 		const provider =
 			activeStream?.provider ??
-			activeSessionByContext[composerContextKey]?.provider ??
+			streamingStore.getState().activeSessionByContext[composerContextKey]
+				?.provider ??
 			null;
 		if (!provider) {
 			return;
 		}
 
-		// For codex sessions with an active goal, flip the goal to paused
-		// FIRST so codex doesn't auto-spawn a fresh continuation turn the
-		// moment we abort the current one. Sequential: mutate -> stop, so
-		// the codex child is still alive when mutateCodexGoal needs it.
-		// (mutateCodexGoal is best-effort on the sidecar side too — if a
-		// race somehow kills the child first it just no-ops.) The user
-		// resumes by typing `/goal resume`.
-		if (provider === "codex") {
+		// For providers with a long-running goal loop, flip the goal to
+		// paused FIRST so the provider doesn't auto-spawn a fresh
+		// continuation turn the moment we abort the current one.
+		// Sequential: mutate -> stop, so the child is still alive when
+		// mutateCodexGoal needs it. (mutateCodexGoal is best-effort on
+		// the sidecar side too — if a race somehow kills the child
+		// first it just no-ops.) The user resumes by typing
+		// `/goal resume`.
+		const caps = findProviderCapabilities(
+			providerCapabilitiesTable ?? [],
+			provider,
+		);
+		if (caps?.supportsActiveGoal) {
 			const goal = queryClient.getQueryData<CodexGoalState | null>(
 				helmorQueryKeys.sessionCodexGoal(sessionId),
 			);
@@ -470,7 +434,17 @@ export function useConversationStreaming({
 			}
 		}
 		await stopAgentStream(sessionId, provider);
-	}, [activeSessionByContext, activeStreams, composerContextKey, queryClient]);
+		// Deps reconcile main's store-backed `handleStopStream` (reads
+		// `streamingStore.getState()` — `activeSessionByContext` is no
+		// longer a local binding) with this PR's capability lookup, which
+		// adds `providerCapabilitiesTable`.
+	}, [
+		activeStreams,
+		composerContextKey,
+		providerCapabilitiesTable,
+		queryClient,
+		streamingStore,
+	]);
 
 	const handlePermissionResponse = useCallback(
 		(
@@ -478,76 +452,41 @@ export function useConversationStreaming({
 			behavior: "allow" | "deny",
 			options?: { updatedPermissions?: unknown[]; message?: string },
 		) => {
-			setPendingPermissionsByContext((current) => {
-				const permissions =
-					current[composerContextKey] ?? EMPTY_PENDING_PERMISSIONS;
-				const nextPermissions = permissions.filter(
-					(permission) => permission.permissionId !== permissionId,
-				);
-				if (nextPermissions.length === permissions.length) {
-					return current;
-				}
-
-				const next = { ...current };
-				if (nextPermissions.length > 0) {
-					next[composerContextKey] = nextPermissions;
-				} else {
-					delete next[composerContextKey];
-				}
-				return next;
-			});
+			storeActions.removePendingPermission(composerContextKey, permissionId);
 			respondToPermissionRequest(permissionId, behavior, options).catch((err) =>
 				console.error("[helmor] permission response:", err),
 			);
 		},
-		[composerContextKey],
+		[composerContextKey, storeActions],
 	);
 
-	// `sendingContextKeys` is the local "this context is mid-send" flag —
-	// drives the composer's send-vs-steer routing and the queue-drain
-	// effect. Cross-container truth (busy/stoppable badges) lives in the
-	// `activeStreams` React Query feed instead, sourced from Rust.
+	// `sendingContextKeys` lives in the store now so the cross-app "this
+	// session is busy" signal survives container unmounts. Local helpers
+	// here just thread the workspace-tracking ref in lock-step.
 	const markSendingState = useCallback(
 		(contextKey: string, workspaceId: string | null | undefined) => {
 			if (workspaceId) {
 				sendingWorkspaceMapRef.current.set(contextKey, workspaceId);
 			}
-			if (sendingContextKeysRef.current.has(contextKey)) {
-				return;
-			}
-
-			sendingContextKeysRef.current = new Set(sendingContextKeysRef.current);
-			sendingContextKeysRef.current.add(contextKey);
-			setSendingContextKeys(sendingContextKeysRef.current);
+			storeActions.markSendingState(contextKey);
 		},
-		[],
+		[storeActions],
 	);
 
-	const pauseSendingState = useCallback((contextKey: string) => {
-		sendingWorkspaceMapRef.current.delete(contextKey);
-		if (!sendingContextKeysRef.current.has(contextKey)) {
-			return;
-		}
-
-		sendingContextKeysRef.current = new Set(sendingContextKeysRef.current);
-		sendingContextKeysRef.current.delete(contextKey);
-		setSendingContextKeys(sendingContextKeysRef.current);
-	}, []);
+	const pauseSendingState = useCallback(
+		(contextKey: string) => {
+			sendingWorkspaceMapRef.current.delete(contextKey);
+			storeActions.clearSendingState(contextKey);
+		},
+		[storeActions],
+	);
 
 	const clearSendingState = useCallback(
 		(contextKey: string) => {
-			setActiveSessionByContext((current) => {
-				if (!(contextKey in current)) {
-					return current;
-				}
-
-				const next = { ...current };
-				delete next[contextKey];
-				return next;
-			});
+			storeActions.clearActiveSession(contextKey);
 			pauseSendingState(contextKey);
 		},
-		[pauseSendingState],
+		[pauseSendingState, storeActions],
 	);
 
 	const invalidateConversationQueries = useCallback(
@@ -600,27 +539,18 @@ export function useConversationStreaming({
 	const applyUserInputEvent = useCallback(
 		(contextKey: string, event: PendingUserInput) => {
 			clearPendingPermissions(contextKey);
-			setPendingUserInputByContext((current) => ({
-				...current,
-				[contextKey]: event,
-			}));
-			setUserInputResponsePendingByContext((current) => ({
-				...current,
-				[contextKey]: false,
-			}));
-			setLiveSessionsByContext((current) => ({
-				...current,
-				[contextKey]: {
-					provider: event.provider,
-					providerSessionId:
-						event.providerSessionId ??
-						current[contextKey]?.providerSessionId ??
-						null,
-				},
-			}));
+			storeActions.setPendingUserInput(contextKey, event);
+			storeActions.setUserInputResponsePending(contextKey, false);
+			const previousSessionId =
+				streamingStore.getState().liveSessionsByContext[contextKey]
+					?.providerSessionId ?? null;
+			storeActions.setLiveSession(contextKey, {
+				provider: event.provider,
+				providerSessionId: event.providerSessionId ?? previousSessionId,
+			});
 			pauseSendingState(contextKey);
 		},
-		[clearPendingPermissions, pauseSendingState],
+		[clearPendingPermissions, pauseSendingState, storeActions, streamingStore],
 	);
 
 	/**
@@ -637,24 +567,18 @@ export function useConversationStreaming({
 		async (
 			userInput: PendingUserInput,
 			action: "submit" | "decline" | "cancel",
-			options?: { content?: Record<string, unknown> },
+			options?: {
+				content?: Record<string, unknown>;
+				meta?: Record<string, unknown>;
+			},
 		) => {
 			if (!displayedSessionId) return;
 			const contextKey = composerContextKey;
 
-			setPendingUserInputByContext((current) => ({
-				...current,
-				[contextKey]: null,
-			}));
+			storeActions.setPendingUserInput(contextKey, null);
 			clearPendingPermissions(contextKey);
-			setSendErrorsByContext((current) => ({
-				...current,
-				[contextKey]: null,
-			}));
-			setUserInputResponsePendingByContext((current) => ({
-				...current,
-				[contextKey]: true,
-			}));
+			storeActions.setSendError(contextKey, null);
+			storeActions.setUserInputResponsePending(contextKey, true);
 			rememberInteractionWorkspace(contextKey, displayedWorkspaceId);
 			markSendingState(contextKey, displayedWorkspaceId);
 
@@ -663,16 +587,14 @@ export function useConversationStreaming({
 					userInput.userInputId,
 					action,
 					options?.content,
+					options?.meta,
 				);
-				setUserInputResponsePendingByContext((current) => ({
-					...current,
-					[contextKey]: false,
-				}));
+				storeActions.setUserInputResponsePending(contextKey, false);
 			} catch (error) {
 				console.error("[conversation] user-input response:", error);
 				const { code, message: errorMsg } = extractError(
 					error,
-					"Failed to deliver user-input response.",
+					translateSource("composerFailedDeliverResponse"),
 				);
 				if (isRecoverableByPurge(code) && displayedWorkspaceId) {
 					showWorkspaceBrokenToast({
@@ -681,24 +603,16 @@ export function useConversationStreaming({
 						queryClient,
 					});
 				}
-				setPendingUserInputByContext((current) => ({
-					...current,
-					[contextKey]: userInput,
-				}));
-				setUserInputResponsePendingByContext((current) => ({
-					...current,
-					[contextKey]: false,
-				}));
-				setSendErrorsByContext((current) => ({
-					...current,
-					[contextKey]: errorMsg,
-				}));
+				storeActions.setPendingUserInput(contextKey, userInput);
+				storeActions.setUserInputResponsePending(contextKey, false);
+				storeActions.setSendError(contextKey, errorMsg);
 				clearSendingState(contextKey);
 			}
 		},
 		[
 			clearSendingState,
 			clearPendingPermissions,
+			storeActions,
 			composerContextKey,
 			displayedSessionId,
 			displayedWorkspaceId,
@@ -723,6 +637,7 @@ export function useConversationStreaming({
 				fastMode,
 				forceQueue,
 				followUpBehaviorOverride,
+				editorStateSnapshot,
 			}: SubmitPayload,
 			// Override for drain / queued-steer. When present, all
 			// session/workspace lookups use the override instead of the
@@ -733,12 +648,17 @@ export function useConversationStreaming({
 				sessionId: string;
 				workspaceId: string | null;
 				contextKey: string;
+				// Pin the target repo for the preference prefix; absent → use
+				// the displayed repo.
+				repoId?: string | null;
 			},
 		) => {
 			const isOverride = override !== undefined;
 			const targetSessionId = override?.sessionId ?? displayedSessionId;
 			const targetWorkspaceId = override?.workspaceId ?? displayedWorkspaceId;
 			const targetContextKey = override?.contextKey ?? composerContextKey;
+			const targetRepoId =
+				override && "repoId" in override ? override.repoId : repoId;
 
 			const trimmedPrompt = prompt.trim();
 			// `selectionPending` is a UI-only guard (user clicked a session
@@ -757,7 +677,8 @@ export function useConversationStreaming({
 			// `activeStreams` is the source of truth (survives remount);
 			// `activeSessionByContext` is the optimistic fast-path for the
 			// in-flight register window. Plan-review = abandon plan.
-			const localLiveStream = activeSessionByContext[contextKey];
+			const localLiveStream =
+				streamingStore.getState().activeSessionByContext[contextKey];
 			const backendLiveStream = activeStreams.find(
 				(stream) => stream.sessionId === targetSessionId,
 			);
@@ -802,9 +723,10 @@ export function useConversationStreaming({
 							effortLevel,
 							permissionMode,
 							fastMode,
+							editorStateSnapshot,
 						},
 					);
-					setComposerRestoreState(null);
+					storeActions.setComposerRestore(null);
 					return;
 				}
 
@@ -829,7 +751,7 @@ export function useConversationStreaming({
 					cacheSessionId,
 					optimisticSteer,
 				);
-				setComposerRestoreState(null);
+				storeActions.setComposerRestore(null);
 
 				// Composer clears its editor synchronously after onSubmit.
 				// On steer failure we must seed `composerRestoreState` with
@@ -841,12 +763,13 @@ export function useConversationStreaming({
 				const restoreDraftOnFailure = () => {
 					restoreSnapshot(queryClient, cacheSessionId, rollback);
 					if (isOverride) return;
-					setComposerRestoreState({
+					storeActions.setComposerRestore({
 						contextKey,
 						draft: trimmedPrompt,
 						images: imagePaths,
 						files: filePaths,
 						customTags,
+						editorState: editorStateSnapshot ?? null,
 						nonce: Date.now(),
 					});
 				};
@@ -865,25 +788,26 @@ export function useConversationStreaming({
 						// a fresh turn (or edit before resending).
 						restoreDraftOnFailure();
 						if (response.reason) {
-							setSendErrorsByContext((current) => ({
-								...current,
-								[contextKey]: `Steer rejected: ${response.reason}`,
-							}));
+							storeActions.setSendError(
+								contextKey,
+								`Steer rejected: ${response.reason}`,
+							);
 						}
 					}
 					return;
 				} catch (err) {
 					console.warn("[conversation] steer failed:", err);
 					restoreDraftOnFailure();
-					setSendErrorsByContext((current) => ({
-						...current,
-						[contextKey]: err instanceof Error ? err.message : String(err),
-					}));
+					storeActions.setSendError(
+						contextKey,
+						err instanceof Error ? err.message : String(err),
+					);
 					return;
 				}
 			}
 
-			const previousLiveSession = liveSessionsByContext[contextKey];
+			const previousLiveSession =
+				streamingStore.getState().liveSessionsByContext[contextKey];
 			const providerSessionId =
 				previousLiveSession?.provider === model.provider
 					? (previousLiveSession.providerSessionId ?? undefined)
@@ -909,7 +833,9 @@ export function useConversationStreaming({
 			const isFirstUserMessage =
 				(currentThread ?? []).every((message) => message.role !== "user") &&
 				(currentTitle == null || currentTitle === "Untitled");
-			const repoPreferences = repoId ? await loadRepoPreferences(repoId) : null;
+			const repoPreferences = targetRepoId
+				? await loadRepoPreferences(targetRepoId)
+				: null;
 			// The general-preference preamble is prepended ONLY on the wire
 			// to the agent (Rust side stitches it onto `prompt_prefix`).
 			// `trimmedPrompt` is what the user typed — that's what we
@@ -917,8 +843,20 @@ export function useConversationStreaming({
 			// side persists to `session_messages` as the user_prompt body.
 			const promptPrefix =
 				isFirstUserMessage && !isCompactCommand
-					? resolveGeneralPreferencePrefix(repoPreferences)
+					? [
+							buildSessionContextPrompt(
+								getSessionContextReferences?.(targetSessionId) ?? [],
+							),
+							resolveGeneralPreferencePrefix(repoPreferences),
+						]
+							.filter((prefix): prefix is string => Boolean(prefix?.trim()))
+							.join("\n\n") || null
 					: null;
+			// Pasted-tag spans inside the prompt — rendered as tag chips (the
+			// composer badge, post-send) instead of inlining the full paste.
+			// Computed against `trimmedPrompt`, which is byte-identical to what
+			// the Rust side persists as the user_prompt body.
+			const pastedTexts = locatePastedTextRanges(trimmedPrompt, customTags);
 			const now = new Date().toISOString();
 			const userMessageId = crypto.randomUUID();
 			const optimisticUserMessage = createLiveThreadMessage({
@@ -928,6 +866,7 @@ export function useConversationStreaming({
 				createdAt: now,
 				files: filePaths,
 				images: imagePaths,
+				pastedTexts,
 			});
 			let titleSeed: string | null = null;
 			if (isFirstUserMessage && !isCompactCommand) {
@@ -943,18 +882,12 @@ export function useConversationStreaming({
 				optimisticUserMessage,
 			);
 			if (!isOverride) {
-				setComposerRestoreState(null);
+				storeActions.setComposerRestore(null);
 			}
-			setSendErrorsByContext((current) => ({
-				...current,
-				[contextKey]: null,
-			}));
+			storeActions.setSendError(contextKey, null);
 			clearPendingPermissions(contextKey);
 			clearPlanReview(contextKey);
-			setPendingUserInputByContext((current) => ({
-				...current,
-				[contextKey]: null,
-			}));
+			storeActions.setPendingUserInput(contextKey, null);
 			clearPendingUserInput(contextKey);
 			rememberInteractionWorkspace(contextKey, targetWorkspaceId);
 			markSendingState(contextKey, targetWorkspaceId);
@@ -964,6 +897,9 @@ export function useConversationStreaming({
 				clearFastPrelude(contextKey);
 			}
 
+			// Hoisted so the catch below can run cleanup() on an RPC reject
+			// (the stream's terminal-event path never fires in that case).
+			let cleanup: (() => void) | undefined;
 			try {
 				if (targetSessionId) {
 					void generateSessionTitle(
@@ -992,52 +928,50 @@ export function useConversationStreaming({
 				}
 
 				const stopSessionId = targetSessionId;
-				setActiveSessionByContext((current) => ({
-					...current,
-					[contextKey]: {
-						stopSessionId,
-						provider: model.provider,
-					},
-				}));
+				storeActions.setActiveSession(contextKey, {
+					stopSessionId,
+					provider: model.provider,
+				});
 
-				let frameId: number | null = null;
-				let baseMessages: ThreadMessageLike[] = [];
-				let pendingPartial: ThreadMessageLike | null = null;
-				let needsFlush = false;
+				const accumulator: StreamAccumulator = {
+					baseMessages: [],
+					pendingPartial: null,
+					needsFlush: false,
+					frameId: null,
+					fallbackTimerId: null,
+				};
 
-				const changesRefreshInterval = window.setInterval(() => {
+				// Refresh the Changes diff WHILE streaming. 7s (was 3s) cuts the
+				// recurring full Changes-section re-render burst during a turn;
+				// `cleanup` fires one FINAL refresh on stream end (any terminal arm
+				// or the RPC-reject catch) so the post-turn diff is fresh despite the
+				// longer interval.
+				const refreshChanges = () => {
+					if (!workingDirectory) return;
 					void queryClient.invalidateQueries({
-						queryKey: ["workspaceChanges"],
+						queryKey: helmorQueryKeys.workspaceChanges(
+							workingDirectory,
+							targetWorkspaceId,
+						),
 					});
-				}, 3_000);
-
-				const flushStreamMessages = () => {
-					frameId = null;
-					if (!needsFlush) return;
-					needsFlush = false;
-
-					const rendered = pendingPartial
-						? stabilizeStreamingMessages([...baseMessages, pendingPartial])
-						: baseMessages;
-					replaceStreamingTail(queryClient, cacheSessionId, userMessageId, [
-						optimisticUserMessage,
-						...rendered,
-					]);
 				};
 
-				const scheduleFlush = () => {
-					needsFlush = true;
-					if (frameId !== null) return;
-					frameId = window.requestAnimationFrame(() => flushStreamMessages());
-				};
+				const changesRefreshInterval = window.setInterval(
+					refreshChanges,
+					7_000,
+				);
 
-				const cleanup = () => {
-					window.clearInterval(changesRefreshInterval);
-					if (frameId !== null) {
-						window.cancelAnimationFrame(frameId);
-						frameId = null;
-					}
-				};
+				const flushers = createStreamFlushers({
+					accumulator,
+					queryClient,
+					cacheSessionId,
+					userMessageId,
+					optimisticUserMessage,
+					changesRefreshInterval,
+					onFinalChangesRefresh: refreshChanges,
+				});
+				const { flushStreamMessages, scheduleFlush } = flushers;
+				cleanup = flushers.cleanup;
 
 				await startAgentMessageStream(
 					{
@@ -1054,184 +988,79 @@ export function useConversationStreaming({
 						userMessageId,
 						files: filePaths,
 						images: imagePaths,
+						pastedTexts: pastedTexts.length > 0 ? pastedTexts : null,
 					},
-					(event) => {
-						if (event.kind === "update") {
-							baseMessages = event.messages;
-							pendingPartial = null;
-							scheduleFlush();
-							return;
-						}
-
-						if (event.kind === "streamingPartial") {
-							pendingPartial = event.message;
-							scheduleFlush();
-							return;
-						}
-
-						if (event.kind === "permissionRequest") {
-							rememberInteractionWorkspace(contextKey, targetWorkspaceId);
-							appendPendingPermission(contextKey, {
-								permissionId: event.permissionId,
-								toolName: event.toolName,
-								toolInput: event.toolInput,
-								title: event.title,
-								description: event.description,
-							});
-							return;
-						}
-
-						if (event.kind === "planCaptured") {
-							rememberInteractionWorkspace(contextKey, targetWorkspaceId);
-							setPlanReviewActive(contextKey);
-							return;
-						}
-
-						if (event.kind === "userInputRequest") {
-							// Non-terminal pause — the sidecar's parked SDK
-							// callback (canUseTool / onElicitation / Codex
-							// `requestUserInput` JSON-RPC handler) keeps the
-							// SDK process alive and the same stream channel
-							// open. Flush the pre-pause snapshot so the
-							// panel overlays on top of an up-to-date thread,
-							// refresh from DB to pick up turn rows persisted
-							// at this checkpoint, then surface the panel.
-							// We do NOT call `cleanup()` here — the
-							// changes-refresh interval keeps running because
-							// the stream isn't done.
-							rememberInteractionWorkspace(contextKey, targetWorkspaceId);
-							const nextUserInput = buildPendingUserInput(event, model.id);
-							flushStreamMessages();
-							refreshSessionThreadFromDb(cacheSessionId);
-							if (!nextUserInput) {
-								setSendErrorsByContext((current) => ({
-									...current,
-									[contextKey]:
-										"Unable to render user-input request: missing userInputId or modelId.",
-								}));
-								clearSendingState(contextKey);
-								return;
-							}
-							applyUserInputEvent(contextKey, nextUserInput);
-							return;
-						}
-
-						if (event.kind === "done" || event.kind === "aborted") {
-							if (frameId !== null) {
-								window.cancelAnimationFrame(frameId);
-								frameId = null;
-							}
-							flushStreamMessages();
-							cleanup();
-							clearPendingPermissions(contextKey);
-							clearPendingUserInput(contextKey);
-							clearFastPrelude(contextKey);
-
-							if (event.kind === "done") {
-								const sid = event.sessionId ?? targetSessionId;
-								if (sid && targetWorkspaceId) {
-									onSessionCompletedRef.current?.(sid, targetWorkspaceId);
-								}
-							} else if (event.kind === "aborted") {
-								const sid = event.sessionId ?? targetSessionId;
-								if (sid && targetWorkspaceId) {
-									onSessionAbortedRef.current?.(sid, targetWorkspaceId);
-								}
-							}
-
-							void queryClient.invalidateQueries({
-								queryKey: ["workspaceChanges"],
-							});
-
-							setLiveSessionsByContext((current) => ({
-								...current,
-								[contextKey]: {
-									provider: event.provider,
-									providerSessionId:
-										event.sessionId ??
-										current[contextKey]?.providerSessionId ??
-										null,
-								},
-							}));
-							clearSendingState(contextKey);
-
-							if (event.persisted) {
-								// Sidebar only — don't invalidate session messages
-								// here. The streaming snapshot IS the correct data
-								// and its message IDs differ from DB IDs, so a
-								// refetch would cause a full re-render flicker.
-								void invalidateConversationQueries(targetWorkspaceId, null);
-							}
-							return;
-						}
-
-						if (event.kind === "error") {
-							cleanup();
-							clearPendingPermissions(contextKey);
-							clearPendingUserInput(contextKey);
-							clearFastPrelude(contextKey);
-							if (event.internal) {
-								pushToast(
-									"Something went wrong. Please try again.",
-									"Error",
-									"destructive",
-								);
-							}
-							setSendErrorsByContext((current) => ({
-								...current,
-								[contextKey]:
-									event.internal || event.persisted ? null : event.message,
-							}));
-							clearSendingState(contextKey);
-
-							if (event.persisted) {
-								// Error path: DO invalidate session messages — the
-								// DB may have partial data that the snapshot doesn't
-								// reflect correctly.
-								void invalidateConversationQueries(
-									targetWorkspaceId,
-									targetSessionId,
-								);
-							} else {
-								restoreSnapshot(queryClient, cacheSessionId, rollbackSnapshot);
-								if (!isOverride) {
-									setComposerRestoreState({
-										contextKey,
-										draft: trimmedPrompt,
-										images: imagePaths,
-										files: filePaths,
-										customTags,
-										nonce: Date.now(),
-									});
-								}
-							}
-						}
-					},
+					createStreamEventDispatcher({
+						contextKey,
+						isOverride,
+						targetSessionId,
+						targetWorkspaceId,
+						cacheSessionId,
+						userMessageId,
+						trimmedPrompt,
+						imagePaths,
+						filePaths,
+						customTags,
+						model,
+						optimisticUserMessage,
+						rollbackSnapshot,
+						accumulator,
+						scheduleFlush,
+						flushStreamMessages,
+						cleanup,
+						rememberInteractionWorkspace,
+						appendPendingPermission,
+						setPlanReviewActive,
+						applyUserInputEvent,
+						clearPendingPermissions,
+						clearPendingUserInput,
+						clearFastPrelude,
+						clearSendingState,
+						invalidateConversationQueries,
+						refreshSessionThreadFromDb,
+						pushToast,
+						onSessionCompleted: onSessionCompletedRef.current,
+						onSessionAborted: onSessionAbortedRef.current,
+						storeActions: {
+							setSendError: storeActions.setSendError,
+							setLiveSession: storeActions.setLiveSession,
+							setComposerRestore: storeActions.setComposerRestore,
+						},
+						streamingStore,
+						queryClient,
+					}),
 				);
 			} catch (error) {
+				// LEAK FIX: the stream RPC rejected before the dispatcher's
+				// terminal event (done/error) could run cleanup(). cleanup()
+				// is the only thing that clears `changesRefreshInterval` (the
+				// 3s setInterval started above) and cancels the pending flush
+				// frame — without this call each failed send orphans a forever
+				// interval. `cleanup` is hoisted above the try so it's reachable
+				// here; it's idempotent (a later terminal event calling it again
+				// is a no-op).
+				cleanup?.();
 				console.error("[conversation] invoke error:", error);
 				const { code, message: errorMsg } = extractError(
 					error,
-					"Failed to send message.",
+					translateSource("composerFailedSendMessage"),
 				);
-				if (isRecoverableByPurge(code) && displayedWorkspaceId) {
+				if (isRecoverableByPurge(code) && targetWorkspaceId) {
 					showWorkspaceBrokenToast({
-						workspaceId: displayedWorkspaceId,
+						workspaceId: targetWorkspaceId,
 						pushToast,
 						queryClient,
 					});
 				}
-				setSendErrorsByContext((current) => ({
-					...current,
-					[contextKey]: errorMsg,
-				}));
+				storeActions.setSendError(contextKey, errorMsg);
 				if (!isOverride) {
-					setComposerRestoreState({
+					storeActions.setComposerRestore({
 						contextKey,
 						draft: trimmedPrompt,
 						images: imagePaths,
 						files: filePaths,
 						customTags,
+						editorState: editorStateSnapshot ?? null,
 						nonce: Date.now(),
 					});
 				}
@@ -1250,8 +1079,8 @@ export function useConversationStreaming({
 			composerContextKey,
 			displayedSessionId,
 			displayedWorkspaceId,
+			getSessionContextReferences,
 			invalidateConversationQueries,
-			liveSessionsByContext,
 			markSendingState,
 			pushToast,
 			queryClient,
@@ -1260,10 +1089,12 @@ export function useConversationStreaming({
 			selectionPending,
 			refreshSessionThreadFromDb,
 			setFastPreludeActive,
-			activeSessionByContext,
+			setPlanReviewActive,
 			activeStreams,
 			planReviewByContext,
 			followUpBehavior,
+			storeActions,
+			streamingStore,
 			submitQueue,
 		],
 	);
@@ -1308,7 +1139,9 @@ export function useConversationStreaming({
 			if (!item) return;
 
 			const ctx = item.context;
-			const liveStream = activeSessionByContext[ctx.contextKey] ?? null;
+			const liveStream =
+				streamingStore.getState().activeSessionByContext[ctx.contextKey] ??
+				null;
 
 			if (!liveStream) {
 				// No active turn to steer into — the turn must have ended
@@ -1335,23 +1168,23 @@ export function useConversationStreaming({
 				});
 				if (!response.accepted) {
 					submitQueue.enqueue(ctx, item.payload);
-					setSendErrorsByContext((current) => ({
-						...current,
-						[ctx.contextKey]: response.reason
+					storeActions.setSendError(
+						ctx.contextKey,
+						response.reason
 							? `Steer rejected: ${response.reason}`
 							: "Steer rejected — added back to the queue.",
-					}));
+					);
 				}
 			} catch (err) {
 				console.warn("[conversation] steer-from-queue failed:", err);
 				submitQueue.enqueue(ctx, item.payload);
-				setSendErrorsByContext((current) => ({
-					...current,
-					[ctx.contextKey]: err instanceof Error ? err.message : String(err),
-				}));
+				storeActions.setSendError(
+					ctx.contextKey,
+					err instanceof Error ? err.message : String(err),
+				);
 			}
 		},
-		[activeSessionByContext, submitQueue],
+		[storeActions, streamingStore, submitQueue],
 	);
 
 	const handleRemoveQueued = useCallback(
@@ -1363,11 +1196,35 @@ export function useConversationStreaming({
 		[submitQueue],
 	);
 
+	// Edit: pull this row back into the composer and drop it from the
+	// queue. Only this row is affected — sibling queued items stay put.
+	// Restore prefers the captured Lexical snapshot so badges (image / file
+	// / customTag) round-trip exactly as authored; the flattened fields are
+	// passed too as a defensive fallback if the snapshot can't be parsed.
+	const handleEditQueued = useCallback(
+		(itemId: string) => {
+			const item = submitQueue.findById(itemId);
+			if (!item) return;
+			submitQueue.remove(item.context.sessionId, itemId);
+			storeActions.setComposerRestore({
+				contextKey: item.context.contextKey,
+				draft: item.payload.prompt,
+				images: item.payload.imagePaths,
+				files: item.payload.filePaths,
+				customTags: item.payload.customTags,
+				editorState: item.payload.editorStateSnapshot ?? null,
+				nonce: Date.now(),
+			});
+		},
+		[storeActions, submitQueue],
+	);
+
 	const restoreActive = composerRestoreState?.contextKey === composerContextKey;
 
 	return {
 		activeSendError,
 		activeFastPreludes,
+		clearFastPrelude,
 		userInputResponsePending,
 		handleComposerSubmit,
 		handleUserInputResponse,
@@ -1375,12 +1232,16 @@ export function useConversationStreaming({
 		handleStopStream,
 		handleSteerQueued,
 		handleRemoveQueued,
+		handleEditQueued,
 		hasPlanReview,
 		isSending,
 		pendingUserInput,
 		pendingPermissions,
 		restoreCustomTags: restoreActive ? composerRestoreState.customTags : [],
 		restoreDraft: restoreActive ? composerRestoreState.draft : null,
+		restoreEditorState: restoreActive
+			? (composerRestoreState.editorState ?? null)
+			: null,
 		restoreFiles: restoreActive ? composerRestoreState.files : EMPTY_FILES,
 		restoreImages: restoreActive ? composerRestoreState.images : EMPTY_IMAGES,
 		restoreNonce: restoreActive ? composerRestoreState.nonce : 0,

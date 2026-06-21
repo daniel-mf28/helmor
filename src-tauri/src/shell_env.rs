@@ -230,16 +230,16 @@ mod unix {
         timeout: Duration,
     ) -> anyhow::Result<Vec<u8>> {
         use std::io::Read;
-        use std::os::unix::process::CommandExt;
 
-        let mut child = Command::new(program)
+        let mut command = Command::new(program);
+        command
             .args(args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            // Start in its own process group so we can kill it
-            // without also signalling ourselves.
-            .process_group(0)
+            .stderr(std::process::Stdio::null());
+        crate::platform::process::configure_tree_root(&mut command);
+
+        let mut child = command
             .spawn()
             .map_err(|e| anyhow::anyhow!("spawn `{program}`: {e}"))?;
 
@@ -274,8 +274,9 @@ mod unix {
                 }
                 Ok(None) => {
                     if std::time::Instant::now() >= deadline {
-                        // Kill the process group, not just the shell.
-                        unsafe { libc::kill(-(pid as libc::pid_t), libc::SIGKILL) };
+                        crate::platform::process::kill_tree(
+                            crate::platform::process::ProcessTree::from_child_pid(pid),
+                        );
                         let _ = child.wait();
                         anyhow::bail!(
                             "login shell env capture timed out after {}s",
@@ -334,9 +335,18 @@ mod unix {
             // Simulate: login shell has /opt/homebrew/bin:/usr/bin
             // Current process has /usr/bin:/plugin/bin
             // Result should be: /opt/homebrew/bin:/usr/bin:/plugin/bin
+            let original_path = std::env::var("PATH").ok();
             unsafe { std::env::set_var("PATH", "/usr/bin:/plugin/bin") };
             merge_path("/opt/homebrew/bin:/usr/bin");
             let result = std::env::var("PATH").unwrap();
+            // Restore PATH before asserting — leaving the mutated PATH
+            // behind breaks any later test that spawns shell commands
+            // (macOS keeps `sleep` etc. in /bin, which the mutated PATH
+            // lacks, so spawned `sh -c` scripts exit 127).
+            match original_path {
+                Some(p) => unsafe { std::env::set_var("PATH", p) },
+                None => unsafe { std::env::remove_var("PATH") },
+            }
             assert!(result.starts_with("/opt/homebrew/bin:/usr/bin"));
             assert!(result.contains("/plugin/bin"));
             // /usr/bin should appear only once
