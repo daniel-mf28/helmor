@@ -87,6 +87,14 @@ const MODEL_CATALOG: Record<Provider, readonly ProviderModelInfo[]> = {
 	],
 	codex: [
 		{
+			// Five reasoning levels: no `ultra`, and `none` is unsupported.
+			id: "gpt-6-astra",
+			label: "GPT-6 Astra",
+			cliModel: "gpt-6-astra",
+			effortLevels: ["low", "medium", "high", "xhigh", "max"],
+			supportsFastMode: true,
+		},
+		{
 			id: "gpt-5.6-sol",
 			label: "GPT-5.6 Sol",
 			cliModel: "gpt-5.6-sol",

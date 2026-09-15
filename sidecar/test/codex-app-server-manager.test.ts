@@ -279,9 +279,14 @@ describe("CodexAppServerManager", () => {
 
 		const models = await manager.listModels();
 
-		expect(models).toHaveLength(6);
+		expect(models).toHaveLength(7);
 		expect(models).toEqual(
 			expect.arrayContaining([
+				expect.objectContaining({
+					id: "gpt-6-astra",
+					effortLevels: ["low", "medium", "high", "xhigh", "max"],
+					supportsFastMode: true,
+				}),
 				expect.objectContaining({
 					id: "gpt-5.6-sol",
 					effortLevels: ["low", "medium", "high", "xhigh", "max", "ultra"],

@@ -105,6 +105,11 @@ export const CODEX_SHA256: Readonly<
 		arm64: "53ff1055d35ca3dc964e8bedc2431e46c00608f7c8e145b222122648a7a4e3e8",
 		x64: "642f0d23f13240526e306e7b9e8e1de2c0b251330b07ee25999bb6078b6401af",
 	},
+	// >= 0.153.1 is the floor for `gpt-6-astra`.
+	"0.154.0": {
+		arm64: "2a98662d79316a59993c7233e3e25a1aa1d42da4b45904585d33a5a7da1cade1",
+		x64: "92c493533c53c433c4d94252251daba4f379ccba06a9964d260abb47a535dce1",
+	},
 };
 
 export const CLAUDE_CODE_SHA256: Readonly<

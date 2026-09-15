@@ -37,7 +37,12 @@ pub struct AgentModelSection {
     pub options: Vec<AgentModelOption>,
 }
 
-const DEFAULT_CODEX_MODEL_IDS: &[&str] = &["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"];
+const DEFAULT_CODEX_MODEL_IDS: &[&str] = &[
+    "gpt-6-astra",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+];
 const DEFAULT_CLAUDE_MODEL_IDS: &[&str] =
     &["claude-fable-5[1m]", "claude-opus-5[1m]", "sonnet", "haiku"];
 
@@ -347,6 +352,13 @@ fn codex_section() -> AgentModelSection {
         label: "Codex".to_string(),
         status: AgentModelSectionStatus::Ready,
         options: vec![
+            // GPT-6 Astra. Five reasoning levels — `none` is explicitly
+            // unsupported upstream, and there is no `ultra` tier.
+            codex_model(
+                "gpt-6-astra",
+                "GPT-6 Astra",
+                &["low", "medium", "high", "xhigh", "max"],
+            ),
             codex_model(
                 "gpt-5.6-sol",
                 "GPT-5.6 Sol",
@@ -1060,6 +1072,7 @@ mod tests {
                 .map(|model| model.id.as_str())
                 .collect::<Vec<_>>(),
             vec![
+                "gpt-6-astra",
                 "gpt-5.6-sol",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna",
@@ -1072,9 +1085,10 @@ mod tests {
             .options
             .iter()
             .all(|model| model.supports_fast_mode));
+        // Astra leads the section and has no `ultra` tier.
         assert_eq!(
             sections[1].options[0].effort_levels,
-            vec!["low", "medium", "high", "xhigh", "max", "ultra"]
+            vec!["low", "medium", "high", "xhigh", "max"]
         );
         assert_eq!(
             sections[1].options[1].effort_levels,
@@ -1082,6 +1096,10 @@ mod tests {
         );
         assert_eq!(
             sections[1].options[2].effort_levels,
+            vec!["low", "medium", "high", "xhigh", "max", "ultra"]
+        );
+        assert_eq!(
+            sections[1].options[3].effort_levels,
             vec!["low", "medium", "high", "xhigh", "max"]
         );
 
@@ -1307,6 +1325,7 @@ mod tests {
                 .map(|o| o.id.as_str())
                 .collect::<Vec<_>>(),
             vec![
+                "gpt-6-astra",
                 "gpt-5.6-sol",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna",

@@ -5,18 +5,19 @@ describe("Codex model catalog", () => {
 	test("lists the GPT-5.6 family with its runtime effort levels", () => {
 		const models = listProviderModels("codex");
 
-		expect(models.slice(0, 3).map((model) => model.id)).toEqual([
+		expect(models.slice(0, 4).map((model) => model.id)).toEqual([
+			"gpt-6-astra",
 			"gpt-5.6-sol",
 			"gpt-5.6-terra",
 			"gpt-5.6-luna",
 		]);
+		// Astra tops the list and has no `ultra` tier.
 		expect(models[0]?.effortLevels).toEqual([
 			"low",
 			"medium",
 			"high",
 			"xhigh",
 			"max",
-			"ultra",
 		]);
 		expect(models[1]?.effortLevels).toEqual([
 			"low",
@@ -27,6 +28,14 @@ describe("Codex model catalog", () => {
 			"ultra",
 		]);
 		expect(models[2]?.effortLevels).toEqual([
+			"low",
+			"medium",
+			"high",
+			"xhigh",
+			"max",
+			"ultra",
+		]);
+		expect(models[3]?.effortLevels).toEqual([
 			"low",
 			"medium",
 			"high",
