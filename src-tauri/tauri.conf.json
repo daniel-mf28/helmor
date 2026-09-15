@@ -53,8 +53,8 @@
 	},
 	"bundle": {
 		"active": true,
-		"createUpdaterArtifacts": true,
-		"targets": "all",
+		"createUpdaterArtifacts": false,
+		"targets": ["app", "dmg"],
 		"externalBin": ["../sidecar/dist/helmor-sidecar"],
 		"resources": {
 			"../sidecar/dist/vendor/": "vendor"
