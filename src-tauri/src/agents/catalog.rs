@@ -173,7 +173,12 @@ fn codex_custom_sections(
                 continue;
             }
             let model_id = crate::provider::codex::model_id(instance_id, wire);
-            if !crate::provider::is_enabled(codex_enabled, &model_id) {
+            // The local server is exempt from the Codex enabled-ids filter: it
+            // appears only while it is actually running, and a user who just
+            // started it in Settings expects it in the picker immediately —
+            // not after a second opt-in in the Models panel.
+            let is_local = instance_id == crate::provider::codex::LOCAL_INSTANCE_ID;
+            if !is_local && !crate::provider::is_enabled(codex_enabled, &model_id) {
                 continue;
             }
             let model_label = if model.label.trim().is_empty() {
@@ -254,10 +259,17 @@ fn codex_custom_model(
         label: label.to_string(),
         cli_model: wire_model.to_string(),
         provider_key: None,
-        effort_levels: ["low", "medium", "high", "xhigh"]
-            .into_iter()
-            .map(str::to_string)
-            .collect(),
+        // The bundled local server runs with reasoning disabled
+        // (`REASONING_MODE = "off"`), so an effort switch there would be a
+        // no-op control. Every other custom endpoint keeps the Codex tiers.
+        effort_levels: if instance_id == crate::provider::codex::LOCAL_INSTANCE_ID {
+            Vec::new()
+        } else {
+            ["low", "medium", "high", "xhigh"]
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        },
         // serviceTier=fast is a ChatGPT-only feature; custom endpoints ignore/reject it.
         supports_fast_mode: false,
         supports_context_usage: true,
@@ -971,7 +983,7 @@ pub fn resolve_model(model_id: &str, provider_hint: Option<&str>) -> ResolvedMod
                 id: model.instance_id,
                 base_url: model.base_url,
                 api_key: model.api_key,
-                wire_api: "responses".to_string(),
+                wire_api: model.wire_api,
                 wire_model: model.cli_model,
             }),
         };
@@ -1248,6 +1260,27 @@ mod tests {
         assert!(!opt.supports_fast_mode);
         assert!(opt.supports_context_usage);
         assert_eq!(opt.effort_levels, vec!["low", "medium", "high", "xhigh"]);
+    }
+
+    #[test]
+    fn local_llm_section_ignores_codex_enabled_filter() {
+        // A user with an explicit Codex enabled-list must still see the local
+        // server the moment it starts — no second opt-in in the Models panel.
+        let local = codex_custom(
+            crate::provider::codex::LOCAL_INSTANCE_ID,
+            "Local LLM",
+            &["helmor-local"],
+        );
+        let sections = codex_custom_sections(
+            vec![local, codex_custom("hundun", "Hundun", &["gpt-5.5"])],
+            Some(&["codex:hundun|gpt-5.5".to_string()]),
+        );
+        let local_section = sections
+            .iter()
+            .find(|s| s.id == "codex:helmor-local")
+            .expect("local section present despite filter");
+        assert_eq!(local_section.label, "Local LLM");
+        assert_eq!(local_section.options[0].cli_model, "helmor-local");
     }
 
     #[test]

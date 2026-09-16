@@ -23,6 +23,10 @@ pub struct CodexProviderModel {
     pub cli_model: String,
     pub base_url: String,
     pub api_key: String,
+    /// Codex `wire_api`: "responses" (default) or "chat". The bundled
+    /// `llama-server` only speaks OpenAI chat-completions, so the local
+    /// provider pins "chat".
+    pub wire_api: String,
 }
 
 pub fn provider_id(instance_id: &str) -> String {
@@ -42,11 +46,60 @@ pub fn list() -> Vec<CustomProvider> {
 }
 
 /// Usable providers (non-empty id + base_url). API key may be empty.
+///
+/// The bundled local-LLM server is appended as a synthetic provider when it is
+/// actually running, so the composer picker, `resolve`, and the Settings model
+/// list all see it without any extra plumbing. It is never persisted — it
+/// disappears from every catalog the moment `llama-server` stops.
 pub fn load_providers() -> Vec<CustomProvider> {
-    list()
+    let mut providers: Vec<CustomProvider> = list()
         .into_iter()
         .filter(CustomProvider::is_usable)
-        .collect()
+        .collect();
+    if let Some(local) = local_llm_provider() {
+        // A hand-rolled provider with the same id wins — never shadow user config.
+        if !providers.iter().any(|p| p.id() == local.id()) {
+            providers.push(local);
+        }
+    }
+    providers
+}
+
+/// Synthetic provider id for the bundled local-LLM server.
+pub const LOCAL_INSTANCE_ID: &str = "helmor-local";
+
+/// Build the synthetic local-LLM provider, or `None` when the bundled server
+/// isn't currently serving (disabled, no model selected, stopped, crashed).
+fn local_llm_provider() -> Option<CustomProvider> {
+    let endpoint = crate::local_llm::current_endpoint()?;
+    let settings = crate::local_llm::load_settings();
+    if !settings.enabled {
+        return None;
+    }
+    let label = std::path::Path::new(settings.model.trim())
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("Local model")
+        .to_string();
+    Some(CustomProvider {
+        id: LOCAL_INSTANCE_ID.to_string(),
+        name: "Local LLM".to_string(),
+        // `/v1` matches the base-url convention every other Codex provider
+        // uses (`fetch_models` appends `/models` to it).
+        base_url: format!("{}/v1", endpoint.url.trim_end_matches('/')),
+        api_key: endpoint.token,
+        // llama-server has no Responses API.
+        api_style: Some("chat".to_string()),
+        models: vec![CustomProviderModel {
+            // The alias llama-server advertises; the real GGUF is whatever the
+            // Local LLM settings panel loaded.
+            slug: endpoint.api_model,
+            label,
+            effort_levels: Vec::new(),
+        }],
+        ..CustomProvider::default()
+    })
 }
 
 /// Every enabled model across every configured provider.
@@ -63,6 +116,11 @@ pub fn models_for_providers(providers: Vec<CustomProvider>) -> Vec<CodexProvider
             continue;
         }
         let api_key = provider.api_key.trim();
+        // Only "chat" is an opt-in; anything else stays on the Codex default.
+        let wire_api = match provider.api_style.as_deref().map(str::trim) {
+            Some("chat") => "chat",
+            _ => "responses",
+        };
         let provider_id = provider_id(instance_id);
         let enabled = provider.enabled_model_ids.as_deref();
         let mut seen = std::collections::HashSet::new();
@@ -81,6 +139,7 @@ pub fn models_for_providers(providers: Vec<CustomProvider>) -> Vec<CodexProvider
                 cli_model: wire.to_string(),
                 base_url: base_url.to_string(),
                 api_key: api_key.to_string(),
+                wire_api: wire_api.to_string(),
             });
         }
     }
@@ -253,6 +312,17 @@ mod tests {
         assert_eq!(models[0].provider, "codex:hundun");
         assert_eq!(models[0].instance_id, "hundun");
         assert_eq!(models[0].cli_model, "gpt-5.5");
+    }
+
+    #[test]
+    fn wire_api_defaults_to_responses_and_honours_chat() {
+        let default = models_for_providers(vec![provider("hundun", &["gpt-5.5"])]);
+        assert_eq!(default[0].wire_api, "responses");
+
+        let mut chat = provider("local", &["helmor-local"]);
+        chat.api_style = Some("chat".to_string());
+        let chat = models_for_providers(vec![chat]);
+        assert_eq!(chat[0].wire_api, "chat");
     }
 
     #[test]

@@ -8,6 +8,7 @@ pub mod asset_provider;
 pub mod catalog;
 mod chat;
 mod context;
+pub mod endpoint_registry;
 pub mod gguf;
 pub mod hardware;
 mod manager;
@@ -21,6 +22,7 @@ pub use catalog::CatalogEntry;
 pub use context::{
     compute_default_context_for_meta, custom_override_key, set_context_override, MIN_CONTEXT_TOKENS,
 };
+pub use endpoint_registry::current as current_endpoint;
 pub use hardware::HardwareSnapshot;
 pub use manager::{sweep_orphan_server, Manager};
 pub use settings::{load_settings, set_active_model_path, Endpoint, Settings, Status};

@@ -1,3 +1,14 @@
+> **⚠️ Fork notice — upstream Helmor is no longer maintained.**
+>
+> The original project (`dohooo/helmor`) is unmaintained. This repository
+> (`daniel-mf28/helmor`) is our own independent fork and the only source of
+> truth for our work. All development, issues, PRs, and releases happen here.
+>
+> Do not expect upstream fixes, upstream releases, or upstream support. Do not
+> open PRs against `dohooo/helmor`. Anything we build is ours to maintain
+> locally — including divergence from upstream APIs, docs, and links in this
+> README (Discord, docs site, release badges) which point at the dead upstream.
+
 <p align="center">
   <img src="src/assets/helmor-logo-light.png" alt="Helmor logo" width="120" />
 </p>
