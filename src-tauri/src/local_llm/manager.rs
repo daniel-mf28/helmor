@@ -125,6 +125,7 @@ impl Manager {
                 return Some(f(running));
             }
             *server = None;
+            super::endpoint_registry::publish(None);
         }
         None
     }
@@ -135,6 +136,9 @@ impl Manager {
     fn kill_server(&self) {
         let mut server = self.server.lock().unwrap_or_else(|p| p.into_inner());
         let _ = server.take();
+        // Keep the catalog's view in sync: a dead server must not stay
+        // selectable in the composer picker.
+        super::endpoint_registry::publish(None);
     }
 
     fn ensure_started(&self, model: &str) -> Result<()> {
@@ -158,6 +162,14 @@ impl Manager {
         let token = instance.token.clone();
         *self.server.lock().unwrap_or_else(|p| p.into_inner()) = Some(instance);
         *self.last_error.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        // Publish before warmup: the picker may list the model a few seconds
+        // before the first cold-load completes, which is the same window the
+        // settings panel already shows as "running".
+        super::endpoint_registry::publish(Some(Endpoint {
+            url: endpoint.clone(),
+            token: token.clone(),
+            api_model: API_MODEL.to_string(),
+        }));
         // Fire-and-forget warmup (cold load ~5–10s). Failures write to `last_error`
         // so the UI doesn't show a green pill on a wedged server.
         spawn_warmup(

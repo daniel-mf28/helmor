@@ -55,6 +55,7 @@ import {
 	subscribeLocalLlmDownloads,
 } from "@/lib/api";
 import { I18nText, useI18n, useLocalizedNode } from "@/lib/i18n";
+import { helmorQueryKeys } from "@/lib/query-client";
 import type { AppSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import { SettingsReleaseBadge } from "../components/release-marker";
@@ -88,6 +89,17 @@ export function LocalLlmPanel({
 		refetchInterval: 2000,
 	});
 	const status = statusQuery.data;
+	// The composer's model picker lists the local model only while the
+	// bundled server is actually serving, so refresh that catalog on every
+	// running <-> stopped flip. Without this the user starts the server here
+	// and the picker stays stale until the next app launch.
+	const running = Boolean(status?.running);
+	const runningModel = running ? status?.model : "";
+	useEffect(() => {
+		queryClient.invalidateQueries({
+			queryKey: helmorQueryKeys.agentModelSections,
+		});
+	}, [queryClient, running, runningModel]);
 	const catalogQuery = useQuery({
 		queryKey: LOCAL_LLM_CATALOG_KEY,
 		queryFn: listLocalLlmCatalog,
@@ -177,7 +189,6 @@ export function LocalLlmPanel({
 	});
 
 	const pending = toggleMutation.isPending;
-	const running = Boolean(status?.running);
 	const starting = Boolean(status?.starting);
 
 	// Match the currently active model setting to a catalog entry by

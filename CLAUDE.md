@@ -2,6 +2,14 @@
 
 This file provides guidance to AI coding agents working with code in this repository.
 
+## ⚠️ Upstream is dead — this is our fork
+
+Upstream `dohooo/helmor` is no longer maintained. `daniel-mf28/helmor` (remote
+`origin`) is our own independent fork and the only source of truth. All work,
+branches, PRs, and releases stay here. Never target upstream with a PR, never
+wait on an upstream fix, and assume no upstream review will ever happen. We own
+every change we make, including ones that diverge from upstream.
+
 ## What is Helmor
 
 Helmor is a local-first desktop app built with **Tauri v2** (Rust backend) + **React 19** + **Vite** + **TypeScript**. It provides a workspace management UI with its own SQLite database (`~/helmor/` in release, `~/helmor-dev/` in debug), letting users browse workspaces/sessions/messages and send prompts to AI agents (Claude Code CLI, OpenAI Codex CLI) via streaming IPC.
