@@ -38,7 +38,9 @@ pub struct AgentModelSection {
 }
 
 const DEFAULT_CODEX_MODEL_IDS: &[&str] = &[
+    "gpt-6-sol",
     "gpt-6-astra",
+    "gpt-6-luna",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
@@ -366,11 +368,23 @@ fn codex_section() -> AgentModelSection {
         label: "Codex".to_string(),
         status: AgentModelSectionStatus::Ready,
         options: vec![
+            // GPT-6 Sol. Six reasoning levels, same set as GPT-5.6 Sol.
+            codex_model(
+                "gpt-6-sol",
+                "GPT-6 Sol",
+                &["low", "medium", "high", "xhigh", "max", "ultra"],
+            ),
             // GPT-6 Astra. Five reasoning levels — `none` is explicitly
             // unsupported upstream, and there is no `ultra` tier.
             codex_model(
                 "gpt-6-astra",
                 "GPT-6 Astra",
+                &["low", "medium", "high", "xhigh", "max"],
+            ),
+            // GPT-6 Luna. Five reasoning levels — no `ultra` tier.
+            codex_model(
+                "gpt-6-luna",
+                "GPT-6 Luna",
                 &["low", "medium", "high", "xhigh", "max"],
             ),
             codex_model(
@@ -1087,7 +1101,9 @@ mod tests {
                 .map(|model| model.id.as_str())
                 .collect::<Vec<_>>(),
             vec![
+                "gpt-6-sol",
                 "gpt-6-astra",
+                "gpt-6-luna",
                 "gpt-5.6-sol",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna",
@@ -1100,21 +1116,29 @@ mod tests {
             .options
             .iter()
             .all(|model| model.supports_fast_mode));
-        // Astra leads the section and has no `ultra` tier.
+        // GPT-6 Sol leads; Astra and both Lunas have no `ultra` tier.
         assert_eq!(
             sections[1].options[0].effort_levels,
-            vec!["low", "medium", "high", "xhigh", "max"]
+            vec!["low", "medium", "high", "xhigh", "max", "ultra"]
         );
         assert_eq!(
             sections[1].options[1].effort_levels,
-            vec!["low", "medium", "high", "xhigh", "max", "ultra"]
+            vec!["low", "medium", "high", "xhigh", "max"]
         );
         assert_eq!(
             sections[1].options[2].effort_levels,
-            vec!["low", "medium", "high", "xhigh", "max", "ultra"]
+            vec!["low", "medium", "high", "xhigh", "max"]
         );
         assert_eq!(
             sections[1].options[3].effort_levels,
+            vec!["low", "medium", "high", "xhigh", "max", "ultra"]
+        );
+        assert_eq!(
+            sections[1].options[4].effort_levels,
+            vec!["low", "medium", "high", "xhigh", "max", "ultra"]
+        );
+        assert_eq!(
+            sections[1].options[5].effort_levels,
             vec!["low", "medium", "high", "xhigh", "max"]
         );
 
@@ -1341,7 +1365,9 @@ mod tests {
                 .map(|o| o.id.as_str())
                 .collect::<Vec<_>>(),
             vec![
+                "gpt-6-sol",
                 "gpt-6-astra",
+                "gpt-6-luna",
                 "gpt-5.6-sol",
                 "gpt-5.6-terra",
                 "gpt-5.6-luna",
