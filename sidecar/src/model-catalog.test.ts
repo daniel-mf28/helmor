@@ -2,45 +2,27 @@ import { describe, expect, test } from "bun:test";
 import { listProviderModels, pickFastestCodexModel } from "./model-catalog.js";
 
 describe("Codex model catalog", () => {
-	test("lists the GPT-5.6 family with its runtime effort levels", () => {
+	test("lists the GPT-6 and GPT-5.6 families with its runtime effort levels", () => {
 		const models = listProviderModels("codex");
 
-		expect(models.slice(0, 4).map((model) => model.id)).toEqual([
+		expect(models.slice(0, 6).map((model) => model.id)).toEqual([
+			"gpt-6-sol",
 			"gpt-6-astra",
+			"gpt-6-luna",
 			"gpt-5.6-sol",
 			"gpt-5.6-terra",
 			"gpt-5.6-luna",
 		]);
-		// Astra tops the list and has no `ultra` tier.
-		expect(models[0]?.effortLevels).toEqual([
-			"low",
-			"medium",
-			"high",
-			"xhigh",
-			"max",
-		]);
-		expect(models[1]?.effortLevels).toEqual([
-			"low",
-			"medium",
-			"high",
-			"xhigh",
-			"max",
-			"ultra",
-		]);
-		expect(models[2]?.effortLevels).toEqual([
-			"low",
-			"medium",
-			"high",
-			"xhigh",
-			"max",
-			"ultra",
-		]);
-		expect(models[3]?.effortLevels).toEqual([
-			"low",
-			"medium",
-			"high",
-			"xhigh",
-			"max",
+		// GPT-6 Sol leads; Astra and both Lunas have no `ultra` tier.
+		const six = ["low", "medium", "high", "xhigh", "max", "ultra"];
+		const five = ["low", "medium", "high", "xhigh", "max"];
+		expect(models.slice(0, 6).map((model) => model.effortLevels)).toEqual([
+			six,
+			five,
+			five,
+			six,
+			six,
+			five,
 		]);
 	});
 

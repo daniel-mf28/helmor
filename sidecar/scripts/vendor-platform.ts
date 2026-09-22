@@ -110,6 +110,12 @@ export const CODEX_SHA256: Readonly<
 		arm64: "2a98662d79316a59993c7233e3e25a1aa1d42da4b45904585d33a5a7da1cade1",
 		x64: "92c493533c53c433c4d94252251daba4f379ccba06a9964d260abb47a535dce1",
 	},
+	// >= 0.155.0 is the floor for `gpt-6-sol` / `gpt-6-luna` (the model
+	// catalog hides both from older clients).
+	"0.155.1": {
+		arm64: "93cc218b25b71c8da3edb50a013fbd22acf8f39058fb64083fefff638a084976",
+		x64: "819db6dbb57a56cc21383a30331fc4115696e02f4c47ba7f686a285a2173fadd",
+	},
 };
 
 export const CLAUDE_CODE_SHA256: Readonly<
