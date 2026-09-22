@@ -183,6 +183,12 @@ export const CLAUDE_CODE_SHA256: Readonly<
 		arm64: "36a0a1e56ac982f3122c88fc836f69a9d139975ceb9b5ddf44e2b01f75998bda",
 		x64: "970f8f3c79063f0dae7e42fe7876c14e2c704764409cf814bb21b48a068c4dc8",
 	},
+	// 2.1.280 is the floor for `claude-opus-5-5` (it landed there and became
+	// the CLI's default Opus).
+	"2.1.280": {
+		arm64: "76170ceef79015e118fdea65e3b11663342153d3559f301ab8e6a7dfecc7f4a3",
+		x64: "8e19957ce6ac24677a3cb2a7b2b717fbbe36db3871a3e84d534fb0cbdfe02d6f",
+	},
 };
 
 export const OPENCODE_SHA256: Readonly<

@@ -43,8 +43,13 @@ const DEFAULT_CODEX_MODEL_IDS: &[&str] = &[
     "gpt-5.6-terra",
     "gpt-5.6-luna",
 ];
-const DEFAULT_CLAUDE_MODEL_IDS: &[&str] =
-    &["claude-fable-5[1m]", "claude-opus-5[1m]", "sonnet", "haiku"];
+const DEFAULT_CLAUDE_MODEL_IDS: &[&str] = &[
+    "claude-fable-5[1m]",
+    "claude-opus-5-5[1m]",
+    "claude-opus-5[1m]",
+    "sonnet",
+    "haiku",
+];
 
 /// The composer/CLI picker catalog: full catalog with the user's model
 /// selection applied. Empty sections are omitted.
@@ -305,13 +310,22 @@ fn official_claude_section() -> AgentModelSection {
                 &["low", "medium", "high", "xhigh", "max"],
                 false,
             ),
-            // Pinned to the explicit `claude-opus-5[1m]` wire id —
+            // Pinned to the explicit `claude-opus-5-5[1m]` wire id —
             // the `[1m]` suffix selects the 1M-context variant, matching the
             // label. We do NOT use the CLI's `default` sentinel: it resolves to
             // whatever the bundled claude-code decides (non-deterministic
             // across CLI bumps), whereas a pinned id is stable. Bump when a
-            // newer Opus ships. MUST stay in sync with
-            // `sidecar/src/model-catalog.ts`.
+            // newer Opus ships. Requires claude-code >= 2.1.280. MUST stay in
+            // sync with `sidecar/src/model-catalog.ts`.
+            claude_model(
+                "claude-opus-5-5[1m]",
+                "Opus 5.5 1M",
+                &["low", "medium", "high", "xhigh", "max"],
+                true,
+            ),
+            // Opus 5 stays on by default alongside 5.5 as the cheaper Opus
+            // pick ($5/$25 vs 5.5's $4/$20 is close, but 5 remains useful for
+            // sessions already pinned to it).
             claude_model(
                 "claude-opus-5[1m]",
                 "Opus 5 1M",
@@ -319,8 +333,8 @@ fn official_claude_section() -> AgentModelSection {
                 true,
             ),
             // Explicit 4.8 pin — previously this slot was the pinned newest
-            // Opus; now that Opus 5 has it, 4.8 stays in the catalog (off by
-            // default) so users can re-enable it from settings.
+            // Opus; now that the Opus 5 line has it, 4.8 stays in the catalog
+            // (off by default) so users can re-enable it from settings.
             claude_model(
                 "claude-opus-4-8[1m]",
                 "Opus 4.8 1M",
@@ -1050,6 +1064,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 "claude-fable-5[1m]",
+                "claude-opus-5-5[1m]",
                 "claude-opus-5[1m]",
                 "claude-opus-4-8[1m]",
                 "claude-opus-4-7[1m]",
@@ -1146,6 +1161,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 "claude-fable-5[1m]",
+                "claude-opus-5-5[1m]",
                 "claude-opus-5[1m]",
                 "claude-opus-4-8[1m]",
                 "claude-opus-4-7[1m]",
@@ -1156,14 +1172,14 @@ mod tests {
             ]
         );
         assert_eq!(
-            sections[0].options[7].provider_key.as_deref(),
+            sections[0].options[8].provider_key.as_deref(),
             Some("minimax")
         );
         assert_eq!(
-            sections[0].options[7].effort_levels,
+            sections[0].options[8].effort_levels,
             vec!["low", "medium", "high", "xhigh", "max"]
         );
-        assert!(!sections[0].options[7].supports_context_usage);
+        assert!(!sections[0].options[8].supports_context_usage);
         assert_eq!(sections[1].id, "codex");
     }
 
@@ -1339,7 +1355,13 @@ mod tests {
                 .iter()
                 .map(|o| o.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["claude-fable-5[1m]", "claude-opus-5[1m]", "sonnet", "haiku",]
+            vec![
+                "claude-fable-5[1m]",
+                "claude-opus-5-5[1m]",
+                "claude-opus-5[1m]",
+                "sonnet",
+                "haiku",
+            ]
         );
     }
 
@@ -1712,17 +1734,19 @@ mod tests {
         let sections = model_sections_for_inputs(Vec::new(), Vec::new(), None, None, None);
         let claude = sections.iter().find(|s| s.id == "claude").unwrap();
         let ids: Vec<&str> = claude.options.iter().map(|o| o.id.as_str()).collect();
-        // User-facing ordering: Fable 5 on top, then 5 (default), 4.8, 4.7, 4.6.
+        // User-facing ordering: Fable 5 on top, then 5.5 (default), 5, 4.8,
+        // 4.7, 4.6.
         assert_eq!(
-            &ids[..5],
+            &ids[..6],
             &[
                 "claude-fable-5[1m]",
+                "claude-opus-5-5[1m]",
                 "claude-opus-5[1m]",
                 "claude-opus-4-8[1m]",
                 "claude-opus-4-7[1m]",
                 "claude-opus-4-6[1m]"
             ],
-            "Fable 5 must lead, with Opus 5 (default) / 4.8 / 4.7 / 4.6 beneath it"
+            "Fable 5 must lead, with Opus 5.5 (default) / 5 / 4.8 / 4.7 / 4.6 beneath it"
         );
 
         // Fable 5: most capable, leads the list, but is NOT the app default
@@ -1737,26 +1761,36 @@ mod tests {
             vec!["low", "medium", "high", "xhigh", "max"]
         );
 
-        // Opus 5: the app default selection, supports fast mode, and keeps
+        // Opus 5.5: the app default selection, supports fast mode, and keeps
         // the xhigh effort tier. Pinned to its explicit `[1m]` wire id.
         let default = &claude.options[1];
-        assert_eq!(default.label, "Opus 5 1M");
-        assert_eq!(default.cli_model, "claude-opus-5[1m]");
-        assert!(default.supports_fast_mode, "Opus 5 supports fast mode");
+        assert_eq!(default.label, "Opus 5.5 1M");
+        assert_eq!(default.cli_model, "claude-opus-5-5[1m]");
+        assert!(default.supports_fast_mode, "Opus 5.5 supports fast mode");
         assert_eq!(
             default.effort_levels,
             vec!["low", "medium", "high", "xhigh", "max"]
         );
 
+        // Opus 5: stays default-enabled beneath 5.5 as the cheaper Opus pick.
+        let opus5 = &claude.options[2];
+        assert_eq!(opus5.label, "Opus 5 1M");
+        assert_eq!(opus5.cli_model, "claude-opus-5[1m]");
+        assert!(opus5.supports_fast_mode, "Opus 5 supports fast mode");
+        assert_eq!(
+            opus5.effort_levels,
+            vec!["low", "medium", "high", "xhigh", "max"]
+        );
+
         // Opus 4.8: still in the catalog so users can re-enable it from
         // settings, though it is no longer in the default-enabled set.
-        let prev = &claude.options[2];
+        let prev = &claude.options[3];
         assert_eq!(prev.label, "Opus 4.8 1M");
         assert_eq!(prev.cli_model, "claude-opus-4-8[1m]");
         assert!(prev.supports_fast_mode, "Opus 4.8 supports fast mode");
 
         // Explicit 4.7 pin: same effort tiers as before, still no fast mode.
-        let opus47 = &claude.options[3];
+        let opus47 = &claude.options[4];
         assert_eq!(opus47.label, "Opus 4.7 1M");
         assert_eq!(opus47.cli_model, "claude-opus-4-7[1m]");
         assert!(!opus47.supports_fast_mode);
@@ -1766,7 +1800,7 @@ mod tests {
         );
 
         // 4.6 unchanged.
-        let opus46 = &claude.options[4];
+        let opus46 = &claude.options[5];
         assert_eq!(opus46.label, "Opus 4.6 1M");
         assert!(opus46.supports_fast_mode);
     }

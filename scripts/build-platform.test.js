@@ -103,8 +103,9 @@ describe("build platform boundary", () => {
 		expect(config.bundle.resources).toEqual({
 			"../sidecar/dist/vendor/": "vendor",
 		});
-		expect(config.bundle.createUpdaterArtifacts).toBe(true);
-		expect(config.bundle.targets).toBe("all");
+		// This fork builds a local .app/.dmg only — no updater artifacts.
+		expect(config.bundle.createUpdaterArtifacts).toBe(false);
+		expect(config.bundle.targets).toEqual(["app", "dmg"]);
 		expect(config.bundle.macOS).toEqual({
 			entitlements: "Entitlements.plist",
 		});
