@@ -10,6 +10,11 @@ branches, PRs, and releases stay here. Never target upstream with a PR, never
 wait on an upstream fix, and assume no upstream review will ever happen. We own
 every change we make, including ones that diverge from upstream.
 
+**Adding a model or reinstalling Daniel's local app?** Follow
+`docs/fork-local-updates.md` exactly, and install only via
+`scripts/fork/install-local-app.sh --detach`. Never use `launchctl submit`
+(it caused a quit/reopen/backup loop).
+
 ## What is Helmor
 
 Helmor is a local-first desktop app built with **Tauri v2** (Rust backend) + **React 19** + **Vite** + **TypeScript**. It provides a workspace management UI with its own SQLite database (`~/helmor/` in release, `~/helmor-dev/` in debug), letting users browse workspaces/sessions/messages and send prompts to AI agents (Claude Code CLI, OpenAI Codex CLI, OpenCode) via streaming IPC.
