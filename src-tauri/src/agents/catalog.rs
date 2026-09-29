@@ -49,6 +49,7 @@ const DEFAULT_CLAUDE_MODEL_IDS: &[&str] = &[
     "claude-fable-5[1m]",
     "claude-opus-5-5[1m]",
     "claude-opus-5[1m]",
+    "claude-sonnet-5-5[1m]",
     "sonnet",
     "haiku",
 ];
@@ -355,6 +356,15 @@ fn official_claude_section() -> AgentModelSection {
                 "Opus 4.6 1M",
                 &["low", "medium", "high", "max"],
                 true,
+            ),
+            // Pinned Sonnet 5.5 (native 1M context). All five effort levels,
+            // no fast mode (Opus only). Requires claude-code >= 2.1.284. MUST
+            // stay in sync with `sidecar/src/model-catalog.ts`.
+            claude_model(
+                "claude-sonnet-5-5[1m]",
+                "Sonnet 5.5 1M",
+                &["low", "medium", "high", "xhigh", "max"],
+                false,
             ),
             claude_model("sonnet", "Sonnet", &["low", "medium", "high", "max"], false),
             claude_model("haiku", "Haiku", &[], false),
@@ -1083,6 +1093,7 @@ mod tests {
                 "claude-opus-4-8[1m]",
                 "claude-opus-4-7[1m]",
                 "claude-opus-4-6[1m]",
+                "claude-sonnet-5-5[1m]",
                 "sonnet",
                 "haiku"
             ]
@@ -1190,20 +1201,21 @@ mod tests {
                 "claude-opus-4-8[1m]",
                 "claude-opus-4-7[1m]",
                 "claude-opus-4-6[1m]",
+                "claude-sonnet-5-5[1m]",
                 "sonnet",
                 "haiku",
                 "claude-custom|minimax|MiniMax-M2.7",
             ]
         );
         assert_eq!(
-            sections[0].options[8].provider_key.as_deref(),
+            sections[0].options[9].provider_key.as_deref(),
             Some("minimax")
         );
         assert_eq!(
-            sections[0].options[8].effort_levels,
+            sections[0].options[9].effort_levels,
             vec!["low", "medium", "high", "xhigh", "max"]
         );
-        assert!(!sections[0].options[8].supports_context_usage);
+        assert!(!sections[0].options[9].supports_context_usage);
         assert_eq!(sections[1].id, "codex");
     }
 
@@ -1385,6 +1397,7 @@ mod tests {
                 "claude-fable-5[1m]",
                 "claude-opus-5-5[1m]",
                 "claude-opus-5[1m]",
+                "claude-sonnet-5-5[1m]",
                 "sonnet",
                 "haiku",
             ]
@@ -1829,6 +1842,16 @@ mod tests {
         let opus46 = &claude.options[5];
         assert_eq!(opus46.label, "Opus 4.6 1M");
         assert!(opus46.supports_fast_mode);
+
+        // Sonnet 5.5: pinned 1M id, all five effort tiers, no fast mode.
+        let sonnet55 = &claude.options[6];
+        assert_eq!(sonnet55.label, "Sonnet 5.5 1M");
+        assert_eq!(sonnet55.cli_model, "claude-sonnet-5-5[1m]");
+        assert!(!sonnet55.supports_fast_mode);
+        assert_eq!(
+            sonnet55.effort_levels,
+            vec!["low", "medium", "high", "xhigh", "max"]
+        );
     }
 
     #[test]

@@ -81,6 +81,15 @@ const MODEL_CATALOG: Record<Provider, readonly ProviderModelInfo[]> = {
 			effortLevels: ["low", "medium", "high", "max"],
 			supportsFastMode: true,
 		},
+		// Pinned Sonnet 5.5 (native 1M context). All five effort levels, no
+		// fast mode (the CLI lists `fast_mode` for Opus only). Requires
+		// claude-code >= 2.1.284. MUST stay in sync with the Rust catalog.
+		{
+			id: "claude-sonnet-5-5[1m]",
+			label: "Sonnet 5.5 1M",
+			cliModel: "claude-sonnet-5-5[1m]",
+			effortLevels: ["low", "medium", "high", "xhigh", "max"],
+		},
 		{
 			id: "sonnet",
 			label: "Sonnet",

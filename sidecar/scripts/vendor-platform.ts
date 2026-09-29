@@ -195,6 +195,12 @@ export const CLAUDE_CODE_SHA256: Readonly<
 		arm64: "76170ceef79015e118fdea65e3b11663342153d3559f301ab8e6a7dfecc7f4a3",
 		x64: "8e19957ce6ac24677a3cb2a7b2b717fbbe36db3871a3e84d534fb0cbdfe02d6f",
 	},
+	// 2.1.284 is the floor for `claude-sonnet-5-5` (first release that lists
+	// it; it also became the CLI's `sonnet` alias there).
+	"2.1.284": {
+		arm64: "a08ca0629e314e744d0779fb2968a5c3adcf8c889b0a9ad9fe2b5d6dd76f46a4",
+		x64: "a4caf5e442a59251f51203639f54c2f1e2121b185731110609d07dde16f3bfa2",
+	},
 };
 
 export const OPENCODE_SHA256: Readonly<
