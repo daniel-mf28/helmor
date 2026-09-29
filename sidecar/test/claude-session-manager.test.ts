@@ -1810,6 +1810,12 @@ describe("ClaudeSessionManager.listModels", () => {
 				supportsFastMode: true,
 			},
 			{
+				id: "claude-sonnet-5-5[1m]",
+				label: "Sonnet 5.5 1M",
+				cliModel: "claude-sonnet-5-5[1m]",
+				effortLevels: ["low", "medium", "high", "xhigh", "max"],
+			},
+			{
 				id: "sonnet",
 				label: "Sonnet",
 				cliModel: "sonnet",
