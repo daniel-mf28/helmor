@@ -27,12 +27,10 @@ describe("parsePrUrl", () => {
 			number: 12,
 			provider: "github",
 		});
-		expect(parsePrUrl("https://github.com/a/b/pull/3#issuecomment-1")).toEqual(
-			{
-				number: 3,
-				provider: "github",
-			},
-		);
+		expect(parsePrUrl("https://github.com/a/b/pull/3#issuecomment-1")).toEqual({
+			number: 3,
+			provider: "github",
+		});
 	});
 
 	it("returns null for non-PR URLs", () => {

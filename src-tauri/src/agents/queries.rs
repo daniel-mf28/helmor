@@ -101,20 +101,17 @@ fn build_title_attempts() -> Vec<Value> {
         }
         // A provider's custom model (if the user configured one) is tried
         // before its fast/default pick.
-        match provider.as_str() {
-            "claude" => {
-                if let Some(model) = &claude_custom {
-                    attempts.push(serde_json::json!({
-                        "provider": "claude",
-                        "model": model.cli_model,
-                        "claudeEnvironment": {
-                            "ANTHROPIC_BASE_URL": model.base_url,
-                            "ANTHROPIC_AUTH_TOKEN": model.api_key,
-                        },
-                    }));
-                }
+        if provider == "claude" {
+            if let Some(model) = &claude_custom {
+                attempts.push(serde_json::json!({
+                    "provider": "claude",
+                    "model": model.cli_model,
+                    "claudeEnvironment": {
+                        "ANTHROPIC_BASE_URL": model.base_url,
+                        "ANTHROPIC_AUTH_TOKEN": model.api_key,
+                    },
+                }));
             }
-            _ => {}
         }
         // Provider's own fast/default model. For claude this is the
         // post-custom fallback (haiku); for others it's the default pick.

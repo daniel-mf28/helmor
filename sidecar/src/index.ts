@@ -192,8 +192,7 @@ function parseTitleAttempts(raw: unknown): TitleAttempt[] {
 			if (!item || typeof item !== "object") continue;
 			const obj = item as Record<string, unknown>;
 			const provider =
-				obj.provider === "claude" ||
-				obj.provider === "codex"
+				obj.provider === "claude" || obj.provider === "codex"
 					? obj.provider
 					: null;
 			if (!provider) continue;

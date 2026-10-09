@@ -917,9 +917,7 @@ export function workspaceForgeRefetchInterval(
 	data: ForgeDetection | undefined,
 ): number | false {
 	if (!data) return WORKSPACE_FORGE_REFETCH_INTERVAL;
-	return data.provider === "github"
-		? WORKSPACE_FORGE_REFETCH_INTERVAL
-		: false;
+	return data.provider === "github" ? WORKSPACE_FORGE_REFETCH_INTERVAL : false;
 }
 
 export function workspaceChangesQueryOptions(

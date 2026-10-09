@@ -8,9 +8,7 @@ use std::{
 };
 
 use crate::{
-    git_ops,
-    models::workspaces::WorkspaceRecord,
-    workspace_state::WorkspaceMode,
+    git_ops, models::workspaces::WorkspaceRecord, workspace_state::WorkspaceMode,
     workspace_status::WorkspaceStatus,
 };
 

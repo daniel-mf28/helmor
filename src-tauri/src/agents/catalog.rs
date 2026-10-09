@@ -62,10 +62,7 @@ pub fn static_model_sections() -> Vec<AgentModelSection> {
     // Each custom Codex provider gets its own `codex:<id>` section, not merged
     // into Codex; all gated by the unified `codex_enabled` list.
     let mut sections = apply_official_enabled_filter(
-        model_sections_for_inputs(
-            crate::provider::claude::configured_models(),
-            Vec::new(),
-        ),
+        model_sections_for_inputs(crate::provider::claude::configured_models(), Vec::new()),
         claude_enabled.as_deref(),
         codex_enabled.as_deref(),
     );

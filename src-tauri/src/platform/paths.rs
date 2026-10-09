@@ -29,13 +29,6 @@ pub fn codex_home_dir() -> PathBuf {
         .unwrap_or_else(|| home_dir_or_root().join(".codex"))
 }
 
-pub fn xdg_config_dir(app_name: &str) -> Option<PathBuf> {
-    if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
-        return Some(PathBuf::from(xdg).join(app_name));
-    }
-    Some(home_dir()?.join(".config").join(app_name))
-}
-
 fn home_dir_from_parts(
     home: Option<OsString>,
     userprofile: Option<OsString>,
