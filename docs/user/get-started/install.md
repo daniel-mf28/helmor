@@ -9,15 +9,16 @@ Grab the latest release from
   Applications.
 
 Everything Helmor needs is bundled inside the app: the agent CLIs
-(Claude Code, Codex, and friends) and the GitHub/GitLab CLIs (`gh`, `glab`).
-You do not need to install any of them separately.
+(Claude Code, Codex, and friends) and the GitHub CLI (`gh`).
+You do not need to install any of them separately. For GitLab, install the
+`glab` CLI yourself — Helmor no longer bundles it.
 
 ## First launch
 
 On first launch, Helmor walks you through a short onboarding:
 
-1. **Connect GitHub or GitLab.** Helmor uses the bundled `gh`/`glab` CLIs and
-   their standard login flow. If you are already signed in to `gh` on this
+1. **Connect GitHub or GitLab.** Helmor uses the bundled `gh` CLI (or your own
+   `glab` for GitLab) and its standard login flow. If you are already signed in to `gh` on this
    machine, Helmor picks that up automatically; otherwise it opens an
    interactive sign-in right inside the app. Multiple accounts are supported —
    each repository remembers which account it belongs to.

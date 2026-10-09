@@ -1,4 +1,4 @@
-// Stage claude-code + codex + gh + glab + llama.cpp into
+// Stage claude-code + codex + gh + llama.cpp into
 // `sidecar/dist/vendor/` for Tauri to ship as bundle resources. macOS host only.
 //
 // Cross-arch staging: in CI the host is always Apple Silicon (macos-26
@@ -34,7 +34,6 @@ import {
 	claudeCodeArchivePlan,
 	codexArchivePlan,
 	ghArchivePlan,
-	glabArchivePlan,
 	llamaArchivePlan,
 	resolveVendorTarget,
 	type TargetInfo,
@@ -67,7 +66,7 @@ const BUNDLE_CACHE = join(SIDECAR_ROOT, ".bundle-cache");
 
 // Downloaded archives are the network-expensive part and SHA256-verified, so we
 // share one cache across all worktrees of this repo: a new worktree reuses
-// already-fetched gh/glab/llama-cpp archives instead of
+// already-fetched gh/llama-cpp archives instead of
 // re-downloading them. This is a dev-only optimization, so the cache lives
 // inside the PROJECT (the main worktree's `sidecar/.bundle-cache`) rather than a
 // global user dir — found via git's common dir, which every linked worktree
@@ -105,7 +104,6 @@ function mainWorktreeRoot(): string | null {
 // shared ARCHIVE_CACHE, so no wipe is needed; a changed SHA256 forces a
 // re-download automatically.
 //   gh:          github.com/cli/cli/releases/download/v$VER/gh_${VER}_checksums.txt
-//   glab:        gitlab.com/gitlab-org/cli/-/releases/v$VER/downloads/checksums.txt
 //   codex:       shasum -a 256 of the npm tarball at
 //                registry.npmjs.org/@openai/codex/-/codex-$VER-darwin-{arm64,x64}.tgz
 //   claude-code: shasum -a 256 of the npm tarballs at
@@ -247,7 +245,7 @@ function maybeSignMacBinary(path: string, withEntitlements: boolean): void {
 }
 
 // ---------------------------------------------------------------------------
-// gh / glab — download from upstream releases for the target arch
+// gh — download from upstream releases for the target arch
 // ---------------------------------------------------------------------------
 
 /// Find `bin/<name>` either at the archive root or one wrapper level deep.
@@ -280,32 +278,6 @@ function stageGhBinary(target: TargetInfo): string {
 
 	const binSrc = locateExtractedBin(extractDir, `gh${EXE}`);
 	const binDest = join(DIST_VENDOR, "gh", `gh${EXE}`);
-	copyFile(binSrc, binDest);
-	chmodSync(binDest, 0o755);
-	maybeSignMacBinary(binDest, false);
-	return binDest;
-}
-
-function stageGlabBinary(target: TargetInfo): string {
-	ensureCacheDir();
-	// macOS: `glab_<ver>_darwin_<arch>.tar.gz`; Windows: `..._windows_<arch>.zip`.
-	// `extractArchive` (bsdtar) transparently handles both formats. Windows plan
-	// carries no pinned sha256 (soft-verify); macOS stays strict.
-	const plan = glabArchivePlan(target);
-	const archive = join(ARCHIVE_CACHE, plan.archiveName);
-	downloadMaybeVerify(plan.url, archive, plan.sha256);
-
-	const extractDir = join(BUNDLE_CACHE, plan.slug);
-	freshExtractDir(extractDir);
-	extractArchive(archive, extractDir);
-
-	const binSrc = join(extractDir, "bin", `glab${EXE}`);
-	if (!existsSync(binSrc)) {
-		throw new Error(
-			`[stage-vendor] glab binary missing after extract: ${binSrc}`,
-		);
-	}
-	const binDest = join(DIST_VENDOR, "glab", `glab${EXE}`);
 	copyFile(binSrc, binDest);
 	chmodSync(binDest, 0o755);
 	maybeSignMacBinary(binDest, false);
@@ -580,7 +552,7 @@ function stageCodexBinary(target: TargetInfo): void {
 
 // ---------------------------------------------------------------------------
 // llama.cpp — download official macOS binary release for the target arch.
-// Different from gh/glab: ships as a fat zip containing llama-server +
+// Different from gh: ships as a fat zip containing llama-server +
 // llama-cli + a pile of shared libs (libllama, libggml-*, libmtmd, ...).
 // We stage the whole bin/ directory as a unit so the dylib RPATHs that
 // upstream baked in (`@loader_path/.`) keep resolving.
@@ -799,11 +771,10 @@ stageClaudeCodeBinary(target);
 // ----- Codex -----
 stageCodexBinary(target);
 
-// ----- gh + glab (forge CLIs) -----
+// ----- gh (forge CLI) -----
 // Wrapped in stageOptional so a missing/unpublished Windows artifact downgrades
 // to a warning; on macOS stageOptional re-throws, keeping staging strict.
 stageOptional("gh", () => stageGhBinary(target));
-stageOptional("glab", () => stageGlabBinary(target));
 
 // ----- llama.cpp (local LLM server for auto-rename / Local AI) -----
 stageOptional("llama-cpp", () => stageLlamaCppBinaries(target));
@@ -813,5 +784,4 @@ console.log(`[stage-vendor] ✓ staged → ${DIST_VENDOR}`);
 console.log(`  claude-code ${humanSize(join(DIST_VENDOR, "claude-code"))}`);
 console.log(`  codex       ${humanSize(join(DIST_VENDOR, "codex"))}`);
 console.log(`  gh          ${humanSize(join(DIST_VENDOR, "gh"))}`);
-console.log(`  glab        ${humanSize(join(DIST_VENDOR, "glab"))}`);
 console.log(`  llama-cpp   ${humanSize(join(DIST_VENDOR, "llama-cpp"))}`);

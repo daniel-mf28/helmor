@@ -19,8 +19,6 @@ export interface TargetInfo {
 	codexNpmSuffix: string;
 	/** `gh` release naming: `arm64` / `amd64`. */
 	ghArch: ReleaseArch;
-	/** `glab` release naming: `arm64` / `amd64`. */
-	glabArch: ReleaseArch;
 }
 
 export interface ArchivePlan {
@@ -34,12 +32,6 @@ export const GH_VERSION = "2.95.0";
 export const GH_SHA256 = {
 	arm64: "3677f9c27965825f9c7d50395473c134edaea4b484373ef6b25de653570a0489",
 	amd64: "985707e9ac60c95ed51cddd808c338b481abe69fffa77e9d6547c3750045f77e",
-} as const;
-
-export const GLAB_VERSION = "1.103.0";
-export const GLAB_SHA256 = {
-	arm64: "fea5a07e6b41dfd04585c1ba08deaf95cd7e9b320a86d056f65415e254732fe3",
-	amd64: "c32fb1df724bc3cee2da828b24e19a3f518f4b4d382410984eb4a415498284da",
 } as const;
 
 export const CODEX_SHA256: Readonly<
@@ -207,7 +199,6 @@ const TARGETS: Readonly<Record<DarwinArch, TargetInfo>> = {
 		codexTriple: "aarch64-apple-darwin",
 		codexNpmSuffix: "darwin-arm64",
 		ghArch: "arm64",
-		glabArch: "arm64",
 	},
 	x64: {
 		os: "darwin",
@@ -218,7 +209,6 @@ const TARGETS: Readonly<Record<DarwinArch, TargetInfo>> = {
 		codexTriple: "x86_64-apple-darwin",
 		codexNpmSuffix: "darwin-x64",
 		ghArch: "amd64",
-		glabArch: "amd64",
 	},
 };
 
@@ -235,7 +225,6 @@ const WINDOWS_X64_TARGET: TargetInfo = {
 	codexTriple: "x86_64-pc-windows-msvc",
 	codexNpmSuffix: "win32-x64",
 	ghArch: "amd64",
-	glabArch: "amd64",
 };
 
 export function targetInfoForArch(arch: DarwinArch): TargetInfo {
@@ -303,27 +292,6 @@ export function ghArchivePlan(target: TargetInfo): ArchivePlan {
 		archiveName: `${slug}.zip`,
 		url: `https://github.com/cli/cli/releases/download/v${GH_VERSION}/${slug}.zip`,
 		sha256: GH_SHA256[arch],
-	};
-}
-
-export function glabArchivePlan(target: TargetInfo): ArchivePlan {
-	const arch = target.glabArch;
-	// macOS: `glab_<ver>_darwin_<arch>.tar.gz`; Windows: `..._windows_<arch>.zip`.
-	if (target.os === "windows") {
-		const slug = `glab_${GLAB_VERSION}_windows_${arch}`;
-		return {
-			slug,
-			archiveName: `${slug}.zip`,
-			url: `https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/${slug}.zip`,
-			sha256: "",
-		};
-	}
-	const slug = `glab_${GLAB_VERSION}_darwin_${arch}`;
-	return {
-		slug,
-		archiveName: `${slug}.tar.gz`,
-		url: `https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/${slug}.tar.gz`,
-		sha256: GLAB_SHA256[arch],
 	};
 }
 

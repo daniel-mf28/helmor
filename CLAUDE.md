@@ -149,9 +149,9 @@ When a snapshot drifts: look at the diff first. Only accept after confirming the
 - **Clippy**: Must pass `cargo clippy --all-targets -- -D warnings` with zero warnings.
 - **Perf**: `VITE_HELMOR_PERF_HUD=1` enables HUD + react-scan + long-frame tracker.
 - **Logging**: Dev defaults to `debug`. Override: `HELMOR_LOG=info|debug|error`. JSONL logs in `{data_dir}/logs/`.
-- **Bundled forge CLIs (`gh`, `glab`)**: Pinned + SHA256-verified in `sidecar/scripts/stage-vendor.ts`. To upgrade:
-  1. Bump `GH_VERSION` / `GLAB_VERSION`.
-  2. Pull the new SHA256 from `…/checksums.txt` (URLs in the file's header comment) and update `GH_SHA256` / `GLAB_SHA256`.
+- **Bundled forge CLI (`gh`)**: Pinned (`glab` is no longer bundled — GitLab needs a system-installed `glab`) + SHA256-verified in `sidecar/scripts/stage-vendor.ts`. To upgrade:
+  1. Bump `GH_VERSION`.
+  2. Pull the new SHA256 from `…/checksums.txt` (URLs in the file's header comment) and update `GH_SHA256`.
   3. Re-run `bun run build` in `sidecar/` — the changed SHA256 auto-forces a re-download + verify (no manual wipe). Downloaded archives now live in a shared, cross-worktree cache (the main worktree's `sidecar/.bundle-cache`, override `HELMOR_BUNDLE_CACHE`); wipe that only if you want a forced clean fetch.
   Bump cadence: every release cycle if upstream has shipped a notable fix; immediately on security advisories. Pin so the auth-status JSON shape Helmor parses doesn't drift unexpectedly.
 - **Bundled agent CLIs (`claude-code`, `codex`)**: Pulled in via `sidecar/package.json` and staged into `sidecar/dist/vendor/{claude-code,codex}/` as platform-native binaries. Both upstreams ship per-platform npm sub-packages (`@anthropic-ai/claude-code-darwin-{arm64,x64}`, `@openai/codex-darwin-{arm64,x64}`). Cross-arch CI staging downloads the tarball straight from the npm registry and verifies against `CLAUDE_CODE_SHA256` / `CODEX_SHA256` in `stage-vendor.ts`. To upgrade:

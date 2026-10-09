@@ -30,7 +30,8 @@ or with your own checkout. See [Workspaces](../concepts/workspaces.md).
 ### Does Helmor work with GitLab?
 
 Yes. GitHub and GitLab are both supported, including PR/MR creation and merge,
-via the bundled `gh` and `glab` CLIs.
+via the bundled `gh` CLI and, for GitLab, a `glab` CLI installed on your machine
+(Helmor no longer bundles `glab`).
 
 ### What happens to my branch when I archive a workspace?
 

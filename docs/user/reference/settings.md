@@ -30,7 +30,7 @@ onboarding (or re-run from here). See
 
 ## Accounts
 
-GitHub and GitLab accounts, via the bundled `gh`/`glab` CLIs. Multiple
+GitHub and GitLab accounts, via the bundled `gh` CLI (GitLab needs your own `glab`). Multiple
 accounts are supported; each repository binds to the account that has access.
 Re-authenticate from here if a token expires — the login flow runs in an
 embedded terminal.

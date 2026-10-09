@@ -3,7 +3,6 @@ import {
 	claudeCodeArchivePlan,
 	codexArchivePlan,
 	ghArchivePlan,
-	glabArchivePlan,
 	llamaArchivePlan,
 	resolveVendorTarget,
 	targetInfoForArch,
@@ -20,7 +19,6 @@ describe("vendor platform boundary", () => {
 			codexTriple: "aarch64-apple-darwin",
 			codexNpmSuffix: "darwin-arm64",
 			ghArch: "arm64",
-			glabArch: "arm64",
 		});
 		expect(targetInfoForArch("x64")).toEqual({
 			os: "darwin",
@@ -31,7 +29,6 @@ describe("vendor platform boundary", () => {
 			codexTriple: "x86_64-apple-darwin",
 			codexNpmSuffix: "darwin-x64",
 			ghArch: "amd64",
-			glabArch: "amd64",
 		});
 	});
 
@@ -79,9 +76,6 @@ describe("vendor platform boundary", () => {
 		expect(ghArchivePlan(target).archiveName).toBe(
 			"gh_2.95.0_windows_amd64.zip",
 		);
-		expect(glabArchivePlan(target).archiveName).toBe(
-			"glab_1.103.0_windows_amd64.zip",
-		);
 		expect(llamaArchivePlan(target).archiveName).toBe(
 			"llama-b9763-bin-win-cpu-x64.zip",
 		);
@@ -102,13 +96,6 @@ describe("vendor platform boundary", () => {
 			url: "https://github.com/cli/cli/releases/download/v2.95.0/gh_2.95.0_macOS_arm64.zip",
 			sha256:
 				"3677f9c27965825f9c7d50395473c134edaea4b484373ef6b25de653570a0489",
-		});
-		expect(glabArchivePlan(target)).toEqual({
-			slug: "glab_1.103.0_darwin_arm64",
-			archiveName: "glab_1.103.0_darwin_arm64.tar.gz",
-			url: "https://gitlab.com/gitlab-org/cli/-/releases/v1.103.0/downloads/glab_1.103.0_darwin_arm64.tar.gz",
-			sha256:
-				"fea5a07e6b41dfd04585c1ba08deaf95cd7e9b320a86d056f65415e254732fe3",
 		});
 		expect(claudeCodeArchivePlan(target, "2.1.154")).toEqual({
 			slug: "claude-code-darwin-arm64-2.1.154",
@@ -136,9 +123,6 @@ describe("vendor platform boundary", () => {
 	test("keeps current x64 vendor archive plans unchanged", () => {
 		const target = targetInfoForArch("x64");
 		expect(ghArchivePlan(target).archiveName).toBe("gh_2.95.0_macOS_amd64.zip");
-		expect(glabArchivePlan(target).archiveName).toBe(
-			"glab_1.103.0_darwin_amd64.tar.gz",
-		);
 		expect(claudeCodeArchivePlan(target, "2.1.154").archiveName).toBe(
 			"claude-code-darwin-x64-2.1.154.tgz",
 		);

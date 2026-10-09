@@ -8,7 +8,7 @@ All paths are relative to the repo root. Line numbers drift — grep the named c
 - [Claude (claude-agent-sdk + claude-code)](#claude) — class A+B, **lockstep**
 - [Codex (@openai/codex)](#codex) — class B, layout descriptor
 - [Pi (@earendil-works/pi-*)](#pi) — class A, **dead code → prefer delete**
-- [gh / glab / llama.cpp](#supporting-tools) — class C, supporting binaries
+- [gh / llama.cpp](#supporting-tools) — class C, supporting binaries
 
 OpenCode, Cursor (`@cursor/sdk` + Node worker), and the bundled Node runtime were removed from
 this fork; they have no pins left to bump.
@@ -76,15 +76,11 @@ required, `getApiKeyAndHeaders` removed).
 ## Supporting tools
 
 All class C, all in `vendor-platform.ts`, none in `package.json`. macOS SHA is strict; Windows is
-soft-verified (empty `""` SHA tolerated). arch naming for gh/glab is `arm64`/`amd64`.
+soft-verified (empty `""` SHA tolerated). arch naming for gh is `arm64`/`amd64`.
 
 ### gh (`GH_VERSION` + `GH_SHA256{arm64,amd64}`)
 Repo `cli/cli`. SHA from `gh_<ver>_checksums.txt` at the release — pick the macOS zip rows
 (`gh_<ver>_macOS_{arm64,amd64}.zip`).
-
-### glab (`GLAB_VERSION` + `GLAB_SHA256{arm64,amd64}`)
-GitLab `gitlab-org/cli`. SHA from `checksums.txt` at the release — the
-`glab_<ver>_darwin_{arm64,amd64}.tar.gz` rows.
 
 ### llama.cpp (`LLAMA_VERSION` + `LLAMA_SHA256{arm64,x64}`)
 Repo `ggml-org/llama.cpp`, version is a build tag (e.g. `b9763`). Asset
