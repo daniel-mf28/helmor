@@ -123,7 +123,6 @@ That's the guide.
 
 - [Discord](https://discord.gg/ukyyuNfnDp) — questions, feedback, release chat
 - [GitHub Issues](https://github.com/dohooo/helmor/issues) — bugs and feature requests
-- Or use the feedback button at the bottom of Helmor's sidebar
 
 ## License
 

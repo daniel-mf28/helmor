@@ -573,7 +573,7 @@ List mode shows `Switch to tree view` and visible `treeItems: 0`.
 
 Observed 3 cycles passed, restored tree view.
 
-## Settings And Feedback
+## Settings
 
 ### Open Settings
 
@@ -639,15 +639,3 @@ One read-only mapping pass observed:
 - Repository settings entries: Remote, base branch, branch prefix, setup/run/archive scripts, built-in prompt preferences, and Delete Repository. Do not record script contents or change textareas.
 
 Only `General -> Appearance` section switching has 3x verification so far; the full section map is read-only observed and should be rechecked for current UI before relying on exact labels.
-
-### Feedback Dialog
-
-The feedback button has no aria-label. Use its icon selector:
-
-```json
-webview_interact { "action": "click", "selector": "button:has(svg.lucide-message-square-warning)", "strategy": "css", "windowId": "main" }
-```
-
-Verify dialog text contains `Send feedback`, `Create issue`, `Quick fix`, and `Close`; input `#feedback-input` exists with aria-label `Feedback`. `Escape` closes.
-
-Observed 3x pass.

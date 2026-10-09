@@ -5,7 +5,6 @@ pub(crate) mod commands;
 pub mod data_dir;
 pub mod downloads;
 pub mod error;
-pub mod feedback;
 pub mod forge;
 pub mod git;
 pub mod global_hotkey;
@@ -540,9 +539,6 @@ pub fn run() {
             commands::workspace_commands::cleanup_archived_workspaces,
             commands::workspace_commands::restore_workspace,
             commands::editor_commands::stat_editor_file,
-            commands::feedback_commands::fork_helmor_upstream,
-            commands::feedback_commands::create_helmor_issue,
-            commands::feedback_commands::find_existing_helmor_repo,
             commands::system_commands::save_pasted_image,
             commands::system_commands::save_text_file_as,
             commands::system_commands::show_image_in_finder,

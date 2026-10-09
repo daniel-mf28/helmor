@@ -75,6 +75,4 @@ menu and `helmor workspace archive` both work.
 ## Still stuck?
 
 - [Discord](https://discord.gg/ukyyuNfnDp) — fastest answers
-- The feedback button at the bottom of Helmor's sidebar (can attach
-  screenshots)
 - [GitHub issues](https://github.com/dohooo/helmor/issues)

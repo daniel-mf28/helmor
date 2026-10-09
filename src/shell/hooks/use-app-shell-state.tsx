@@ -12,7 +12,7 @@
 // verbatim out of the old inline AppShell body — call order, dependency arrays
 // and `getSnapshot()` readbacks are preserved exactly.
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import type { ComposerCreateContext } from "@/features/conversation";
 import { useDockUnreadBadge } from "@/features/dock-badge";
 import type { SettingsSection } from "@/features/settings";
@@ -57,7 +57,6 @@ export function useAppShellState({
 	} = useSettings();
 	const { repositories, workspaceGroups, archivedRows } =
 		useNavigationSidebar(appSettings);
-	const [feedbackOpen, setFeedbackOpen] = useState(false);
 
 	const sel = useSelectionControllers({
 		queryClient,
@@ -163,7 +162,6 @@ export function useAppShellState({
 		handleSelectSession: sel.handleSelectSession,
 		selectedWorkspaceId,
 		workspaceViewMode,
-		setPendingCreatedWorkspaceSubmit: sel.setPendingCreatedWorkspaceSubmit,
 		selectedWorkspaceDetailQuery: dataControllers.selectedWorkspaceDetailQuery,
 		workspaceChangeRequest: dataControllers.workspaceChangeRequest,
 		workspaceForge: dataControllers.forge.workspaceForge,
@@ -286,8 +284,6 @@ export function useAppShellState({
 		pushWorkspaceToast,
 		appSettings,
 		repositories,
-		feedbackOpen,
-		setFeedbackOpen,
 		appUpdateStatus,
 		sessionSelectionHistory,
 		handleOpenWorkspaceStart,

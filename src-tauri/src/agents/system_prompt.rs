@@ -21,8 +21,6 @@
 //!   CLI's `--help` is the single source of truth, which means dev
 //!   and release stay in sync automatically without us re-injecting
 //!   commands every turn.
-//! - Mentions the feedback button so the agent can correctly redirect
-//!   "how do I report a bug?"-style asks.
 //!
 //! ## Why the user doesn't see this
 //!
@@ -192,10 +190,6 @@ pub fn build_helmor_system_prompt(ctx: &HelmorSystemPromptContext) -> String {
         cli = ctx.cli_command_name,
     );
 
-    out.push_str(
-        "\nIf the user asks for help with Helmor itself, point them at the feedback button at the bottom of Helmor's sidebar.\n",
-    );
-
     out.push_str("</helmor_context>");
     out
 }
@@ -219,10 +213,6 @@ pub fn build_helmor_chat_prompt(ctx: &HelmorChatPromptContext) -> String {
         out,
         "\nHelmor itself is scriptable via `{cli}`. When you need to operate Helmor (spawn workspaces, dispatch ship actions, read other agents' sessions, etc.), run `{cli} --help` or `{cli} <subcommand> --help` — each subcommand's help block includes examples you can copy. Invoke `{cli}` verbatim; do NOT verify it first with `which`, `file`, `--version`, or by searching `target/debug` — it is already the binary this Helmor instance owns, and pre-verifying eats your turn.\n",
         cli = ctx.cli_command_name,
-    );
-
-    out.push_str(
-        "\nIf the user asks for help with Helmor itself, point them at the feedback button at the bottom of Helmor's sidebar.\n",
     );
 
     out.push_str("</helmor_context>");
@@ -428,17 +418,6 @@ mod tests {
         );
     }
 
-    /// Feedback line points at the sidebar button — matches the real
-    /// UI location (`shell-sidebar-pane.tsx:155`). Pin so a copy
-    /// drift here doesn't send users hunting in a menu that doesn't
-    /// exist.
-    #[test]
-    fn feedback_pointer_points_at_sidebar_button() {
-        let prompt = build_helmor_system_prompt(&ctx_with_defaults());
-        assert!(prompt.contains("feedback button"));
-        assert!(prompt.contains("sidebar"));
-    }
-
     /// The whole thing is wrapped in a single `<helmor_context>` tag
     /// so the SDK / log viewer can spot Helmor's preamble at a glance.
     /// Keeping it as one block (not split between system + user) means
@@ -504,15 +483,14 @@ mod tests {
         assert!(prompt.contains("not bound to any repository"));
     }
 
-    /// CLI section + feedback pointer apply to chat sessions too —
-    /// they can still drive Helmor and still need to report bugs.
+    /// CLI section applies to chat sessions too —
+    /// they can still drive Helmor.
     #[test]
-    fn chat_prompt_keeps_cli_and_feedback_sections() {
+    fn chat_prompt_keeps_cli_section() {
         let prompt = build_helmor_chat_prompt(&chat_ctx());
         assert!(prompt.contains("`helmor`"));
         assert!(prompt.contains("`helmor --help`"));
         assert!(prompt.contains("do NOT verify"));
-        assert!(prompt.contains("feedback button"));
     }
 
     /// Same `<helmor_context>` envelope so log viewers / SDK clients

@@ -164,15 +164,6 @@ Sections observed:
   - Sections include Remote origin, base branch, branch prefix, setup/run/archive scripts, built-in prompt preferences, and Delete Repository.
   - Do not record script contents, edit textareas, add scripts, change remotes/branches, or delete repositories without explicit user intent.
 
-## Feedback
-
-- Button selector: `button:has(svg.lucide-message-square-warning)`
-- Dialog:
-  - Title/text `Send feedback`
-  - Input `#feedback-input`, aria-label `Feedback`
-  - Actions: `Create issue`, `Quick fix`, `Close`
-  - Follow-up flow may include `Confirm send` and `Send to agent`
-
 ## Inspector And Editor
 
 These require a repository-backed, non-chat workspace.

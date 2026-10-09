@@ -62,6 +62,5 @@ detection.
 
 ### Where do I ask questions or report bugs?
 
-The [Discord](https://discord.gg/ukyyuNfnDp), the feedback button at the
-bottom of Helmor's sidebar, or
+The [Discord](https://discord.gg/ukyyuNfnDp) or
 [GitHub issues](https://github.com/dohooo/helmor/issues).

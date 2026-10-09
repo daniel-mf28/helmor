@@ -8,7 +8,6 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { FeedbackButton } from "@/features/feedback";
 import { WorkspacesSidebarContainer } from "@/features/navigation/container";
 import { SettingsButton } from "@/features/settings";
 import { getShortcut } from "@/features/shortcuts/registry";
@@ -49,7 +48,6 @@ type Props = {
 	onAddRepositoryNeedsStart: (repositoryId: string) => void;
 	onMoveLocalToWorktree: (workspaceId: string) => void;
 	onCollapseSidebar: () => void;
-	onOpenFeedback: () => void;
 	onOpenSettings: () => void;
 	pushWorkspaceToast: PushWorkspaceToast;
 };
@@ -72,7 +70,6 @@ export function ShellSidebarPane({
 	onAddRepositoryNeedsStart,
 	onMoveLocalToWorktree,
 	onCollapseSidebar,
-	onOpenFeedback,
 	onOpenSettings,
 	pushWorkspaceToast,
 }: Props) {
@@ -206,7 +203,6 @@ export function ShellSidebarPane({
 								onClick={onOpenSettings}
 								shortcut={getShortcut(appSettings.shortcuts, "settings.open")}
 							/>
-							<FeedbackButton onClick={onOpenFeedback} />
 						</div>
 						<AppUpdateButton status={appUpdateStatus} />
 					</div>

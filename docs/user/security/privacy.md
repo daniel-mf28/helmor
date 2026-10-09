@@ -34,8 +34,6 @@ Only traffic you initiate, with your own credentials:
   tokens from your `gh`/`glab` logins. Tokens are managed by those CLIs, not
   copied into Helmor's database.
 - **Update checks** — the app checks GitHub releases for new versions.
-- **Feedback** — only if you use the feedback button, and only what you type
-  there.
 
 There is no analytics pipeline collecting your code or conversations.
 

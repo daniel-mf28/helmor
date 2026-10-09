@@ -97,10 +97,6 @@ export function AppShell({
 				sessionRunStates: data.effectiveSessionRunStates,
 				insertIntoComposer: data.pendingQueueActions.insertIntoComposer,
 			}}
-			feedbackOpen={s.feedbackOpen}
-			onFeedbackOpenChange={s.setFeedbackOpen}
-			onOpenSettings={data.handleOpenSettings}
-			onSubmitFeedbackPrompt={data.submitFeedbackPrompt}
 			workspaceViewMode={s.workspaceViewMode}
 			sidebar={{
 				collapsed: panels.sidebarCollapsed,
@@ -121,7 +117,6 @@ export function AppShell({
 					sel.startSurfaceActions.addRepositoryNeedsStart,
 				onMoveLocalToWorktree: sel.startSurfaceActions.moveLocalToWorktree,
 				onCollapseSidebar: () => panels.setSidebarCollapsed(true),
-				onOpenFeedback: () => s.setFeedbackOpen(true),
 				onOpenSettings: data.handleOpenSettings,
 				pushWorkspaceToast: s.pushWorkspaceToast,
 			}}

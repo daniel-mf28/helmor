@@ -6,7 +6,6 @@
 // AppShell's return; the header memo nodes stay computed upstream and ride in
 // via `workspacePane`.
 import type { ComponentProps, KeyboardEvent, PointerEvent } from "react";
-import { FeedbackDialog } from "@/features/feedback";
 import { type WorkspaceDetail, workspaceModeHasGitContext } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { ShellViewMode } from "@/shell/controllers/use-selection-controller";
@@ -21,12 +20,6 @@ type ResizeTarget = "sidebar" | "inspector";
 
 type Props = {
 	providerStack: Omit<ComponentProps<typeof AppShellProviderStack>, "children">;
-	feedbackOpen: boolean;
-	onFeedbackOpenChange: (open: boolean) => void;
-	onOpenSettings: ComponentProps<typeof FeedbackDialog>["onOpenSettings"];
-	onSubmitFeedbackPrompt: ComponentProps<
-		typeof FeedbackDialog
-	>["onSubmitPrompt"];
 	workspaceViewMode: ShellViewMode;
 	// Left sidebar + its resize separator.
 	sidebar: ComponentProps<typeof ShellSidebarPane>;
@@ -53,10 +46,6 @@ type Props = {
 
 export function AppShellLayout({
 	providerStack,
-	feedbackOpen,
-	onFeedbackOpenChange,
-	onOpenSettings,
-	onSubmitFeedbackPrompt,
 	workspaceViewMode,
 	sidebar,
 	sidebarCollapsed,
@@ -76,22 +65,6 @@ export function AppShellLayout({
 	const { t } = useI18n();
 	return (
 		<AppShellProviderStack {...providerStack}>
-			{/* Conditionally mount so closing the dialog tears the tree
-			 *  down via React directly instead of waiting on Radix
-			 *  Presence + `animationend`. In WKWebview the workspace
-			 *  switch that fires from "Send to agent" can flip
-			 *  `document.hidden` to true mid-animation, which pauses
-			 *  the exit keyframes indefinitely — `animationend`
-			 *  never fires, Presence never unmounts, and the closed
-			 *  dialog lingers as a ghost over the new conversation. */}
-			{feedbackOpen ? (
-				<FeedbackDialog
-					open={feedbackOpen}
-					onOpenChange={onFeedbackOpenChange}
-					onOpenSettings={onOpenSettings}
-					onSubmitPrompt={onSubmitFeedbackPrompt}
-				/>
-			) : null}
 			<main
 				aria-label={t("applicationShell")}
 				className="relative h-dvh overflow-hidden bg-background font-sans text-foreground antialiased"
