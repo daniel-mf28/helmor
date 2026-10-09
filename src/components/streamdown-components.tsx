@@ -27,11 +27,8 @@ import {
 	tableDataToCSV,
 	tableDataToMarkdown,
 } from "streamdown";
-import {
-	CodeBlock,
-	CodeBlockCopyButton,
-	CodeBlockStreamingContext,
-} from "@/components/ai/code-block";
+import { CodeBlock, CodeBlockCopyButton } from "@/components/ai/code-block";
+import { CodeBlockStreamingContext } from "@/components/ai/code-block-streaming-context";
 import {
 	DropdownMenu,
 	DropdownMenuContent,

@@ -1,5 +1,4 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getMaterialFileIcon } from "file-extension-icon-js";
 import {
 	Check,
 	ChevronRight,
@@ -36,6 +35,7 @@ import {
 	isMarkdownPath,
 } from "@/lib/editor-session";
 import { useI18n } from "@/lib/i18n";
+import { getFileIconSrc, useFileIconsReady } from "@/lib/file-icons";
 import {
 	helmorQueryKeys,
 	workspaceChangesQueryOptions,
@@ -136,6 +136,7 @@ function EditorPathBreadcrumb({
 	segments: string[];
 	fullPath: string;
 }) {
+	useFileIconsReady();
 	const [copied, setCopied] = useState(false);
 	const handleCopyPath = () => {
 		if (!navigator.clipboard?.writeText) return;
@@ -162,7 +163,7 @@ function EditorPathBreadcrumb({
 						)}
 						{index === segments.length - 1 && (
 							<img
-								src={getMaterialFileIcon(segment)}
+								src={getFileIconSrc(segment)}
 								alt=""
 								className="mr-1 size-4 shrink-0"
 							/>
@@ -211,6 +212,7 @@ function EditorFileTabs({
 	onCloseTab: (tabId: string) => void;
 	onOpenSearch: () => void;
 }) {
+	useFileIconsReady();
 	const { t } = useI18n();
 	return (
 		<div
@@ -243,7 +245,7 @@ function EditorFileTabs({
 								>
 									<span className="tab-content-fade flex min-w-0 flex-1 items-center gap-1.5">
 										<img
-											src={getMaterialFileIcon(getBaseName(tab.session.path))}
+											src={getFileIconSrc(getBaseName(tab.session.path))}
 											alt=""
 											className="size-4 shrink-0"
 										/>
@@ -316,6 +318,7 @@ function FileSearchOverlay({
 	onOpen: (file: InspectorFileItem) => void;
 	onClose: () => void;
 }) {
+	useFileIconsReady();
 	const { t } = useI18n();
 	const inputRef = useRef<HTMLInputElement>(null);
 	const selectedItemRef = useRef<HTMLButtonElement | null>(null);
@@ -404,7 +407,7 @@ function FileSearchOverlay({
 								)}
 							>
 								<img
-									src={getMaterialFileIcon(file.name)}
+									src={getFileIconSrc(file.name)}
 									alt=""
 									className="size-4 shrink-0"
 								/>

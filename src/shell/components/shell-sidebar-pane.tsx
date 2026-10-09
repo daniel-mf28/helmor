@@ -9,7 +9,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { WorkspacesSidebarContainer } from "@/features/navigation/container";
-import { SettingsButton } from "@/features/settings";
+import { SettingsButton } from "@/features/settings/settings-button";
 import { getShortcut } from "@/features/shortcuts/registry";
 import { InlineShortcutDisplay } from "@/features/shortcuts/shortcut-display";
 import { useI18n } from "@/lib/i18n";

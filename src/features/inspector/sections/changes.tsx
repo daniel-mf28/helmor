@@ -1,9 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	getMaterialFileIcon,
-	getMaterialFolderIcon,
-} from "file-extension-icon-js";
-import {
 	ChevronRightIcon,
 	CloudIcon,
 	CopyIcon,
@@ -52,6 +48,12 @@ import {
 } from "@/lib/api";
 import { getMergeBlockedReason } from "@/lib/commit-button-logic";
 import {
+	areFileIconsLoaded,
+	getFileIconSrc,
+	getFolderIconSrc,
+	useFileIconsReady,
+} from "@/lib/file-icons";
+import {
 	type ActiveEditorTarget,
 	type DiffOpenOptions,
 	INDEX_REF,
@@ -97,8 +99,9 @@ const CHANGES_ROW_ICON_STATE_CLASS =
 function getCachedFileIcon(name: string): string {
 	const cached = fileIconCache.get(name);
 	if (cached) return cached;
-	const icon = getMaterialFileIcon(name);
-	fileIconCache.set(name, icon);
+	const icon = getFileIconSrc(name);
+	// Don't memoize the generic fallback served before the icon package loads.
+	if (areFileIconsLoaded()) fileIconCache.set(name, icon);
 	return icon;
 }
 
@@ -106,8 +109,8 @@ function getCachedFolderIcon(name: string, open: boolean): string {
 	const key = `${name}\0${open ? "1" : "0"}`;
 	const cached = folderIconCache.get(key);
 	if (cached) return cached;
-	const icon = getMaterialFolderIcon(name, open || undefined);
-	folderIconCache.set(key, icon);
+	const icon = getFolderIconSrc(name, open);
+	if (areFileIconsLoaded()) folderIconCache.set(key, icon);
 	return icon;
 }
 
@@ -892,6 +895,7 @@ function TreeNodeList({
 	workspaceBranch: string | null;
 	workspaceRemoteUrl: string | null;
 }) {
+	useFileIconsReady();
 	const sorted = useMemo(
 		() =>
 			[...nodes.values()].sort((left, right) => {
@@ -1055,6 +1059,7 @@ function ChangesFlatView({
 	workspaceBranch: string | null;
 	workspaceRemoteUrl: string | null;
 }) {
+	useFileIconsReady();
 	const hasStage = !!action && !!onStageAction;
 	const hasDiscard = !!onDiscard;
 

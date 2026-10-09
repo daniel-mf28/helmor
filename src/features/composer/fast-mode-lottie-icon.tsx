@@ -1,6 +1,5 @@
-import lottie from "lottie-web/build/player/lottie_svg";
+import type { AnimationItem } from "lottie-web";
 import { useEffect, useRef } from "react";
-import fastModeLightningAnimation from "@/assets/pikachu-lightning.json";
 import { cn } from "@/lib/utils";
 
 type FastModeLottieIconProps = {
@@ -14,21 +13,35 @@ export function FastModeLottieIcon({ className }: FastModeLottieIconProps) {
 		const container = containerRef.current;
 		if (!container) return;
 
-		const animation = lottie.loadAnimation({
-			container,
-			renderer: "svg",
-			loop: true,
-			autoplay: true,
-			animationData: fastModeLightningAnimation,
-			rendererSettings: {
-				preserveAspectRatio: "xMidYMid meet",
-			},
-		});
-		if (typeof animation.setSpeed === "function") {
-			animation.setSpeed(1.15);
-		}
+		let cancelled = false;
+		let animation: AnimationItem | null = null;
 
-		return () => animation.destroy();
+		// Load the player + animation data lazily, only when the icon mounts.
+		void Promise.all([
+			import("lottie-web/build/player/lottie_svg"),
+			import("@/assets/pikachu-lightning.json"),
+		]).then(([lottieModule, animationModule]) => {
+			if (cancelled) return;
+			const lottie = lottieModule.default;
+			animation = lottie.loadAnimation({
+				container,
+				renderer: "svg",
+				loop: true,
+				autoplay: true,
+				animationData: animationModule.default,
+				rendererSettings: {
+					preserveAspectRatio: "xMidYMid meet",
+				},
+			});
+			if (typeof animation.setSpeed === "function") {
+				animation.setSpeed(1.15);
+			}
+		});
+
+		return () => {
+			cancelled = true;
+			animation?.destroy();
+		};
 	}, []);
 
 	return (

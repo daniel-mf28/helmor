@@ -1,6 +1,6 @@
 import { AlertCircle, AlertTriangle, Clock3, Info } from "lucide-react";
 import { memo, Suspense } from "react";
-import { CodeBlockStreamingContext } from "@/components/ai/code-block";
+import { CodeBlockStreamingContext } from "@/components/ai/code-block-streaming-context";
 import {
 	Reasoning,
 	ReasoningContent,

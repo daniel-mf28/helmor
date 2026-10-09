@@ -31,6 +31,8 @@ const getNow = () =>
 // Don't park the smoothed prefix on a markdown marker char — the literal
 // symbol would otherwise hang in the DOM until the closing token arrives.
 const MAX_MARKER_LOOKAHEAD = 16;
+// Minimum gap between React state commits while revealing (~30 Hz).
+const COMMIT_INTERVAL_MS = 33;
 
 const isMarkdownMarkerChar = (ch: string): boolean => {
 	switch (ch.charCodeAt(0)) {
@@ -89,6 +91,15 @@ export const useSmoothStreamContent = (
 		targetCountRef.current = chars.length;
 		displayedCountRef.current = chars.length;
 		lastInputCountRef.current = chars.length;
+	}, []);
+
+	// React commits are throttled to ~COMMIT_INTERVAL_MS; the reveal math
+	// still advances every animation frame (refs), so chars/sec is unchanged.
+	const lastCommitTsRef = useRef(0);
+	const commitDisplayed = useCallback((ts: number, force: boolean) => {
+		if (!force && ts - lastCommitTsRef.current < COMMIT_INTERVAL_MS) return;
+		lastCommitTsRef.current = ts;
+		setDisplayedContent(displayedContentRef.current);
 	}, []);
 
 	const rafRef = useRef<number | null>(null);
@@ -179,6 +190,7 @@ export const useSmoothStreamContent = (
 			const backlog = targetCount - displayedCount;
 
 			if (backlog <= 0) {
+				commitDisplayed(ts, true);
 				stopFrameLoop();
 				return;
 			}
@@ -263,6 +275,7 @@ export const useSmoothStreamContent = (
 			if (inputActive) {
 				const shortfall = desiredDisplayed - displayedCount;
 				if (shortfall <= 0) {
+					commitDisplayed(ts, true);
 					stopFrameLoop();
 					scheduleFrameWake(config.activeInputWindowMs - idleMs);
 					return;
@@ -289,11 +302,11 @@ export const useSmoothStreamContent = (
 				const nextDisplayed = displayedContentRef.current + segment;
 				displayedContentRef.current = nextDisplayed;
 				displayedCountRef.current = nextCount;
-				setDisplayedContent(nextDisplayed);
+				commitDisplayed(ts, nextCount >= targetCount);
 			} else {
 				displayedContentRef.current = targetContentRef.current;
 				displayedCountRef.current = targetCount;
-				setDisplayedContent(targetContentRef.current);
+				commitDisplayed(ts, true);
 			}
 
 			rafRef.current = requestAnimationFrame(tick);
@@ -302,6 +315,7 @@ export const useSmoothStreamContent = (
 		rafRef.current = requestAnimationFrame(tick);
 	}, [
 		clearWakeTimer,
+		commitDisplayed,
 		config.activeInputWindowMs,
 		config.flushCps,
 		config.maxActiveCps,

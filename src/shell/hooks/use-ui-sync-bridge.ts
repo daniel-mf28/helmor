@@ -301,6 +301,63 @@ function handleUiMutation(
 	}
 }
 
+/** Pure-invalidation events that a git watcher / stream can emit in bursts
+ * (one per workspace sharing a repo, one per fs batch). Everything else
+ * is low-volume, gate-sensitive, or has side effects and runs immediately. */
+const COALESCED_EVENT_TYPES: ReadonlySet<UiMutationEvent["type"]> = new Set([
+	"workspaceFilesChanged",
+	"workspaceGitStateChanged",
+	"workspaceForgeChanged",
+	"contextUsageChanged",
+]);
+const COALESCE_WINDOW_MS = 100;
+
+type CoalesceSlot = { timer: ReturnType<typeof setTimeout>; dirty: boolean };
+
+/** Leading + trailing dedupe per identical event: the first event runs
+ * immediately (no added latency); repeats inside the window collapse
+ * into a single trailing run so a burst costs two invalidations, not N. */
+export function createUiMutationCoalescer(
+	run: (event: UiMutationEvent) => void,
+	windowMs = COALESCE_WINDOW_MS,
+) {
+	const slots = new Map<string, CoalesceSlot>();
+	const arm = (key: string, event: UiMutationEvent) => {
+		const timer = setTimeout(() => {
+			const slot = slots.get(key);
+			if (!slot) return;
+			if (slot.dirty) {
+				slot.dirty = false;
+				run(event);
+				arm(key, event);
+			} else {
+				slots.delete(key);
+			}
+		}, windowMs);
+		slots.set(key, { timer, dirty: false });
+	};
+	return {
+		push(event: UiMutationEvent) {
+			if (!COALESCED_EVENT_TYPES.has(event.type)) {
+				run(event);
+				return;
+			}
+			const key = JSON.stringify(event);
+			const slot = slots.get(key);
+			if (slot) {
+				slot.dirty = true;
+				return;
+			}
+			run(event);
+			arm(key, event);
+		},
+		dispose() {
+			for (const slot of slots.values()) clearTimeout(slot.timer);
+			slots.clear();
+		},
+	};
+}
+
 export function useUiSyncBridge({
 	queryClient,
 	processPendingCliSends,
@@ -321,17 +378,21 @@ export function useUiSyncBridge({
 		let disposed = false;
 		let unlisten: (() => void) | null = null;
 
-		void subscribeUiMutations((event) => {
-			if (disposed) {
-				return;
-			}
-
+		const coalescer = createUiMutationCoalescer((event) => {
+			if (disposed) return;
 			handleUiMutation(event, queryClient, {
 				processPendingCliSends: () => processPendingCliSendsRef.current(),
 				reloadSettings: () => reloadSettingsRef.current(),
 				onWorkspaceReveal: (workspaceId, sessionId) =>
 					onWorkspaceRevealRef.current?.(workspaceId, sessionId),
 			});
+		});
+
+		void subscribeUiMutations((event) => {
+			if (disposed) {
+				return;
+			}
+			coalescer.push(event);
 		}).then((cleanup) => {
 			if (disposed) {
 				cleanup();
@@ -343,6 +404,7 @@ export function useUiSyncBridge({
 
 		return () => {
 			disposed = true;
+			coalescer.dispose();
 			unlisten?.();
 		};
 	}, [queryClient]);

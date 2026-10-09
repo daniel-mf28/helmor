@@ -18,6 +18,7 @@ import {
 	type AgentProvider,
 	type ChangeRequestInfo,
 	subscribeUiMutations,
+	type ThreadMessageLike,
 	updateSessionSettings,
 	type WorkspaceSessionSummary,
 } from "@/lib/api";
@@ -53,6 +54,15 @@ import type { SessionContextReference } from "./session-context-prompt";
 
 const EMPTY_WORKSPACE_SESSIONS: readonly WorkspaceSessionSummary[] = [];
 const EMPTY_MODEL_SECTIONS: AgentModelSection[] = [];
+type ThreadFlags = { hasPlanReview: boolean; noUserMessage: boolean };
+
+function selectThreadFlags(messages: ThreadMessageLike[]): ThreadFlags {
+	return {
+		hasPlanReview: hasUnresolvedPlanReview(messages),
+		noUserMessage: messages.every((message) => message.role !== "user"),
+	};
+}
+
 const EMPTY_CONTEXT_SESSION_CANDIDATES: readonly SessionContextCandidate[] = [];
 const EMPTY_SELECTED_CONTEXT_SESSION_IDS: readonly string[] = [];
 
@@ -452,11 +462,12 @@ export const WorkspaceConversationContainer = memo(
 		const threadQuery = useQuery({
 			...sessionThreadMessagesQueryOptions(displayedSessionId ?? "__none__"),
 			enabled: Boolean(displayedSessionId) && !isTerminalSession,
+			// Stable module-level select: this container only needs two flags,
+			// so streaming flushes (which replace the thread array) don't
+			// re-render it unless a flag actually flips.
+			select: selectThreadFlags,
 		});
-		const hasPlanReview = useMemo(
-			() => hasUnresolvedPlanReview(threadQuery.data ?? []),
-			[threadQuery.data],
-		);
+		const hasPlanReview = threadQuery.data?.hasPlanReview ?? false;
 
 		// True while the freshly-created workspace's first send is queued
 		// (we've shown the optimistic user bubble, but
@@ -467,6 +478,18 @@ export const WorkspaceConversationContainer = memo(
 			pendingCreatedWorkspaceSubmit &&
 				pendingCreatedWorkspaceSubmit.workspaceId === displayedWorkspaceId &&
 				pendingCreatedWorkspaceSubmit.sessionId === displayedSessionId,
+		);
+		const optimisticPendingSubmit = useMemo(
+			() =>
+				pendingCreatedWorkspaceSubmit
+					? {
+							id: pendingCreatedWorkspaceSubmit.id,
+							workspaceId: pendingCreatedWorkspaceSubmit.workspaceId,
+							sessionId: pendingCreatedWorkspaceSubmit.sessionId,
+							prompt: pendingCreatedWorkspaceSubmit.payload.prompt,
+						}
+					: null,
+			[pendingCreatedWorkspaceSubmit],
 		);
 		const displayedSessionBusy = displayedSessionId
 			? (busySessionIds?.has(displayedSessionId) ?? false)
@@ -487,7 +510,7 @@ export const WorkspaceConversationContainer = memo(
 			!isTerminalSession &&
 			!sendingForComposer &&
 			threadQuery.data !== undefined &&
-			(threadQuery.data ?? []).every((message) => message.role !== "user") &&
+			threadQuery.data.noUserMessage &&
 			currentSessionForContext?.sessionKind !== "terminal";
 		const sessionContextCandidates = useMemo(
 			() =>
@@ -799,16 +822,7 @@ export const WorkspaceConversationContainer = memo(
 						onRequestCloseSession={onRequestCloseSession}
 						headerActions={headerActions}
 						headerLeading={headerLeading}
-						optimisticPendingSubmit={
-							pendingCreatedWorkspaceSubmit
-								? {
-										id: pendingCreatedWorkspaceSubmit.id,
-										workspaceId: pendingCreatedWorkspaceSubmit.workspaceId,
-										sessionId: pendingCreatedWorkspaceSubmit.sessionId,
-										prompt: pendingCreatedWorkspaceSubmit.payload.prompt,
-									}
-								: null
-						}
+						optimisticPendingSubmit={optimisticPendingSubmit}
 					/>
 				)}
 

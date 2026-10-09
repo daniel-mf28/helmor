@@ -250,6 +250,13 @@ function ensureQueryCacheMigration(): Promise<void> {
 	return migrationPromise;
 }
 
+const TIMESTAMP_FIELD_RE = /"timestamp":\d+,?/;
+const PERSIST_REFRESH_MS = 10 * 60 * 1000;
+/** Persist at most once per this window (library default is 1s). */
+const PERSIST_THROTTLE_MS = 5000;
+const lastPersistedFingerprint = new Map<string, string>();
+const lastPersistedAt = new Map<string, number>();
+
 const tauriFsQueryCacheStorage = {
 	getItem: async (key: string): Promise<string | null> => {
 		await ensureQueryCacheMigration();
@@ -262,8 +269,24 @@ const tauriFsQueryCacheStorage = {
 		}
 	},
 	setItem: async (key: string, value: string): Promise<void> => {
+		// Skip writes whose content (ignoring the always-fresh timestamp)
+		// matches the last successful write. The persisted payload serializes
+		// `timestamp` before `clientState`, so the first match is the
+		// top-level one. Still refresh periodically so the restore-side
+		// `maxAge` check (which keys off the timestamp) never expires an
+		// unchanged-but-live cache.
+		const fingerprint = value.replace(TIMESTAMP_FIELD_RE, "");
+		const now = Date.now();
+		if (
+			fingerprint === lastPersistedFingerprint.get(key) &&
+			now - (lastPersistedAt.get(key) ?? 0) < PERSIST_REFRESH_MS
+		) {
+			return;
+		}
 		try {
 			await invoke<void>("write_query_cache", { key, value });
+			lastPersistedFingerprint.set(key, fingerprint);
+			lastPersistedAt.set(key, now);
 		} catch (error) {
 			const sizeKb = (value.length / 1024).toFixed(1);
 			console.error(
@@ -285,6 +308,7 @@ const tauriFsQueryCacheStorage = {
 export const helmorQueryPersister = createAsyncStoragePersister({
 	storage: tauriFsQueryCacheStorage,
 	key: QUERY_CACHE_KEY,
+	throttleTime: PERSIST_THROTTLE_MS,
 });
 
 export function workspaceGroupsQueryOptions() {

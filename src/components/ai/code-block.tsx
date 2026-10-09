@@ -64,11 +64,6 @@ function plainHtml(code: string) {
 	return `<pre><code>${escapeHtml(code)}</code></pre>`;
 }
 
-// Streaming flag for blocks rendered inside an actively streaming assistant
-// message — provided by `AssistantText`, consumed by `StreamdownPre`. Cache
-// writes are skipped while true so growing prefix snapshots don't churn the LRU.
-export const CodeBlockStreamingContext = createContext(false);
-
 // Highlighted-HTML LRU keyed by (language, lineNumbers, code). shiki's
 // codeToHtml is async, so a freshly mounted block paints plain for a beat and
 // then swaps to colors — visible as a white flash every time a row remounts
