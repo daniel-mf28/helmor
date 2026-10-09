@@ -1,9 +1,9 @@
-//! Per-repo gh/glab account binding — orchestration layer.
+//! Per-repo gh account binding — orchestration layer.
 //!
 //! Mirrors the [`super::provider::WorkspaceForgeBackend`] pattern: a
 //! [`ForgeAccountBackend`] trait sits in the `forge::` umbrella, with
-//! provider-specific implementations living under [`super::github::accounts`]
-//! and [`super::gitlab::accounts`]. Top-level helpers in this file
+//! the GitHub implementation living under [`super::github::accounts`].
+//! Top-level helpers in this file
 //! dispatch by provider so cross-cutting callers (the auto-bind hook,
 //! the Settings → Account panel, the right-top workspace chip) never
 //! need to branch on `ForgeProvider` themselves.
@@ -17,10 +17,9 @@ use super::remote::parse_remote;
 use super::types::ForgeProvider;
 use crate::repos;
 
-/// Public profile of a single gh/glab account, surfaced to the
-/// frontend's Settings → Account panel. `active` is true for the gh
-/// account currently marked active by `gh auth switch`; for GitLab
-/// (one-account-per-host) it's always true.
+/// Public profile of a single gh account, surfaced to the frontend's
+/// Settings → Account panel. `active` is true for the gh account
+/// currently marked active by `gh auth switch`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForgeAccount {
@@ -55,8 +54,8 @@ impl AuthCheck {
 ///
 /// `Probable` covers the (surprisingly common) case where the API
 /// returns 200 but doesn't expose membership-based push permission:
-/// admin-via-instance on self-hosted GitLab, SAML-SSO tokens that
-/// haven't been authorized for an org on GitHub, fine-grained PATs
+/// SAML-SSO tokens that haven't been authorized for an org on
+/// GitHub, fine-grained PATs
 /// without `repository.metadata` scope, shared-with groups not
 /// reflected in `permissions`, etc. We'd rather bind one of these and
 /// surface a real `git push` error than show "Connect" forever when
@@ -72,15 +71,12 @@ pub(crate) enum RepoAccess {
     None,
 }
 
-/// Provider-agnostic account operations. Each method may interpret
-/// `host` / `login` slightly differently — GitLab ignores `login` since
-/// it has at most one account per host, while GitHub uses `(host,
-/// login)` as the full identity.
+/// Provider-agnostic account operations. GitHub uses `(host, login)`
+/// as the full identity.
 pub(crate) trait ForgeAccountBackend: Sync {
-    /// Enumerate all accounts (with profile) for this forge.
-    /// `hosts_hint` is ignored by GitHub (gh exposes its own host list)
-    /// and treated as the host roster by GitLab.
-    fn list_accounts(&self, hosts_hint: &[String]) -> Result<Vec<ForgeAccount>>;
+    /// Enumerate all accounts (with profile) for this forge across
+    /// every host the CLI knows about.
+    fn list_accounts(&self) -> Result<Vec<ForgeAccount>>;
 
     /// Login names for `host`. Used by auto-bind to iterate candidates
     /// without paying the per-account profile fetch.
@@ -111,7 +107,7 @@ pub(crate) trait ForgeAccountBackend: Sync {
     fn fetch_profile(&self, host: &str, login: &str) -> Result<ForgeAccount>;
 
     /// Spawn the forge CLI scoped to `(host, login)`. GitHub sets
-    /// `GH_TOKEN`; GitLab passes `--hostname`.
+    /// `GH_TOKEN`.
     #[allow(dead_code)] // Reserved for callers that need a unified runner.
     fn run_cli(&self, host: &str, login: &str, args: &[&str]) -> Result<CommandOutput>;
 }
@@ -119,33 +115,22 @@ pub(crate) trait ForgeAccountBackend: Sync {
 pub(crate) fn backend_for(provider: ForgeProvider) -> Option<&'static dyn ForgeAccountBackend> {
     match provider {
         ForgeProvider::Github => Some(&super::github::accounts::BACKEND),
-        ForgeProvider::Gitlab => Some(&super::gitlab::accounts::BACKEND),
         ForgeProvider::Unknown => None,
     }
 }
 
 // ---------------- Top-level dispatchers ----------------
 
-/// All gh accounts plus one glab account per `gitlab_hosts` entry.
-/// Errors from individual backends are logged and skipped so a transient
-/// problem with one CLI doesn't blank the whole panel.
-pub(crate) fn list_forge_accounts(gitlab_hosts: &[String]) -> Vec<ForgeAccount> {
+/// All gh accounts. Backend errors are logged and yield an empty list
+/// so a transient CLI problem doesn't fail the whole panel.
+pub(crate) fn list_forge_accounts() -> Vec<ForgeAccount> {
     let mut accounts = Vec::new();
     if let Some(backend) = backend_for(ForgeProvider::Github) {
-        match backend.list_accounts(&[]) {
+        match backend.list_accounts() {
             Ok(items) => accounts.extend(items),
             Err(error) => tracing::warn!(
                 error = %format!("{error:#}"),
                 "Failed to enumerate GitHub accounts"
-            ),
-        }
-    }
-    if let Some(backend) = backend_for(ForgeProvider::Gitlab) {
-        match backend.list_accounts(gitlab_hosts) {
-            Ok(items) => accounts.extend(items),
-            Err(error) => tracing::warn!(
-                error = %format!("{error:#}"),
-                "Failed to enumerate GitLab accounts"
             ),
         }
     }
@@ -161,7 +146,6 @@ pub(crate) fn invalidate_caches_for_host(provider: ForgeProvider, host: &str) {
     clear_forge_auth_host(host);
     match provider {
         ForgeProvider::Github => crate::forge::github::accounts::invalidate_caches_for_host(host),
-        ForgeProvider::Gitlab => crate::forge::gitlab::accounts::invalidate_caches_for_host(host),
         ForgeProvider::Unknown => {}
     }
 }
@@ -344,7 +328,7 @@ pub(crate) fn forge_target_from(
     })
 }
 
-/// Auto-detect which logged-in gh/glab account has access to this repo
+/// Auto-detect which logged-in gh account has access to this repo
 /// and persist the binding into `repos.forge_login`. Returns the bound
 /// login on success (or `Ok(None)` when no candidate had access).
 /// Errors only on truly unexpected CLI failures; the standard "no auth"
@@ -580,16 +564,14 @@ mod tests {
     }
 
     #[test]
-    fn forge_target_from_parses_nested_gitlab_namespace() {
-        let target = forge_target_from(
+    fn forge_target_from_treats_legacy_gitlab_provider_as_unbound() {
+        // Repos detected as GitLab before support was removed keep a
+        // stale `'gitlab'` string; it must not parse into a target.
+        assert!(forge_target_from(
             Some("gitlab"),
             Some("git@gitlab.example.com:platform/tools/api.git"),
         )
-        .unwrap();
-        assert_eq!(target.provider, ForgeProvider::Gitlab);
-        assert_eq!(target.host, "gitlab.example.com");
-        assert_eq!(target.owner, "platform/tools");
-        assert_eq!(target.name, "api");
+        .is_none());
     }
 
     #[test]
@@ -600,8 +582,8 @@ mod tests {
     }
 
     // Stale-binding judgement now lives inside each backend's
-    // `check_auth`; see `forge::github::accounts::tests` and
-    // `forge::gitlab::accounts::tests` for the per-state coverage.
+    // `check_auth`; see `forge::github::accounts::tests` for the
+    // per-state coverage.
     // The Phase-2 loop here just consumes the boolean
     // `is_definitely_logged_out()`.
     #[test]

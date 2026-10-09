@@ -7,18 +7,18 @@ Grab the latest release from
 
 - **macOS** — DMG for Apple Silicon and Intel. Open the DMG and drag Helmor to
   Applications.
-- **Windows** — x64 setup installer.
 
 Everything Helmor needs is bundled inside the app: the agent CLIs
-(Claude Code, Codex, and friends) and the GitHub/GitLab CLIs (`gh`, `glab`).
-You do not need to install any of them separately.
+(Claude Code, Codex, and friends) and the GitHub CLI (`gh`).
+You do not need to install any of them separately. For GitLab, install the
+`glab` CLI yourself — Helmor no longer bundles it.
 
 ## First launch
 
 On first launch, Helmor walks you through a short onboarding:
 
-1. **Connect GitHub or GitLab.** Helmor uses the bundled `gh`/`glab` CLIs and
-   their standard login flow. If you are already signed in to `gh` on this
+1. **Connect GitHub or GitLab.** Helmor uses the bundled `gh` CLI (or your own
+   `glab` for GitLab) and its standard login flow. If you are already signed in to `gh` on this
    machine, Helmor picks that up automatically; otherwise it opens an
    interactive sign-in right inside the app. Multiple accounts are supported —
    each repository remembers which account it belongs to.
@@ -48,10 +48,10 @@ picture.
 
 ## Updates
 
-Helmor checks for updates automatically and installs them on restart. You can
-trigger a check manually in **Settings → App Updates**. After an update, a
-"What's new" toast summarizes the changes — full notes are in the
-[GitHub releases](https://github.com/dohooo/helmor/releases).
+Helmor does not update itself. Install new builds with
+`scripts/fork/install-local-app.sh`. After an update, a "What's new" toast
+summarizes the changes — full notes are in the
+[GitHub releases](https://github.com/daniel-mf28/helmor/releases).
 
 ## Installing the CLI
 
@@ -59,9 +59,7 @@ The `helmor` terminal command is optional but recommended:
 
 **Settings → Experimental → Command Line Tool → Install**
 
-This installs a small launcher (to `/usr/local/bin/helmor` on macOS, or
-`%LOCALAPPDATA%\Helmor\bin\helmor.cmd` on Windows) that always points at your
-installed app, so the CLI and the app never drift apart. On Windows, open a
-new terminal afterwards so the updated `PATH` is picked up.
+This installs a small launcher (to `/usr/local/bin/helmor`) that always points at your
+installed app, so the CLI and the app never drift apart.
 
 See [CLI & MCP](../reference/cli-and-mcp.md) for what you can do with it.

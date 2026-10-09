@@ -20,7 +20,6 @@ import {
 	applyWindowsPathFromRegistry,
 	type WindowsPathEnvOptions,
 } from "../agent-path-env.js";
-import { buildAgentProxyEnv } from "../agent-proxy.js";
 import {
 	buildClaudeRichMeta,
 	buildClaudeStoredMeta,
@@ -421,7 +420,6 @@ export class ClaudeSessionManager implements SessionManager {
 			claudeEnvironment,
 			claudeConfigDir,
 			claudeSettings,
-			agentProxy,
 			images,
 			sourceRepoPath,
 		} = params;
@@ -478,9 +476,7 @@ export class ClaudeSessionManager implements SessionManager {
 			additionalDirectories.length > 0
 				? { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" }
 				: undefined;
-		const proxyEnv = buildAgentProxyEnv(agentProxy);
 		const queryEnv = mergeQueryEnv(
-			proxyEnv,
 			claudeConfigDirEnv(claudeConfigDir),
 			claudeEnv,
 			additionalDirectoryEnv,
@@ -1188,9 +1184,7 @@ export class ClaudeSessionManager implements SessionManager {
 			Object.keys(options.claudeEnvironment).length > 0
 				? options.claudeEnvironment
 				: undefined;
-		const proxyEnv = buildAgentProxyEnv(options?.agentProxy);
 		const queryEnv = mergeQueryEnv(
-			proxyEnv,
 			claudeConfigDirEnv(options?.claudeConfigDir),
 			claudeEnv,
 		);
@@ -1422,9 +1416,7 @@ export class ClaudeSessionManager implements SessionManager {
 		}
 	}
 
-	async listModels(_opts?: {
-		apiKey?: string;
-	}): Promise<readonly ProviderModelInfo[]> {
+	async listModels(): Promise<readonly ProviderModelInfo[]> {
 		return listProviderModels("claude");
 	}
 
@@ -1469,11 +1461,7 @@ export class ClaudeSessionManager implements SessionManager {
 				yield* [];
 			})();
 
-		const proxyEnv = buildAgentProxyEnv(params.agentProxy);
-		const queryEnv = mergeQueryEnv(
-			proxyEnv,
-			claudeConfigDirEnv(params.claudeConfigDir),
-		);
+		const queryEnv = mergeQueryEnv(claudeConfigDirEnv(params.claudeConfigDir));
 		const q = query({
 			prompt: promptIter,
 			options: {

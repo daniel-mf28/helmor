@@ -17,7 +17,7 @@ every change we make, including ones that diverge from upstream.
 
 ## What is Helmor
 
-Helmor is a local-first desktop app built with **Tauri v2** (Rust backend) + **React 19** + **Vite** + **TypeScript**. It provides a workspace management UI with its own SQLite database (`~/helmor/` in release, `~/helmor-dev/` in debug), letting users browse workspaces/sessions/messages and send prompts to AI agents (Claude Code CLI, OpenAI Codex CLI, OpenCode) via streaming IPC.
+Helmor is a local-first desktop app built with **Tauri v2** (Rust backend) + **React 19** + **Vite** + **TypeScript**. It provides a workspace management UI with its own SQLite database (`~/helmor/` in release, `~/helmor-dev/` in debug), letting users browse workspaces/sessions/messages and send prompts to AI agents (Claude Code CLI, OpenAI Codex CLI) via streaming IPC.
 
 ## Commands
 
@@ -50,7 +50,7 @@ Single test file: `bun x vitest run src/App.test.tsx` | `cd sidecar && bun test 
 
 - **Frontend** (`src/`): React 19 SPA in Tauri webview. State managed by focused hooks in `shell/hooks/` (`useAppShellState`, `useSelectionController`, `useEditorEditMode`, `useGlobalShortcutHandlers`, `useAppBootstrap`) + TanStack React Query + context providers.
 - **Rust backend** (`src-tauri/src/`): Tauri host, SQLite database, spawns and supervises the sidecar.
-- **Sidecar** (`sidecar/`): Bun + TypeScript, wraps `@anthropic-ai/claude-agent-sdk`, `@openai/codex` (CLI), and `@opencode-ai/sdk`. Built to `sidecar/dist/helmor-sidecar` via `bun build --compile`. JSON event stream over stdout.
+- **Sidecar** (`sidecar/`): Bun + TypeScript, wraps `@anthropic-ai/claude-agent-sdk`, and `@openai/codex` (CLI). Built to `sidecar/dist/helmor-sidecar` via `bun build --compile`. JSON event stream over stdout.
 
 Message flow: user prompt -> Rust `agents::streaming` -> sidecar -> SDK -> stdout events -> Rust accumulator -> adapter + collapse -> `ThreadMessageLike[]` -> `tauri::ipc::Channel` -> React.
 
@@ -101,7 +101,7 @@ Feature-based layout. Each feature folder follows: `index.tsx` (main) + `contain
 
 ### Sidecar structure (`sidecar/src/`)
 
-`index.ts` (entry, stdin/stdout JSON) | `session-manager.ts` (base lifecycle) | `claude-session-manager.ts` | `codex-session-manager.ts` | `opencode-protocol/session-manager.ts` (shared protocol manager) | `opencode-protocol/server.ts` | `opencode-protocol/opencode.ts` (opencode config) | `codex-skill-scanner.ts` | `request-parser.ts` | `emitter.ts` | `abort.ts` | `images.ts` | `title.ts` | `logger.ts`
+`index.ts` (entry, stdin/stdout JSON) | `session-manager.ts` (base lifecycle) | `claude-session-manager.ts` | `codex-session-manager.ts` | `codex-skill-scanner.ts` | `request-parser.ts` | `emitter.ts` | `abort.ts` | `images.ts` | `title.ts` | `logger.ts`
 
 ### Message data flow
 
@@ -161,12 +161,12 @@ When a snapshot drifts: look at the diff first. Only accept after confirming the
 - **Clippy**: Must pass `cargo clippy --all-targets -- -D warnings` with zero warnings.
 - **Perf**: `VITE_HELMOR_PERF_HUD=1` enables HUD + react-scan + long-frame tracker.
 - **Logging**: Dev defaults to `debug`. Override: `HELMOR_LOG=info|debug|error`. JSONL logs in `{data_dir}/logs/`.
-- **Bundled forge CLIs (`gh`, `glab`)**: Pinned + SHA256-verified in `sidecar/scripts/vendor-platform.ts`. To upgrade:
-  1. Bump `GH_VERSION` / `GLAB_VERSION`.
-  2. Pull the new SHA256 from `…/checksums.txt` (URLs in the file's header comment) and update `GH_SHA256` / `GLAB_SHA256`.
+- **Bundled forge CLI (`gh`)**: Pinned (`glab` is no longer bundled — GitLab needs a system-installed `glab`) + SHA256-verified in `sidecar/scripts/vendor-platform.ts`. To upgrade:
+  1. Bump `GH_VERSION`.
+  2. Pull the new SHA256 from `…/checksums.txt` (URLs in the file's header comment) and update `GH_SHA256`.
   3. Re-run `bun run build` in `sidecar/` — the changed SHA256 auto-forces a re-download + verify (no manual wipe). Downloaded archives now live in a shared, cross-worktree cache (the main worktree's `sidecar/.bundle-cache`, override `HELMOR_BUNDLE_CACHE`); wipe that only if you want a forced clean fetch.
   Bump cadence: every release cycle if upstream has shipped a notable fix; immediately on security advisories. Pin so the auth-status JSON shape Helmor parses doesn't drift unexpectedly.
-- **Bundled agent CLIs (`claude-code`, `codex`, `opencode`)**: Pulled in via `sidecar/package.json` and staged into `sidecar/dist/vendor/{claude-code,codex,opencode}/` as platform-native binaries. All three upstreams ship per-platform npm sub-packages (`@anthropic-ai/claude-code-darwin-{arm64,x64}`, `@openai/codex-darwin-{arm64,x64}`, `opencode-darwin-{arm64,x64}`). Cross-arch CI staging downloads the tarball straight from the npm registry and verifies against `CLAUDE_CODE_SHA256` / `CODEX_SHA256` / `OPENCODE_SHA256` in `vendor-platform.ts`. The `stage-vendor.ts` script stages claude-code, codex, opencode, gh, and glab CLIs. To upgrade:
+- **Bundled agent CLIs (`claude-code`, `codex`)**: Pulled in via `sidecar/package.json` and staged into `sidecar/dist/vendor/{claude-code,codex}/` as platform-native binaries. Both upstreams ship per-platform npm sub-packages (`@anthropic-ai/claude-code-darwin-{arm64,x64}`, `@openai/codex-darwin-{arm64,x64}`). Cross-arch CI staging downloads the tarball straight from the npm registry and verifies against `CLAUDE_CODE_SHA256` / `CODEX_SHA256` in `vendor-platform.ts`. The `stage-vendor.ts` script stages claude-code, codex, gh, and llama.cpp. (OpenCode, Cursor, Kimi, and the bundled Node runtime were removed from this fork.) To upgrade:
   1. Bump the version in `sidecar/package.json`, `cd sidecar && bun install`.
   2. Compute the SHA256 of both arch tarballs (`shasum -a 256` on the cached `.tgz`) and update the table in `stage-vendor.ts` (key it under the new version string).
   3. Run `bun run build` in `sidecar/` to verify — a changed SHA256 auto-forces a re-download (shared cache at the main worktree's `sidecar/.bundle-cache`, override `HELMOR_BUNDLE_CACHE`; no manual wipe needed).

@@ -4,10 +4,7 @@ import { Button } from "@/components/ui/button";
 import type { AgentLoginProvider } from "@/lib/api";
 import { I18nText, useI18n } from "@/lib/i18n";
 import { AgentStatusAction } from "../components/agent-status-action";
-import { ConnectingStatus } from "../components/connecting-status";
-import { CursorApiKeyAction } from "../components/cursor-api-key-action";
 import { LoginTerminalPreview } from "../components/login-terminal-preview";
-import { ReadyStatus } from "../components/ready-status";
 import type { AgentLoginItem, OnboardingStep } from "../types";
 
 export function AgentLoginStep({
@@ -23,7 +20,7 @@ export function AgentLoginStep({
 	onNext: () => void;
 	onRefreshLoginItems: () => void;
 }) {
-	const { t, f } = useI18n();
+	const { t } = useI18n();
 	const [primedLoginProvider, setPrimedLoginProvider] =
 		useState<AgentLoginProvider | null>(null);
 	const [activeLoginProvider, setActiveLoginProvider] =
@@ -31,13 +28,10 @@ export function AgentLoginStep({
 	const [loginInstanceId, setLoginInstanceId] = useState<string | null>(null);
 	const [waitingProvider, setWaitingProvider] =
 		useState<AgentLoginProvider | null>(null);
-	const [cursorKeyError, setCursorKeyError] = useState<string | null>(null);
 	const terminalProvider = activeLoginProvider ?? primedLoginProvider;
 	const terminalActive = activeLoginProvider !== null;
 
 	const startLogin = useCallback((provider: AgentLoginProvider) => {
-		// Cursor uses an API key, not a CLI login terminal.
-		if (provider === "cursor") return;
 		setPrimedLoginProvider(provider);
 		setActiveLoginProvider(provider);
 		setWaitingProvider(provider);
@@ -96,19 +90,11 @@ export function AgentLoginStep({
 						<I18nText source="helmorUsesLocalLoginSessionsCan" />
 					</p>
 
-					{/* Compact rows (h-12) so all four tiles + Back/Next stay inside
+					{/* Compact rows (h-12) so all tiles + Back/Next stay inside
 					    the fixed 810px onboarding window with margin below Next. */}
 					<div className="mt-5 flex w-full flex-col gap-1.5">
 						{loginItems.map(
 							({ icon: Icon, provider, label, description, status }) => {
-								const subLabel =
-									provider === "cursor" && cursorKeyError
-										? f("miscCouldnTValidateKey", { error: cursorKeyError })
-										: description;
-								const subLabelTone =
-									provider === "cursor" && cursorKeyError
-										? "text-destructive/90"
-										: "text-muted-foreground/85";
 								return (
 									<div
 										key={label}
@@ -121,32 +107,17 @@ export function AgentLoginStep({
 											<span className="truncate text-ui font-medium leading-none text-foreground">
 												{label}
 											</span>
-											<span
-												className={`truncate text-mini leading-none ${subLabelTone}`}
-											>
-												{subLabel}
+											<span className="truncate text-mini leading-none text-muted-foreground/85">
+												{description}
 											</span>
 										</div>
-										{provider === "cursor" ? (
-											status === "checking" ? (
-												<ConnectingStatus />
-											) : status === "ready" ? (
-												<ReadyStatus />
-											) : (
-												<CursorApiKeyAction
-													onSaved={onRefreshLoginItems}
-													onError={setCursorKeyError}
-												/>
-											)
-										) : (
-											<AgentStatusAction
-												provider={provider}
-												status={status}
-												waiting={waitingProvider === provider}
-												onPrimeLogin={setPrimedLoginProvider}
-												onStartLogin={startLogin}
-											/>
-										)}
+										<AgentStatusAction
+											provider={provider}
+											status={status}
+											waiting={waitingProvider === provider}
+											onPrimeLogin={setPrimedLoginProvider}
+											onStartLogin={startLogin}
+										/>
 									</div>
 								);
 							},

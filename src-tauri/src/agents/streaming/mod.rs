@@ -146,7 +146,6 @@ pub(super) fn stream_via_sidecar(
     };
 
     let images_for_wire = request.images.clone().unwrap_or_default();
-    let agent_proxy = load_agent_proxy_setting();
     // Read the user's `Claude Code Thinking Display` preference. The setting
     // is global (not per-message), so we resolve it here on every send rather
     // than threading it through `AgentSendRequest`. Anything other than the
@@ -176,7 +175,6 @@ pub(super) fn stream_via_sidecar(
         claude_base_url: model.claude_base_url.as_deref(),
         claude_auth_token: model.claude_auth_token.as_deref(),
         claude_vertex: model.claude_vertex.as_ref(),
-        agent_proxy: agent_proxy.as_ref(),
         claude_thinking_display: claude_thinking_display.as_deref(),
         images: &images_for_wire,
         codex_provider: model.codex_provider.as_ref(),
@@ -377,6 +375,9 @@ pub(super) fn stream_via_sidecar(
             app: &app,
             hub: stream_hub.inner(),
             session_id: hsid_copy.as_deref(),
+            partials: std::cell::RefCell::new(
+                crate::agents::partial_coalescer::PartialCoalescer::default(),
+            ),
         };
         let mut turn_session = state::TurnSession::new(state::TurnContext {
             provider: provider.clone(),
@@ -393,7 +394,24 @@ pub(super) fn stream_via_sidecar(
         });
 
         loop {
-            let event = match rx.recv_timeout(HEARTBEAT_TIMEOUT) {
+            // Wait for the next sidecar event. The heartbeat deadline is
+            // measured from here, exactly like the previous single
+            // `recv_timeout(HEARTBEAT_TIMEOUT)`. While a coalesced
+            // streaming partial is parked we wake early at its flush
+            // deadline, send it (trailing edge), and keep waiting — those
+            // wake-ups never count as a heartbeat timeout.
+            let heartbeat_deadline = Instant::now() + HEARTBEAT_TIMEOUT;
+            let recv_result = loop {
+                let wake_at = actions::partial_flush_deadline(&apply_ctx)
+                    .map_or(heartbeat_deadline, |d| d.min(heartbeat_deadline));
+                match rx.recv_timeout(wake_at.saturating_duration_since(Instant::now())) {
+                    Err(RecvTimeoutError::Timeout) if Instant::now() < heartbeat_deadline => {
+                        actions::flush_due_partial(&apply_ctx, Instant::now());
+                    }
+                    other => break other,
+                }
+            };
+            let event = match recv_result {
                 Ok(ev) => ev,
                 Err(err @ (RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected)) => {
                     let kind = match err {
@@ -627,15 +645,7 @@ pub(super) fn stream_via_sidecar(
 
                         if is_aborted {
                             pipeline_state.accumulator.flush_codex_in_progress();
-                            pipeline_state.accumulator.flush_cursor_in_progress();
-                            pipeline_state.accumulator.flush_opencode_in_progress();
                         }
-                        // Kimi finalizes on `kimi/turn_complete`, which never
-                        // arrives when the stream ends via `error`+`end`
-                        // (e.g. child crash) — flush on every termination so
-                        // the partial turn reaches the persist loop below.
-                        // Idempotent after a normal turn_complete.
-                        pipeline_state.accumulator.flush_kimi_in_progress();
                         if is_aborted {
                             pipeline_state.materialize_partial();
                             pipeline_state.accumulator.append_aborted_notice();
@@ -1041,7 +1051,14 @@ pub(super) fn stream_via_sidecar(
                         // event arrived first). The frontend still gets
                         // the bare PlanCaptured marker so its overlay
                         // doesn't get stuck waiting on it.
-                        let _ = on_event.send(AgentStreamEvent::PlanCaptured {});
+                        // Routed through apply_action (not a raw
+                        // `on_event.send`) so a parked streaming partial
+                        // is flushed ahead of it — event order is the
+                        // frontend contract.
+                        actions::apply_action(
+                            actions::Action::EmitToFrontend(AgentStreamEvent::PlanCaptured {}),
+                            &apply_ctx,
+                        );
                     }
                 }
                 "userInputRequest" => {
@@ -1476,6 +1493,16 @@ pub(super) fn stream_via_sidecar(
             }
         }
 
+        // Normally every exit from the loop above follows a terminal emit
+        // (Done / Aborted / Error) routed through `apply_action`, which
+        // resolves any parked streaming partial first. A rejected
+        // terminal transition (logged above) can skip that emit; never
+        // send a partial after the loop, and never panic the stream
+        // thread over it — just drop the stale frame.
+        if apply_ctx.partials.borrow_mut().discard_pending() {
+            tracing::warn!(rid = %rid, "dropping streaming partial still parked at stream end");
+        }
+
         tracing::info!(
             rid = %rid,
             event_count,
@@ -1490,35 +1517,6 @@ pub(super) fn stream_via_sidecar(
     });
 
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn load_agent_proxy_setting() -> Option<Value> {
-    let raw = crate::models::settings::load_setting_value("app.agent_proxy")
-        .ok()
-        .flatten()?;
-    let parsed: Value = serde_json::from_str(&raw).ok()?;
-    let obj = parsed.as_object()?;
-    match obj.get("mode").and_then(Value::as_str) {
-        Some("system") => Some(serde_json::json!({ "mode": "system" })),
-        Some("custom") => {
-            let custom_url = obj
-                .get("customUrl")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())?;
-            Some(serde_json::json!({
-                "mode": "custom",
-                "customUrl": custom_url,
-            }))
-        }
-        _ => None,
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn load_agent_proxy_setting() -> Option<Value> {
-    None
 }
 
 fn build_exit_plan_review_message(

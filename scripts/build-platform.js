@@ -12,14 +12,12 @@ export const MACOS_RELEASE_TARGETS = Object.freeze([
 		arch: "arm64",
 		targetTriple: "aarch64-apple-darwin",
 		tauriArgs: "--target aarch64-apple-darwin",
-		updaterPlatformKey: "darwin-aarch64",
 	}),
 	Object.freeze({
 		os: "macos",
 		arch: "x64",
 		targetTriple: "x86_64-apple-darwin",
 		tauriArgs: "--target x86_64-apple-darwin",
-		updaterPlatformKey: "darwin-x86_64",
 	}),
 ]);
 

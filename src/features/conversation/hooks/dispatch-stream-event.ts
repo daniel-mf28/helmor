@@ -250,9 +250,8 @@ export function createStreamEventDispatcher(
 				deps.onSessionAborted?.(deps.targetSessionId, deps.targetWorkspaceId);
 			}
 
-			void deps.queryClient.invalidateQueries({
-				queryKey: ["workspaceChanges"],
-			});
+			// No workspaceChanges prefix invalidation here: `cleanup()` already
+			// fires the final targeted Changes refresh for this stream.
 
 			const adoptedSessionId =
 				event.sessionId ??

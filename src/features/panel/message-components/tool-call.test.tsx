@@ -82,7 +82,7 @@ describe("AssistantToolCall default-collapsed", () => {
 	});
 });
 
-// opencode tools arrive pre-normalized by the Rust adapter; no opencode branch here.
+// Provider tools arrive pre-normalized by the Rust adapter.
 describe("AssistantToolCall normalized provider tools", () => {
 	it("renders a normalized Bash tool (universal shape) with description + command", () => {
 		render(

@@ -1,8 +1,7 @@
 //! Parse the global model-preference settings (default / review / PR). They
 //! store a `{provider, modelId}` JSON object so the provider is explicit;
 //! legacy rows hold a bare model id with no provider (resolved via the
-//! `resolve_model` heuristic — safe because pre-fork data never collides
-//! across the opencode-protocol providers).
+//! `resolve_model` heuristic).
 
 use serde::Deserialize;
 
@@ -55,10 +54,9 @@ mod tests {
     #[test]
     fn parses_json_form_with_provider() {
         let parsed =
-            parse_stored_model(r#"{"provider":"opencode","modelId":"opencode/grok-code"}"#)
-                .unwrap();
-        assert_eq!(parsed.provider.as_deref(), Some("opencode"));
-        assert_eq!(parsed.model_id, "opencode/grok-code");
+            parse_stored_model(r#"{"provider":"codex","modelId":"codex:acme/gpt-5.5"}"#).unwrap();
+        assert_eq!(parsed.provider.as_deref(), Some("codex"));
+        assert_eq!(parsed.model_id, "codex:acme/gpt-5.5");
     }
 
     #[test]

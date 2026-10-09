@@ -12,11 +12,10 @@
 // verbatim out of the old inline AppShell body — call order, dependency arrays
 // and `getSnapshot()` readbacks are preserved exactly.
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import type { ComposerCreateContext } from "@/features/conversation";
 import { useDockUnreadBadge } from "@/features/dock-badge";
 import type { SettingsSection } from "@/features/settings";
-import { useAppUpdater } from "@/features/updater/use-app-updater";
 import { useSettings } from "@/lib/settings";
 import { isQuickPanelWindow } from "@/lib/window-role";
 import { useRouterSelection } from "@/router/use-router-selection";
@@ -29,7 +28,6 @@ import { useSelectionControllers } from "@/shell/hooks/use-selection-controllers
 import { useSettledWorkspaceId } from "@/shell/hooks/use-settled-workspace-id";
 import { useShellChromeState } from "@/shell/hooks/use-shell-chrome-state";
 import { useShellStartupEffects } from "@/shell/hooks/use-shell-startup-effects";
-import { useSlugProviderStartupSync } from "@/shell/hooks/use-slug-provider-startup-sync";
 import { useThemeApplication } from "@/shell/hooks/use-theme-application";
 import { useThreadFocusBackstop } from "@/shell/hooks/use-thread-focus-backstop";
 import { useUiSyncBridge } from "@/shell/hooks/use-ui-sync-bridge";
@@ -57,7 +55,6 @@ export function useAppShellState({
 	} = useSettings();
 	const { repositories, workspaceGroups, archivedRows } =
 		useNavigationSidebar(appSettings);
-	const [feedbackOpen, setFeedbackOpen] = useState(false);
 
 	const sel = useSelectionControllers({
 		queryClient,
@@ -117,10 +114,8 @@ export function useAppShellState({
 			workspaceReselectTick,
 		],
 	);
-	const appUpdateStatus = useAppUpdater();
 	useDockUnreadBadge();
 	useEnsureDefaultModel();
-	useSlugProviderStartupSync();
 
 	const chrome = useShellChromeState({
 		queryClient,
@@ -163,7 +158,6 @@ export function useAppShellState({
 		handleSelectSession: sel.handleSelectSession,
 		selectedWorkspaceId,
 		workspaceViewMode,
-		setPendingCreatedWorkspaceSubmit: sel.setPendingCreatedWorkspaceSubmit,
 		selectedWorkspaceDetailQuery: dataControllers.selectedWorkspaceDetailQuery,
 		workspaceChangeRequest: dataControllers.workspaceChangeRequest,
 		workspaceForge: dataControllers.forge.workspaceForge,
@@ -286,9 +280,6 @@ export function useAppShellState({
 		pushWorkspaceToast,
 		appSettings,
 		repositories,
-		feedbackOpen,
-		setFeedbackOpen,
-		appUpdateStatus,
 		sessionSelectionHistory,
 		handleOpenWorkspaceStart,
 		startCreateContext,

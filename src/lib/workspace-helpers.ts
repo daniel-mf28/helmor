@@ -736,9 +736,9 @@ export function resolveSessionDisplayProvider({
 	modelSections: AgentModelSection[];
 	settingsDefaultModel?: ModelRef | null;
 }): AgentProvider | null {
-	// The Session Tab only has the five provider icons, so drive it from the
-	// session's agent — not the composer model (an opencode session can run many
-	// sub-provider models whose own logos aren't one of ours).
+	// The Session Tab only has the per-provider icons, so drive it from the
+	// session's agent — not the composer model (a custom-provider model's own
+	// logo isn't one of ours).
 	const agentProvider = agentTypeToProvider(session.agentType);
 	if (agentProvider) {
 		return agentProvider;
@@ -762,9 +762,6 @@ function agentTypeToProvider(agentType?: string | null): AgentProvider | null {
 	switch (agentType) {
 		case "claude":
 		case "codex":
-		case "cursor":
-		case "opencode":
-		case "kimi":
 			return agentType;
 		default:
 			// Custom Codex providers persist as `codex:<id>`.

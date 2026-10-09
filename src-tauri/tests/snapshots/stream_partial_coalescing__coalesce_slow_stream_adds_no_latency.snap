@@ -1,0 +1,16 @@
+---
+source: tests/stream_partial_coalescing.rs
+expression: h.wire
+---
+- t_ms: 0
+  kind: streamingPartial
+  body:
+    - "slow "
+- t_ms: 50
+  kind: streamingPartial
+  body:
+    - "slow stream "
+- t_ms: 100
+  kind: streamingPartial
+  body:
+    - slow stream here

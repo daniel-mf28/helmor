@@ -21,9 +21,8 @@ pub(crate) static BACKEND: GithubAccountBackend = GithubAccountBackend;
 pub(crate) struct GithubAccountBackend;
 
 impl ForgeAccountBackend for GithubAccountBackend {
-    fn list_accounts(&self, _hosts_hint: &[String]) -> Result<Vec<ForgeAccount>> {
-        // gh enumerates its own host list; the caller's `hosts_hint` is
-        // a glab-only signal and gets ignored here.
+    fn list_accounts(&self) -> Result<Vec<ForgeAccount>> {
+        // gh enumerates its own host list.
         list_github_accounts_full()
     }
 

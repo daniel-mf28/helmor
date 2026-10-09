@@ -37,21 +37,6 @@ import type {
 
 type FetchState = { loading: boolean; error: string | null };
 
-// Default wire-protocol options (OpenCode). Adapters override via
-// `styleOptions` — e.g. Kimi supplies openai/anthropic/… .
-const DEFAULT_STYLE_OPTIONS: StyleOption[] = [
-	{
-		value: "chat",
-		label: "chatCompletions",
-		hint: "v1ChatCompletionsWidestCompatibility",
-	},
-	{
-		value: "responses",
-		label: "responsesApi",
-		hint: "v1ResponsesAdvancedReasoningTools",
-	},
-];
-
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
@@ -198,11 +183,9 @@ export function CustomProviderCard({
 			{adapter.caps.apiStyleSelectable && isManual ? (
 				<StyleSelect
 					label={adapter.styleLabel ?? "apiStyle"}
-					options={adapter.styleOptions ?? DEFAULT_STYLE_OPTIONS}
+					options={adapter.styleOptions ?? []}
 					value={
-						draft.apiStyle ??
-						(adapter.styleOptions ?? DEFAULT_STYLE_OPTIONS)[0]?.value ??
-						"chat"
+						draft.apiStyle ?? adapter.styleOptions?.[0]?.value ?? "anthropic"
 					}
 					onChange={(apiStyle) => commit({ apiStyle })}
 				/>

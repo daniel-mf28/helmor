@@ -6,7 +6,6 @@ pub(crate) mod commands;
 pub mod data_dir;
 pub mod downloads;
 pub mod error;
-pub mod feedback;
 pub mod forge;
 pub mod git;
 pub mod global_hotkey;
@@ -30,7 +29,6 @@ pub mod sidecar;
 mod system_limits;
 pub mod terminal;
 pub mod ui_sync;
-pub mod updater;
 pub mod workspace;
 
 #[cfg(test)]
@@ -70,7 +68,6 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         // The quick panel positions itself (bottom-center, stage-anchored
         // resizes) — restoring stale geometry would fight that.
         .plugin(
@@ -232,7 +229,7 @@ pub fn run() {
             // forge_login is still NULL. Covers (a) repos added before
             // the multi-account migration shipped, and (b) repos whose
             // initial bind found no candidate but the user has since
-            // run `gh/glab auth login`. Spawned blocking so the CLI
+            // run `gh auth login`. Spawned blocking so the CLI
             // probes don't stall the UI thread.
             let backfill_handle = app.handle().clone();
             tauri::async_runtime::spawn_blocking(move || {
@@ -262,10 +259,6 @@ pub fn run() {
                     }
                 }
             });
-
-            updater::configure()?;
-            updater::spawn_startup_check(app.handle().clone());
-            updater::spawn_interval_worker(app.handle().clone());
 
             // Per-version silent re-check of the Helmor CLI symlink and
             // the Helmor Skills package. Runs once per app version
@@ -366,8 +359,6 @@ pub fn run() {
             commands::provider_commands::stop_keychain_store_terminal,
             commands::provider_commands::write_keychain_store_terminal_stdin,
             commands::provider_commands::resize_keychain_store_terminal,
-            agents::list_cursor_models,
-            agents::list_opencode_models,
             agents::list_provider_capabilities,
             agents::send_agent_message_stream,
             agents::subscribe_session_stream,
@@ -392,7 +383,6 @@ pub fn run() {
             commands::workspace_commands::finalize_workspace_from_repo,
             commands::repository_commands::get_add_repository_defaults,
             commands::settings_commands::get_app_settings,
-            commands::kimi_provider_commands::get_kimi_provider_config,
             commands::settings_commands::get_claude_rate_limits,
             commands::claude_account_commands::set_session_claude_config_dir,
             commands::claude_account_commands::detect_claude_config_dirs,
@@ -544,9 +534,6 @@ pub fn run() {
             commands::workspace_commands::cleanup_archived_workspaces,
             commands::workspace_commands::restore_workspace,
             commands::editor_commands::stat_editor_file,
-            commands::feedback_commands::fork_helmor_upstream,
-            commands::feedback_commands::create_helmor_issue,
-            commands::feedback_commands::find_existing_helmor_repo,
             commands::system_commands::save_pasted_image,
             commands::system_commands::save_text_file_as,
             commands::system_commands::show_image_in_finder,
@@ -566,9 +553,6 @@ pub fn run() {
             quick_panel::reveal_workspace_in_main_window,
             ui_sync::subscribe_ui_mutations,
             ui_sync::unsubscribe_ui_mutations,
-            commands::updater_commands::get_app_update_status,
-            commands::updater_commands::check_for_app_update,
-            commands::updater_commands::install_downloaded_app_update,
             commands::editor_commands::write_editor_file
         ])
         .build(tauri::generate_context!())
@@ -599,16 +583,6 @@ pub fn run() {
     // Dock-menu Quit or unexpected OS-level exit can't slip through
     // without confirmation on macOS.
     app.run(|app_handle, event| match event {
-        tauri::RunEvent::Resumed => {
-            updater::maybe_trigger_on_resume(app_handle.clone());
-        }
-        tauri::RunEvent::WindowEvent {
-            label,
-            event: tauri::WindowEvent::Focused(true),
-            ..
-        } if label == "main" => {
-            updater::maybe_trigger_on_focus(app_handle.clone());
-        }
         tauri::RunEvent::WindowEvent {
             label,
             event: tauri::WindowEvent::CloseRequested { api, .. },
@@ -654,12 +628,6 @@ pub fn run() {
         } => {
             api.prevent_exit();
             emit_quit_requested(app_handle);
-        }
-        // Install pending update on the way out so the next launch is the
-        // new version. By this point `request_quit` has stopped watchers
-        // and torn down the sidecar, so blocking briefly here is safe.
-        tauri::RunEvent::Exit => {
-            updater::install_pending_on_exit_blocking();
         }
         _ => {}
     });

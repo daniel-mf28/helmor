@@ -5,7 +5,6 @@ import {
 	prependPathSegment,
 } from "../src/agent-path-env.js";
 import { buildClaudeBaseEnv } from "../src/claude/session-manager.js";
-import { buildOpencodeEnv } from "../src/opencode-protocol/server.js";
 
 describe("agent PATH env helpers", () => {
 	test("merges Windows machine, user, and current PATH with expansion", () => {
@@ -79,18 +78,5 @@ describe("provider env builders", () => {
 		);
 
 		expect(env?.Path?.split(";")).toContain("C:\\Claude\\bin");
-	});
-
-	test("OpenCode server env includes Windows PATH merge", () => {
-		const env = buildOpencodeEnv(
-			{ Path: "C:\\OpenCode\\bin" },
-			{
-				platform: "win32",
-				readWindowsRegistryPath: (scope) =>
-					scope === "machine" ? "C:\\Windows\\System32" : "C:\\User\\bin",
-			},
-		);
-
-		expect(env.Path?.split(";")).toContain("C:\\OpenCode\\bin");
 	});
 });

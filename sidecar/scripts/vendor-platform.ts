@@ -17,14 +17,8 @@ export interface TargetInfo {
 	codexTriple: string;
 	/** Codex npm tarball suffix: `darwin-arm64` / `darwin-x64`. */
 	codexNpmSuffix: string;
-	/** `opencode-darwin-<arch>` is the npm optional-dep package. */
-	opencodePkg: string;
-	/** opencode npm tarball suffix: `darwin-arm64` / `darwin-x64`. */
-	opencodeNpmSuffix: string;
 	/** `gh` release naming: `arm64` / `amd64`. */
 	ghArch: ReleaseArch;
-	/** `glab` release naming: `arm64` / `amd64`. */
-	glabArch: ReleaseArch;
 }
 
 export interface ArchivePlan {
@@ -38,12 +32,6 @@ export const GH_VERSION = "2.95.0";
 export const GH_SHA256 = {
 	arm64: "3677f9c27965825f9c7d50395473c134edaea4b484373ef6b25de653570a0489",
 	amd64: "985707e9ac60c95ed51cddd808c338b481abe69fffa77e9d6547c3750045f77e",
-} as const;
-
-export const GLAB_VERSION = "1.103.0";
-export const GLAB_SHA256 = {
-	arm64: "fea5a07e6b41dfd04585c1ba08deaf95cd7e9b320a86d056f65415e254732fe3",
-	amd64: "c32fb1df724bc3cee2da828b24e19a3f518f4b4d382410984eb4a415498284da",
 } as const;
 
 export const CODEX_SHA256: Readonly<
@@ -195,153 +183,11 @@ export const CLAUDE_CODE_SHA256: Readonly<
 	},
 };
 
-export const OPENCODE_SHA256: Readonly<
-	Record<string, { arm64: string; x64: string }>
-> = {
-	"1.16.2": {
-		arm64: "2103383d7562c1783cb66d63d31630ff90448d1ade90f8a187778d18c4b9ee5f",
-		x64: "1be1b4ff8874f0f0848e88bf4de3943a4fff3a51c8b2a75c910fb7f710e7cd03",
-	},
-	"1.17.3": {
-		arm64: "773317f1225f8918d819dbaf3d1125a3b3cc585ab1e982b3fdd7881844a212ca",
-		x64: "16a79dc881910fe6769a074b458e2a809ba94547f437506be2daabdcad9e1317",
-	},
-	"1.17.9": {
-		arm64: "26dd73a727e3f1a4d090f07b61e5d2a5e43049f68fa71092ec529e77367dc9ad",
-		x64: "9e3370d2de5d424f5223d964b41a71905b6f2f19e6c68f9574dc373674ac2c53",
-	},
-	"1.17.10": {
-		arm64: "8837811a5bb35b9a52bfe6e943f7881b95bcfa4a7444a5292181fb651ef9f18e",
-		x64: "48242614bb5b551bc854f8eff2992cd808c11be7454544c4e69e7a2dbd0f637a",
-	},
-	"1.17.11": {
-		arm64: "77e58d109987351dc0283c7c2df561328c8c9a42af99a529dd016be8da9e56f5",
-		x64: "ed5ea40abc3af12d885f6055ddaadd87028c1ad3c1f42faf38de5d69a06c8876",
-	},
-	"1.17.12": {
-		arm64: "76462e5cd3da58f7e239870a56ba1915425edc107a0f816a48774b548a9978e3",
-		x64: "51a7c7022ed9bc9c73136e2b47970e5bfbbe8c398d2a53893b34322884a678c3",
-	},
-	"1.17.14": {
-		arm64: "4082d795390892d9512e5694caba575e15eef97145653d6f999a5152301fa761",
-		x64: "6e38a0b307895554086e6c02a19670a02f849b975b954920225d742a337dc5b6",
-	},
-	"1.17.18": {
-		arm64: "6fb43e2d8728fa0e2a590d49c45c63489ecda33a6ed4e7064c34b06b0df5081d",
-		x64: "2192df6595f2f8441ef1b6bee7a63d81c0211b4889cfe34de868c6741ec5cdb2",
-	},
-	"1.18.2": {
-		arm64: "b4c2e9af82685bbabfe3d138a9d3254a29484079a39d23ad30db4bcc6a933287",
-		x64: "114e3441cb8556f9dc75fb63999c7dcb2e099fc08d97acaff57a3c940d099c1c",
-	},
-	"1.18.3": {
-		arm64: "598f404a27676f35b9bf82e93a31b2ac04e3ad9a69e7a7d585c520835b3e119e",
-		x64: "7075e02bdaa3fad0f1953c5841b68cd46628897437de476eacaa4d5e34c96a19",
-	},
-	"1.18.4": {
-		arm64: "3c88c3e098a14cd02283376ed49b7134e6ee99bc2ba95f949c3dc596711e6cae",
-		x64: "46a7af2c1e2b086778f6a1e1f89e89313aadab4cc9f02bf93fbad02a4391c19f",
-	},
-};
-
-// Kimi Code CLI ships per-platform native binaries (Node SEA) as zip release
-// assets on GitHub — NOT npm sub-packages — so it's staged like gh/glab from a
-// release URL rather than from node_modules. Bumping: pull each platform's
-// SHA256 from the release's `*.zip.sha256` sidecar (or the GitHub asset
-// `digest`) and wipe sidecar/.bundle-cache. Keyed `version → platformSlug`.
-export const KIMI_VERSION = "0.29.1";
-export const KIMI_SHA256: Readonly<Record<string, Record<string, string>>> = {
-	"0.19.1": {
-		"darwin-arm64":
-			"8661832e04cd7dbfb81ed8dff02bb39c35cf38378cc8aedb0a912903b99bfae0",
-		"darwin-x64":
-			"eb967963d080b4744873517e9348f59ecc2db44eabc98c7a5fc3b3ed46a1e669",
-		"win32-arm64":
-			"28cf285e41c8131458accdcf85928dc7ae4e0b1bcfb3d721d038de878ab8fc48",
-		"win32-x64":
-			"ab494beb5f168bcdc0f66552ad4d6fef68566a655452262ac7800fef550319fe",
-	},
-	"0.19.2": {
-		"darwin-arm64":
-			"449d32d4010c57cfaa5987961840b36bc21c84314489bc602e38766dcc3d22cc",
-		"darwin-x64":
-			"f9f872544dd7a7de8b2a6a89068e3cf13da47fecfd668782a5cda3a78033a85d",
-		"win32-arm64":
-			"58c947886ad4aacf7604bf5f35abf161d77dcbd050900170c4fd49da9234865c",
-		"win32-x64":
-			"6967aca6daa7a61ea1601e1bc0a64cc22512a6f449b4cabd5a08fa1f1ffb4dda",
-	},
-	"0.20.3": {
-		"darwin-arm64":
-			"8d49227050498a23f11ce660c622e4be94d2a07f22950bb277269f951530ed87",
-		"darwin-x64":
-			"8152a43d7a2208b5ee9a1aab7b1344082df6df49ed4ed66156a2fa356b9ea396",
-		"win32-arm64":
-			"270e44215fb89112135dfb8bbbbe54beb1269031ca20311b4cc4d9a5b267b35a",
-		"win32-x64":
-			"fbd2c89b61cfd48474f99aeaee536b3f34c1da3879588dbd1150f80b34064535",
-	},
-	"0.21.0": {
-		"darwin-arm64":
-			"9a20e6680de77cacdeacd768877e0ddf2e04553d305f82fb989719389c243beb",
-		"darwin-x64":
-			"6559c2392f268bc1ad437cbbc20ab02a898f44bb6e8db970b6ff833eca2b64b7",
-		"win32-arm64":
-			"65c410c38e193c4c99da6b64a536440ea5896796995e7963fa7911cdcb2580d2",
-		"win32-x64":
-			"b6e875f1fcd7967713f0b99c040c72b853962d1e7f88377e6125478b79e5999d",
-	},
-	"0.29.1": {
-		"darwin-arm64":
-			"0f2ff623a88eab6edfef131c2663ca312de5af81c7e30a8830bd6d566bbe78cb",
-		"darwin-x64":
-			"f83e86d32c27370e5dedbb0a75fc4340d8da5cb8fbe5e4e06a51de66615284a0",
-		"win32-arm64":
-			"269559f980a0d64a14e58df00187ea5f6711312fb395335eaa01de2b9da11a22",
-		"win32-x64":
-			"f1447930a2d5422ae15bb0c73a7a5fba5fdb679beecf162cc460439785014310",
-	},
-};
-
 export const LLAMA_VERSION = "b9763";
 export const LLAMA_SHA256: Readonly<{ arm64: string; x64: string }> = {
 	arm64: "7706d1a7630218a3665d8c2d680bb54ab7f101896e9c45caaf5676ef4ce2e2d0",
 	x64: "8ce3ef62326d1359958352e56c4926d57ef4345b87b44b16fba263a4f66ef4e3",
 };
-
-// Node runtime that runs the cursor worker. Pinned to the Node 24 line to match
-// the bundled worker runtime and to satisfy @cursor/sdk's engines floor
-// (>=22.13). Since @cursor/sdk 1.0.19 the SDK's SQLite store uses Node's
-// built-in `node:sqlite` (stable + unflagged on Node 24) instead of a native
-// sqlite3 addon, so there is no Node↔native-addon ABI concern. Bumping: pull
-// SHA256 from https://nodejs.org/dist/v$VER/SHASUMS256.txt and wipe
-// sidecar/.bundle-cache.
-export const NODE_VERSION = "24.17.0";
-export const NODE_SHA256: Readonly<{
-	darwin: Record<DarwinArch, string>;
-	windows: Record<DarwinArch, string>;
-}> = {
-	darwin: {
-		arm64: "4fc3266a3702eebc39cc37661cf4eeceeade307e242ab64e4d7ce7949197e11f",
-		x64: "80da552fe037290cb130e9dea590f5eeeb7aa450636f0c89ab41415511c1ec27",
-	},
-	windows: {
-		arm64: "4957712f67fce55779cc794d9b4df9e0e802a18c841ad5a4e42f17be490e634d",
-		x64: "f2aa33b35b75aca5f3f7b85675a6f6423201053e9381911e64961f3bda2528ab",
-	},
-} as const;
-
-export function nodeArchivePlan(target: TargetInfo): ArchivePlan {
-	const platform = target.os === "windows" ? "win" : "darwin";
-	const ext = target.os === "windows" ? "zip" : "tar.gz";
-	const slug = `node-v${NODE_VERSION}-${platform}-${target.arch}`;
-	return {
-		slug,
-		archiveName: `${slug}.${ext}`,
-		url: `https://nodejs.org/dist/v${NODE_VERSION}/${slug}.${ext}`,
-		sha256: NODE_SHA256[target.os][target.arch],
-	};
-}
 
 const TARGETS: Readonly<Record<DarwinArch, TargetInfo>> = {
 	arm64: {
@@ -352,10 +198,7 @@ const TARGETS: Readonly<Record<DarwinArch, TargetInfo>> = {
 		codexPkg: "@openai/codex-darwin-arm64",
 		codexTriple: "aarch64-apple-darwin",
 		codexNpmSuffix: "darwin-arm64",
-		opencodePkg: "opencode-darwin-arm64",
-		opencodeNpmSuffix: "darwin-arm64",
 		ghArch: "arm64",
-		glabArch: "arm64",
 	},
 	x64: {
 		os: "darwin",
@@ -365,10 +208,7 @@ const TARGETS: Readonly<Record<DarwinArch, TargetInfo>> = {
 		codexPkg: "@openai/codex-darwin-x64",
 		codexTriple: "x86_64-apple-darwin",
 		codexNpmSuffix: "darwin-x64",
-		opencodePkg: "opencode-darwin-x64",
-		opencodeNpmSuffix: "darwin-x64",
 		ghArch: "amd64",
-		glabArch: "amd64",
 	},
 };
 
@@ -384,10 +224,7 @@ const WINDOWS_X64_TARGET: TargetInfo = {
 	codexPkg: "@openai/codex-win32-x64",
 	codexTriple: "x86_64-pc-windows-msvc",
 	codexNpmSuffix: "win32-x64",
-	opencodePkg: "opencode-windows-x64",
-	opencodeNpmSuffix: "windows-x64",
 	ghArch: "amd64",
-	glabArch: "amd64",
 };
 
 export function targetInfoForArch(arch: DarwinArch): TargetInfo {
@@ -458,27 +295,6 @@ export function ghArchivePlan(target: TargetInfo): ArchivePlan {
 	};
 }
 
-export function glabArchivePlan(target: TargetInfo): ArchivePlan {
-	const arch = target.glabArch;
-	// macOS: `glab_<ver>_darwin_<arch>.tar.gz`; Windows: `..._windows_<arch>.zip`.
-	if (target.os === "windows") {
-		const slug = `glab_${GLAB_VERSION}_windows_${arch}`;
-		return {
-			slug,
-			archiveName: `${slug}.zip`,
-			url: `https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/${slug}.zip`,
-			sha256: "",
-		};
-	}
-	const slug = `glab_${GLAB_VERSION}_darwin_${arch}`;
-	return {
-		slug,
-		archiveName: `${slug}.tar.gz`,
-		url: `https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/${slug}.tar.gz`,
-		sha256: GLAB_SHA256[arch],
-	};
-}
-
 export function claudeCodeArchivePlan(
 	target: TargetInfo,
 	version: string,
@@ -514,60 +330,6 @@ export function codexArchivePlan(
 		archiveName: `${slug}.tgz`,
 		url: `https://registry.npmjs.org/@openai/codex/-/${slug}.tgz`,
 		sha256: shaTable[target.arch],
-	};
-}
-
-export function opencodeArchivePlan(
-	target: TargetInfo,
-	version: string,
-): ArchivePlan {
-	const shaTable = OPENCODE_SHA256[version];
-	if (!shaTable) {
-		throw new Error(
-			`[stage-vendor] no pinned SHA256 for opencode ${version} — add it to OPENCODE_SHA256 in vendor-platform.ts`,
-		);
-	}
-	const slug = `${target.opencodePkg}-${version}`;
-	return {
-		slug,
-		archiveName: `${slug}.tgz`,
-		url: `https://registry.npmjs.org/${target.opencodePkg}/-/opencode-${target.opencodeNpmSuffix}-${version}.tgz`,
-		sha256: shaTable[target.arch],
-	};
-}
-
-/** Platform slug in Kimi's release asset names: `darwin-arm64`, `win32-x64`, … */
-export function kimiPlatformSlug(target: TargetInfo): string {
-	const os = target.os === "windows" ? "win32" : "darwin";
-	return `${os}-${target.arch}`;
-}
-
-export function kimiArchivePlan(
-	target: TargetInfo,
-	version: string,
-): ArchivePlan {
-	const shaTable = KIMI_SHA256[version];
-	if (!shaTable) {
-		throw new Error(
-			`[stage-vendor] no pinned SHA256 for kimi ${version} — add it to KIMI_SHA256 in vendor-platform.ts`,
-		);
-	}
-	const platform = kimiPlatformSlug(target);
-	const sha256 = shaTable[platform];
-	if (!sha256) {
-		throw new Error(
-			`[stage-vendor] no pinned SHA256 for kimi ${version} ${platform}`,
-		);
-	}
-	// GitHub release tag is the scoped npm tag `@moonshot-ai/kimi-code@<ver>`,
-	// url-encoded in the download path (`@`→`%40`).
-	const tag = `%40moonshot-ai/kimi-code%40${version}`;
-	const slug = `kimi-code-${platform}-${version}`;
-	return {
-		slug,
-		archiveName: `${slug}.zip`,
-		url: `https://github.com/MoonshotAI/kimi-code/releases/download/${tag}/kimi-code-${platform}.zip`,
-		sha256,
 	};
 }
 

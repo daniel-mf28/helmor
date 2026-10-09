@@ -238,14 +238,14 @@ pub enum MessagePart {
     },
 
     /// Normalized agent→user question card. One shape for Claude
-    /// AskUserQuestion, Codex `requestUserInput` and OpenCode `question`
-    /// — provider raw shapes are normalized by `pipeline::user_question`
+    /// AskUserQuestion, Codex `requestUserInput`
+    /// questions — provider raw shapes are normalized by `pipeline::user_question`
     /// so the frontend renders a single component.
     #[serde(rename = "user-question", rename_all = "camelCase")]
     UserQuestion {
         /// `userInputId` round-trip key (Claude: the tool_use id).
         id: String,
-        /// Badge string: `"Claude"`, `"Codex"`, `"OpenCode"`.
+        /// Badge string: `"Claude"`, `"Codex"`.
         source: String,
         questions: Vec<UserQuestionItem>,
         /// `{ [question text]: answer string }` — multi-select answers are
@@ -373,7 +373,7 @@ pub struct UserQuestionItem {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<UserQuestionOption>,
     /// Whether the renderer offers a free-text "Other" input (always for
-    /// Claude/OpenCode; Codex's `isOther` flag).
+    /// Claude; Codex's `isOther` flag).
     #[serde(default = "default_true")]
     pub allow_free_text: bool,
 }

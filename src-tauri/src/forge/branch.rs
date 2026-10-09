@@ -1,6 +1,6 @@
 //! Shared helpers for resolving the branch name a forge API should query
-//! against. Both `forge::github::context` and `forge::gitlab::context`
-//! consume these so the providers stay aligned on workspaces whose local
+//! against. `forge::github::context` consumes these so it stays correct
+//! on workspaces whose local
 //! branch name differs from upstream (e.g. after `git branch -m` or
 //! `git push HEAD:refs/heads/<other>`).
 
@@ -8,11 +8,9 @@ use crate::{git_ops, models::workspaces::WorkspaceRecord};
 
 /// The branch a forge should use as its PR/MR head ref, plus whether that
 /// branch is published on the remote. `published` is the canonical,
-/// provider-agnostic name for this flag — both `forge::github::context` and
-/// `forge::gitlab::context` store it under the same name.
+/// provider-agnostic name for this flag.
 pub(in crate::forge) struct ForgeHeadRef {
-    /// Branch name to pass as GitHub's `headRefName` / GitLab's
-    /// `source_branch`. The upstream branch name when it differs from local.
+    /// Branch name to pass as GitHub's `headRefName`. The upstream branch name when it differs from local.
     pub branch: String,
     /// `true` when the branch has a ref the forge API can match against —
     /// resolved from the local remote-tracking ref, or (when that's missing)

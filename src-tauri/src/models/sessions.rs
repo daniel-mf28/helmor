@@ -565,46 +565,17 @@ pub struct CreateSessionResponse {
     pub session_id: String,
 }
 
-/// Forge-aware variant. Looks up the workspace's stored `forge_provider`
-/// so a GitLab workspace gets "Create MR" / "Open MR" instead of the
-/// GitHub-flavored defaults. Falls back to the plain `default_title` when
-/// we have no provider info (e.g. pre-migration rows).
-fn default_session_title_for_action_kind_with_workspace(
-    transaction: &Transaction<'_>,
-    workspace_id: &str,
-    action_kind: Option<ActionKind>,
-) -> Result<String> {
-    let Some(kind) = action_kind else {
-        return Ok("Untitled".to_string());
-    };
-
-    // Only CreatePr/OpenPr care about the forge nouns — skip the query
-    // otherwise.
-    if !matches!(kind, ActionKind::CreatePr | ActionKind::OpenPr) {
-        return Ok(kind.default_title().to_string());
-    }
-
-    let provider: Option<String> = transaction
-        .query_row(
-            "SELECT r.forge_provider \
-             FROM workspaces w JOIN repos r ON r.id = w.repository_id \
-             WHERE w.id = ?1",
-            [workspace_id],
-            |row| row.get::<_, Option<String>>(0),
-        )
-        .optional()
-        .with_context(|| format!("Failed to read forge_provider for {workspace_id}"))?
-        .flatten();
-
-    let change_request_name = match provider.as_deref() {
-        Some("gitlab") => "MR",
-        _ => "PR",
-    };
-    Ok(kind.default_title_for_change_request(change_request_name))
+/// Default title for a session created with `action_kind`; "Untitled"
+/// when there is no action kind.
+fn default_session_title_for_action_kind(action_kind: Option<ActionKind>) -> String {
+    action_kind.map_or_else(
+        || "Untitled".to_string(),
+        |kind| kind.default_title().to_string(),
+    )
 }
 
 /// Optional per-session config carried at create time. Inspector helpers
-/// (Create PR/MR, Review) push the user's configured model/effort/fast-mode
+/// (Create PR, Review) push the user's configured model/effort/fast-mode
 /// here so the new session row is born with the right values — the composer
 /// then reads them off the row via the normal `currentSession` chain instead
 /// of routing them through a transient pendingPromptForSession override.
@@ -671,11 +642,7 @@ pub fn create_session(
     let session_kind = overrides.session_kind.unwrap_or("gui");
     // Terminal sessions default to "Untitled" too (not "Terminal"), so the
     // prompt-captured title generation can replace it like a normal session.
-    let title = default_session_title_for_action_kind_with_workspace(
-        &transaction,
-        workspace_id,
-        action_kind,
-    )?;
+    let title = default_session_title_for_action_kind(action_kind);
 
     transaction
         .execute(
@@ -1521,75 +1488,22 @@ mod tests {
     }
 
     #[test]
-    fn action_session_title_uses_mr_wording_on_gitlab() {
-        let (conn, _dir) = test_db();
-        seed(&conn);
-        conn.execute(
-            "UPDATE repos SET forge_provider = 'gitlab' WHERE id = 'r1'",
-            [],
-        )
-        .unwrap();
-        let tx = conn.unchecked_transaction().unwrap();
-
-        let gitlab_title = default_session_title_for_action_kind_with_workspace(
-            &tx,
-            "w1",
-            Some(ActionKind::CreatePr),
-        )
-        .unwrap();
-        assert_eq!(gitlab_title, "Create MR");
-
-        let open_title = default_session_title_for_action_kind_with_workspace(
-            &tx,
-            "w1",
-            Some(ActionKind::OpenPr),
-        )
-        .unwrap();
-        assert_eq!(open_title, "Open MR");
-
+    fn action_session_title_uses_pr_wording() {
+        assert_eq!(
+            default_session_title_for_action_kind(Some(ActionKind::CreatePr)),
+            "Create PR"
+        );
+        assert_eq!(
+            default_session_title_for_action_kind(Some(ActionKind::OpenPr)),
+            "Open PR"
+        );
         // Non-PR kinds still use their normal title.
-        let merge_title = default_session_title_for_action_kind_with_workspace(
-            &tx,
-            "w1",
-            Some(ActionKind::Merge),
-        )
-        .unwrap();
-        assert_eq!(merge_title, "Merge");
-
+        assert_eq!(
+            default_session_title_for_action_kind(Some(ActionKind::Merge)),
+            "Merge"
+        );
         // No action kind → "Untitled".
-        let untitled =
-            default_session_title_for_action_kind_with_workspace(&tx, "w1", None).unwrap();
-        assert_eq!(untitled, "Untitled");
-    }
-
-    #[test]
-    fn action_session_title_keeps_pr_wording_on_github_or_missing_provider() {
-        let (conn, _dir) = test_db();
-        seed(&conn);
-        let tx = conn.unchecked_transaction().unwrap();
-
-        // forge_provider is NULL (legacy row) → default to PR wording.
-        let null_title = default_session_title_for_action_kind_with_workspace(
-            &tx,
-            "w1",
-            Some(ActionKind::CreatePr),
-        )
-        .unwrap();
-        assert_eq!(null_title, "Create PR");
-
-        // forge_provider = 'github' → also PR.
-        tx.execute(
-            "UPDATE repos SET forge_provider = 'github' WHERE id = 'r1'",
-            [],
-        )
-        .unwrap();
-        let gh_title = default_session_title_for_action_kind_with_workspace(
-            &tx,
-            "w1",
-            Some(ActionKind::CreatePr),
-        )
-        .unwrap();
-        assert_eq!(gh_title, "Create PR");
+        assert_eq!(default_session_title_for_action_kind(None), "Untitled");
     }
 
     #[test]

@@ -4,15 +4,11 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    str::FromStr,
     sync::{LazyLock, Mutex},
 };
 
 use crate::{
-    forge::{self, remote::parse_remote, ForgeProvider},
-    git_ops,
-    models::workspaces::WorkspaceRecord,
-    workspace_state::WorkspaceMode,
+    git_ops, models::workspaces::WorkspaceRecord, workspace_state::WorkspaceMode,
     workspace_status::WorkspaceStatus,
 };
 
@@ -634,7 +630,7 @@ pub fn branch_name_for_directory(
             .to_string(),
         BranchPrefixType::None => String::new(),
         BranchPrefixType::Username => {
-            if let Ok(Some(login)) = resolve_forge_login(settings) {
+            if let Some(login) = resolve_forge_login(settings) {
                 format!("{login}/")
             } else {
                 String::new()
@@ -671,65 +667,16 @@ pub fn is_auto_generated_branch_name(
 
 fn resolve_forge_login(
     settings: &crate::settings::EffectiveBranchPrefixSettings,
-) -> Result<Option<String>> {
-    // Prefer the per-repo binding (set at repo creation by
+) -> Option<String> {
+    // The per-repo binding is set at repo creation by
     // `forge::accounts::auto_bind_repo_account` and updatable via the
-    // Connect flow). Fall back to the bundled `glab auth status` for
-    // GitLab when the repo predates the binding feature.
-    if let Some(login) = settings
+    // Connect flow.
+    settings
         .forge_login
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-    {
-        return Ok(Some(login.to_string()));
-    }
-
-    let provider = settings
-        .forge_provider
-        .as_deref()
-        .and_then(|value| ForgeProvider::from_str(value).ok())
-        .unwrap_or(ForgeProvider::Github);
-
-    match provider {
-        ForgeProvider::Gitlab => resolve_gitlab_login(settings),
-        ForgeProvider::Unknown if remote_url_looks_like_gitlab(settings) => {
-            resolve_gitlab_login(settings)
-        }
-        ForgeProvider::Github | ForgeProvider::Unknown => Ok(None),
-    }
-}
-
-fn remote_url_looks_like_gitlab(settings: &crate::settings::EffectiveBranchPrefixSettings) -> bool {
-    settings
-        .remote_url
-        .as_deref()
-        .and_then(parse_remote)
-        .is_some_and(|remote| remote.host.contains("gitlab"))
-}
-
-/// Legacy fallback for repo rows that predate `forge_login`: probe
-/// glab directly. Transient `list_logins` failures collapse to
-/// `Ok(None)` so the branch-prefix path degrades to "no prefix"
-/// rather than bubbling — caller already treats `Err` and `Ok(None)`
-/// the same way (`if let Ok(Some(...))`).
-fn resolve_gitlab_login(
-    settings: &crate::settings::EffectiveBranchPrefixSettings,
-) -> Result<Option<String>> {
-    let host = settings
-        .remote_url
-        .as_deref()
-        .and_then(parse_remote)
-        .map(|remote| remote.host)
-        .unwrap_or_else(|| "gitlab.com".to_string());
-
-    let Some(backend) = forge::accounts::backend_for(ForgeProvider::Gitlab) else {
-        return Ok(None);
-    };
-    Ok(backend
-        .list_logins(&host)
-        .ok()
-        .and_then(|logins| logins.into_iter().next()))
+        .map(str::to_string)
 }
 
 pub fn allocate_directory_name_for_repo(repo_id: &str) -> Result<String> {

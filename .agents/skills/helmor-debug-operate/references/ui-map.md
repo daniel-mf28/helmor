@@ -109,7 +109,6 @@ Sections observed:
   - `Steer`
   - `Claude Code Thinking Display`
   - `Clean up archived workspaces`
-  - `App Updates`
   - `Helmor Components`
 - Appearance:
   - `Theme`
@@ -124,13 +123,9 @@ Sections observed:
   - `Review model`
   - `Action model`
 - Providers:
-  - `OpenCode`
   - `MiMo Code`
   - `Claude Code`
   - `Codex`
-  - `Kimi`
-  - `Cursor`
-  - `Proxy`
   - Provider actions include `Log in`, `Sync models`, `Fetch models`, `Add provider`, `Get your API key`
 - Shortcuts:
   - Full shortcut table including navigation, session, workspace, actions, system, composer, start surface, editor, and terminal.
@@ -163,15 +158,6 @@ Sections observed:
   - Use button rects instead of text selectors; repo names also appear in the body.
   - Sections include Remote origin, base branch, branch prefix, setup/run/archive scripts, built-in prompt preferences, and Delete Repository.
   - Do not record script contents, edit textareas, add scripts, change remotes/branches, or delete repositories without explicit user intent.
-
-## Feedback
-
-- Button selector: `button:has(svg.lucide-message-square-warning)`
-- Dialog:
-  - Title/text `Send feedback`
-  - Input `#feedback-input`, aria-label `Feedback`
-  - Actions: `Create issue`, `Quick fix`, `Close`
-  - Follow-up flow may include `Confirm send` and `Send to agent`
 
 ## Inspector And Editor
 

@@ -16,31 +16,12 @@ vi.mock("./forge-cli-onboarding", () => ({
 }));
 
 const changeRequest: ChangeRequestInfo = {
-	url: "https://gitlab.com/helmor/helmor/-/merge_requests/182",
+	url: "https://github.com/helmor/helmor/pull/182",
 	number: 182,
 	state: "OPEN",
-	title: "Add GitLab forge support",
+	title: "Add forge support",
 	isMerged: false,
 };
-
-function gitlabDetection(patch: Partial<ForgeDetection> = {}): ForgeDetection {
-	return {
-		provider: "gitlab",
-		host: "gitlab.com",
-		namespace: "helmor",
-		repo: "helmor",
-		remoteUrl: "git@gitlab.com:helmor/helmor.git",
-		labels: {
-			providerName: "GitLab",
-			cliName: "glab",
-			changeRequestName: "MR",
-			changeRequestFullName: "merge request",
-			connectAction: "Connect GitLab",
-		},
-		detectionSignals: [],
-		...patch,
-	};
-}
 
 function githubDetection(patch: Partial<ForgeDetection> = {}): ForgeDetection {
 	return {
@@ -72,14 +53,14 @@ describe("GitSectionHeader forge onboarding", () => {
 		cleanup();
 	});
 
-	it("swaps the change-request pill for the Connect CTA when remote auth is broken (GitLab)", () => {
+	it("swaps the change-request pill for the Connect CTA when remote auth is broken", () => {
 		renderWithProviders(
 			<GitSectionHeader
 				commitButtonMode="merge"
 				commitButtonState="idle"
 				changeRequest={changeRequest}
-				changeRequestName="MR"
-				forgeDetection={gitlabDetection()}
+				changeRequestName="PR"
+				forgeDetection={githubDetection()}
 				forgeRemoteState="unauthenticated"
 				workspaceId="workspace-1"
 			/>,
@@ -89,9 +70,9 @@ describe("GitSectionHeader forge onboarding", () => {
 		const connectTrigger = screen.getByTestId("forge-connect-trigger");
 
 		expect(title).toBeInTheDocument();
-		expect(connectTrigger).toHaveTextContent("Connect GitLab");
+		expect(connectTrigger).toHaveTextContent("Connect GitHub");
 		expectElementBefore(title, connectTrigger);
-		expect(screen.queryByText("!182")).not.toBeInTheDocument();
+		expect(screen.queryByText("#182")).not.toBeInTheDocument();
 		expect(
 			screen.queryByRole("button", { name: "Merge" }),
 		).not.toBeInTheDocument();
@@ -123,8 +104,8 @@ describe("GitSectionHeader forge onboarding", () => {
 				commitButtonMode="merge"
 				commitButtonState="idle"
 				changeRequest={changeRequest}
-				changeRequestName="MR"
-				forgeDetection={gitlabDetection()}
+				changeRequestName="PR"
+				forgeDetection={githubDetection()}
 				forgeRemoteState="ok"
 				workspaceId="workspace-1"
 			/>,
@@ -135,7 +116,7 @@ describe("GitSectionHeader forge onboarding", () => {
 		).not.toBeInTheDocument();
 		// PR pill button has no accessible name we can match by — assert the
 		// number text is rendered.
-		expect(screen.getByText("!182")).toBeInTheDocument();
+		expect(screen.getByText("#182")).toBeInTheDocument();
 	});
 
 	it("does not render the Connect CTA when forgeDetection is null even if remote is unauth", () => {
@@ -147,7 +128,7 @@ describe("GitSectionHeader forge onboarding", () => {
 				commitButtonMode="merge"
 				commitButtonState="idle"
 				changeRequest={changeRequest}
-				changeRequestName="MR"
+				changeRequestName="PR"
 				forgeDetection={null}
 				forgeRemoteState="unauthenticated"
 				workspaceId="workspace-1"
@@ -165,8 +146,8 @@ describe("GitSectionHeader forge onboarding", () => {
 				commitButtonMode="merge"
 				commitButtonState="disabled"
 				changeRequest={changeRequest}
-				changeRequestName="MR"
-				forgeDetection={gitlabDetection()}
+				changeRequestName="PR"
+				forgeDetection={githubDetection()}
 				forgeRemoteState="ok"
 				workspaceId="workspace-1"
 			/>,
@@ -181,8 +162,8 @@ describe("GitSectionHeader forge onboarding", () => {
 				commitButtonMode="checks-running"
 				commitButtonState="idle"
 				changeRequest={changeRequest}
-				changeRequestName="MR"
-				forgeDetection={gitlabDetection()}
+				changeRequestName="PR"
+				forgeDetection={githubDetection()}
 				forgeRemoteState="ok"
 				workspaceId="workspace-1"
 			/>,
@@ -194,7 +175,7 @@ describe("GitSectionHeader forge onboarding", () => {
 		expect(button.className).toContain(
 			"border-[var(--workspace-pr-checks-running-accent)]",
 		);
-		expect(screen.getByText("!182").closest("button")?.className).toContain(
+		expect(screen.getByText("#182").closest("button")?.className).toContain(
 			"border-[var(--workspace-pr-checks-running-accent)]",
 		);
 		expect(screen.queryByTestId("git-header-shimmer")).not.toBeInTheDocument();
@@ -206,8 +187,8 @@ describe("GitSectionHeader forge onboarding", () => {
 				commitButtonMode="merge-blocked"
 				commitButtonState="idle"
 				changeRequest={changeRequest}
-				changeRequestName="MR"
-				forgeDetection={gitlabDetection()}
+				changeRequestName="PR"
+				forgeDetection={githubDetection()}
 				forgeRemoteState="ok"
 				workspaceId="workspace-1"
 			/>,
@@ -227,9 +208,9 @@ describe("GitSectionHeader forge onboarding", () => {
 				commitButtonMode="merge"
 				commitButtonState="idle"
 				changeRequest={changeRequest}
-				changeRequestName="MR"
+				changeRequestName="PR"
 				isRefreshing
-				forgeDetection={gitlabDetection()}
+				forgeDetection={githubDetection()}
 				forgeRemoteState="ok"
 				workspaceId="workspace-1"
 			/>,
@@ -244,8 +225,8 @@ describe("GitSectionHeader forge onboarding", () => {
 				commitButtonMode="merge"
 				commitButtonState="idle"
 				changeRequest={changeRequest}
-				changeRequestName="MR"
-				forgeDetection={gitlabDetection()}
+				changeRequestName="PR"
+				forgeDetection={githubDetection()}
 				forgeRemoteState="ok"
 				workspaceId="workspace-1"
 			/>,
@@ -258,8 +239,8 @@ describe("GitSectionHeader forge onboarding", () => {
 					commitButtonMode="merge"
 					commitButtonState={state}
 					changeRequest={changeRequest}
-					changeRequestName="MR"
-					forgeDetection={gitlabDetection()}
+					changeRequestName="PR"
+					forgeDetection={githubDetection()}
 					forgeRemoteState="ok"
 					workspaceId="workspace-1"
 				/>,

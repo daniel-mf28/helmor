@@ -1,6 +1,6 @@
 ---
 name: helmor-bump-vendors
-description: Bump or upgrade the pinned versions of Helmor's bundled agent CLIs, SDKs, and supporting binaries — Claude Code + claude-agent-sdk (lockstep), Codex, Cursor SDK, OpenCode, Kimi, Pi, and gh / glab / llama.cpp / Node. Encodes exactly which files to edit (`sidecar/package.json`, `sidecar/scripts/vendor-platform.ts`), how to source each version and compute its SHA256, the Claude SDK↔CLI lockstep rule, npm dist-tags caveats (latest vs next vs stable), the cross-arch (arm64+x64) SHA requirement, and the mandatory verification gates. Use whenever the user wants to upgrade / bump / update / refresh a bundled agent CLI or SDK version, check whether a vendor is behind latest, or run a dependency version sweep in the Helmor repo.
+description: Bump or upgrade the pinned versions of Helmor's bundled agent CLIs, SDKs, and supporting binaries — Claude Code + claude-agent-sdk (lockstep), Codex, and gh / llama.cpp. Encodes exactly which files to edit (`sidecar/package.json`, `sidecar/scripts/vendor-platform.ts`), how to source each version and compute its SHA256, the Claude SDK↔CLI lockstep rule, npm dist-tags caveats (latest vs next vs stable), the cross-arch (arm64+x64) SHA requirement, and the mandatory verification gates. Use whenever the user wants to upgrade / bump / update / refresh a bundled agent CLI or SDK version, check whether a vendor is behind latest, or run a dependency version sweep in the Helmor repo.
 ---
 
 # Helmor Bump Vendors
@@ -15,19 +15,22 @@ Every bundled version is pinned in one (or both) of these files:
 
 - **`sidecar/package.json`** — npm dependencies. Covers SDKs (imported in TS) and the
   npm-distributed CLIs whose native binary is staged from `node_modules`
-  (`@anthropic-ai/claude-code`, `@openai/codex`, `opencode-ai`).
+  (`@anthropic-ai/claude-code`, `@openai/codex`).
 - **`sidecar/scripts/vendor-platform.ts`** — version constants + per-version **SHA256 tables**
   for every *staged binary*. Source of truth for what gets bundled into the release.
 - `sidecar/scripts/stage-vendor.ts` — staging *logic*. Only edit it when a vendor's archive
-  **layout** changes (rare; see codex/cursor notes in `references/vendors.md`).
+  **layout** changes (rare; see codex notes in `references/vendors.md`).
+
+OpenCode, Cursor (`@cursor/sdk` + its Node worker), and the bundled Node runtime were
+**removed** from this fork — never re-add them during a bump.
 
 ## Vendor classes (determine the change-set)
 
 | Class | Vendors | What to edit | SHA256? |
 |---|---|---|---|
-| **A. npm SDK only** | `@anthropic-ai/claude-agent-sdk`, `@cursor/sdk`, `@opencode-ai/sdk`, `@earendil-works/pi-*` | `package.json` line | No — plain npm dep |
-| **B. npm-distributed staged binary** | claude-code, codex, opencode | `package.json` line **+** SHA256 table key in `vendor-platform.ts` | Yes — from npm tarball |
-| **C. GitHub-release staged binary** | kimi, gh, glab, llama.cpp, node | `<NAME>_VERSION` const **+** SHA256 table in `vendor-platform.ts` (NOT in `package.json`) | Yes — source varies |
+| **A. npm SDK only** | `@anthropic-ai/claude-agent-sdk` | `package.json` line | No — plain npm dep |
+| **B. npm-distributed staged binary** | claude-code, codex | `package.json` line **+** SHA256 table key in `vendor-platform.ts` | Yes — from npm tarball |
+| **C. GitHub-release staged binary** | gh, llama.cpp | `<NAME>_VERSION` const **+** SHA256 table in `vendor-platform.ts` (NOT in `package.json`) | Yes — source varies |
 
 Per-vendor exact pin location, SHA256 source, and gotchas live in **`references/vendors.md`** —
 read the relevant section before editing.
@@ -74,8 +77,7 @@ read the relevant section before editing.
   *superseding an uncommitted entry you added this session*, replace it (don't stack) for a clean diff.
 - **Layout-change watch.** Codex ships a self-describing `codex-package.json` descriptor; after a
   bump, diff it — a `layoutVersion` change or new field means `stage-vendor.ts` needs review. See
-  `references/vendors.md` for codex, cursor (Node engines floor + phantom dep), and kimi (ACP
-  protocol version) specifics.
+  `references/vendors.md` for codex specifics.
 
 ## Verification gates (run in order; all must pass)
 
@@ -85,15 +87,15 @@ cd sidecar && bun run typecheck  # 2. catches SDK API breaks (removed/renamed ex
 cd sidecar && bun test           # 3. sidecar unit tests
 # 4. MANDATORY after ANY agent CLI/SDK bump — validates the stdout event-shape contract the Rust pipeline depends on:
 cd src-tauri && cargo test --test pipeline_scenarios --test pipeline_fixtures --test pipeline_streams
-cd sidecar && bun run build      # 5. full staging + compile; a wrong SHA256 hard-fails here (downloads + verifies kimi / cross-arch)
+cd sidecar && bun run build      # 5. full staging + compile; a wrong SHA256 hard-fails here (downloads + verifies cross-arch)
 ```
 
 What each gate proves:
 - **typecheck** is the real breaking-change detector for SDK bumps (removed/renamed exports, changed types).
 - **cargo pipeline tests** replay *stored* fixtures, so they catch pipeline-code regressions — **not**
   new event shapes from a newer binary. For the latter, read the upstream changelog (focus on the
-  stdout event JSON: codex `item/`,`turn/`,`thread/` methods; claude `SDKMessage`/stream blocks;
-  opencode `message.part`; kimi ACP `session/update`) and capture fresh fixtures if the shape moved.
+  stdout event JSON: codex `item/`,`turn/`,`thread/` methods; claude `SDKMessage`/stream blocks)
+  and capture fresh fixtures if the shape moved.
 - **build** is the only gate that exercises SHA256 verification and the staging layout.
 
 ## Breaking-change diligence
@@ -105,7 +107,7 @@ notable change *affects Helmor* or *no impact* with reasoning, and surface it be
 
 ## Tools in this skill
 
-- **`scripts/npm_vendor_sha.sh <claude-code|codex|opencode> <version>`** — downloads the darwin
+- **`scripts/npm_vendor_sha.sh <claude-code|codex> <version>`** — downloads the darwin
   `arm64` + `x64` npm tarballs and prints their SHA256, ready to paste into the `vendor-platform.ts`
   table. (Class B only. Class A SDKs need no SHA; class C sources differ — see the reference.)
 - **`references/vendors.md`** — exhaustive per-vendor map: integration mechanism, exact pin

@@ -109,7 +109,7 @@ pub fn cache_dir(kind: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// Forge account avatars (gh / glab), served via `asset://`.
+/// Forge account avatars (gh), served via `asset://`.
 pub fn avatar_cache_dir() -> Result<PathBuf> {
     cache_dir("avatars")
 }

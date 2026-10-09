@@ -14,7 +14,7 @@ import {
 	AppendContextButton,
 	type AppendContextPayloadResult,
 } from "@/components/append-context-button";
-import { GithubBrandIcon, GitlabBrandIcon } from "@/components/brand-icon";
+import { GithubBrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type {
@@ -556,9 +556,6 @@ function ProviderIcon({ provider }: { provider: ActionProvider }) {
 	}
 	if (provider === "unknown") {
 		return null;
-	}
-	if (provider === "gitlab") {
-		return <GitlabBrandIcon size={12} className="text-muted-foreground" />;
 	}
 	return <GithubBrandIcon size={12} className="text-muted-foreground" />;
 }

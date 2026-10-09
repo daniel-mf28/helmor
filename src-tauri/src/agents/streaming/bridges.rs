@@ -277,7 +277,7 @@ mod tests {
     fn build_user_input_request_event_normalizes_question_payload() {
         // `ask-user-question` payloads carry provider-raw questions; the
         // bridge rewrites them into the canonical item shape so the
-        // frontend renders one component for Claude/Codex/OpenCode.
+        // frontend renders one component for Claude/Codex.
         let event = bridge_user_input_request_event(
             "claude",
             "opus-1m",

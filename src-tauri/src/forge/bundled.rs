@@ -1,15 +1,13 @@
-//! Paths to bundled `gh` / `glab` inside `Resources/vendor/`.
+//! Path to the bundled `gh` inside `Resources/vendor/`.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 pub const GH_PATH_ENV: &str = "HELMOR_GH_BIN_PATH";
-pub const GLAB_PATH_ENV: &str = "HELMOR_GLAB_BIN_PATH";
 
 #[derive(Debug, Default, Clone)]
 pub struct BundledForgeCliPaths {
     pub gh: Option<PathBuf>,
-    pub glab: Option<PathBuf>,
 }
 
 static BUNDLED_PATHS: OnceLock<BundledForgeCliPaths> = OnceLock::new();
@@ -22,7 +20,6 @@ pub fn init() {
     let paths = BUNDLED_PATHS.get();
     tracing::info!(
         gh = ?paths.and_then(|p| p.gh.as_deref()),
-        glab = ?paths.and_then(|p| p.glab.as_deref()),
         "Resolved bundled forge CLI paths"
     );
 }
@@ -40,7 +37,6 @@ pub fn bundled_path_for(program: &str) -> Option<PathBuf> {
     let cached = BUNDLED_PATHS.get()?;
     match program {
         "gh" => cached.gh.clone(),
-        "glab" => cached.glab.clone(),
         _ => None,
     }
 }
@@ -48,7 +44,6 @@ pub fn bundled_path_for(program: &str) -> Option<PathBuf> {
 fn env_key_for(program: &str) -> Option<&'static str> {
     match program {
         "gh" => Some(GH_PATH_ENV),
-        "glab" => Some(GLAB_PATH_ENV),
         _ => None,
     }
 }
@@ -82,7 +77,6 @@ fn resolve_for_exe(exe: &Path) -> Option<BundledForgeCliPaths> {
     }
 
     let gh_name = if cfg!(windows) { "gh.exe" } else { "gh" };
-    let glab_name = if cfg!(windows) { "glab.exe" } else { "glab" };
 
     let find = |relative: String| {
         resource_roots
@@ -93,7 +87,6 @@ fn resolve_for_exe(exe: &Path) -> Option<BundledForgeCliPaths> {
 
     Some(BundledForgeCliPaths {
         gh: find(format!("vendor/gh/{gh_name}")),
-        glab: find(format!("vendor/glab/{glab_name}")),
     })
 }
 
@@ -102,7 +95,6 @@ impl BundledForgeCliPaths {
     fn with_fallback(self, fallback: BundledForgeCliPaths) -> BundledForgeCliPaths {
         BundledForgeCliPaths {
             gh: self.gh.or(fallback.gh),
-            glab: self.glab.or(fallback.glab),
         }
     }
 }
@@ -119,14 +111,11 @@ fn dev_workspace_root() -> PathBuf {
 fn resolve_for_dev_workspace(workspace_root: &Path) -> BundledForgeCliPaths {
     let vendor = workspace_root.join("sidecar/dist/vendor");
     let gh_name = if cfg!(windows) { "gh.exe" } else { "gh" };
-    let glab_name = if cfg!(windows) { "glab.exe" } else { "glab" };
 
     let gh = vendor.join(format!("gh/{gh_name}"));
-    let glab = vendor.join(format!("glab/{glab_name}"));
 
     BundledForgeCliPaths {
         gh: gh.is_file().then_some(gh),
-        glab: glab.is_file().then_some(glab),
     }
 }
 
@@ -142,19 +131,9 @@ mod tests {
         }
     }
 
-    fn glab_name() -> &'static str {
-        if cfg!(windows) {
-            "glab.exe"
-        } else {
-            "glab"
-        }
-    }
-
     fn write_vendor_binaries(vendor: &Path) {
         std::fs::create_dir_all(vendor.join("gh")).unwrap();
-        std::fs::create_dir_all(vendor.join("glab")).unwrap();
         std::fs::write(vendor.join("gh").join(gh_name()), "").unwrap();
-        std::fs::write(vendor.join("glab").join(glab_name()), "").unwrap();
     }
 
     #[test]
@@ -167,7 +146,6 @@ mod tests {
         let paths = resolve_for_exe(&exe).unwrap();
 
         assert_eq!(paths.gh.unwrap(), vendor.join("gh").join(gh_name()));
-        assert_eq!(paths.glab.unwrap(), vendor.join("glab").join(glab_name()));
     }
 
     #[test]
@@ -181,7 +159,6 @@ mod tests {
         let paths = resolve_for_exe(&exe).unwrap();
 
         assert_eq!(paths.gh.unwrap(), vendor.join("gh").join(gh_name()));
-        assert_eq!(paths.glab.unwrap(), vendor.join("glab").join(glab_name()));
     }
 
     #[test]
@@ -190,7 +167,6 @@ mod tests {
         let exe = root.path().join("Helmor.app/Contents/MacOS/Helmor");
         let paths = resolve_for_exe(&exe).unwrap();
         assert!(paths.gh.is_none());
-        assert!(paths.glab.is_none());
     }
 
     #[cfg(debug_assertions)]
@@ -203,7 +179,6 @@ mod tests {
         let paths = resolve_for_dev_workspace(root.path());
 
         assert_eq!(paths.gh.unwrap(), vendor.join("gh").join(gh_name()));
-        assert_eq!(paths.glab.unwrap(), vendor.join("glab").join(glab_name()));
     }
 
     #[cfg(debug_assertions)]
@@ -221,9 +196,5 @@ mod tests {
             .with_fallback(resolve_for_dev_workspace(root.path()));
 
         assert_eq!(paths.gh.unwrap(), app_vendor.join("gh").join(gh_name()));
-        assert_eq!(
-            paths.glab.unwrap(),
-            app_vendor.join("glab").join(glab_name())
-        );
     }
 }

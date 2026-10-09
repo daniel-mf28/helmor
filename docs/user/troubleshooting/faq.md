@@ -3,7 +3,7 @@
 ### Is Helmor free?
 
 The app is open source (Apache 2.0) and free. You pay your model providers
-directly — Claude/Anthropic, OpenAI, Cursor — through the subscriptions or API
+directly — Claude/Anthropic, OpenAI, Moonshot/Kimi — through the subscriptions or API
 keys you already have.
 
 ### Do I need Claude Code / Codex / gh installed first?
@@ -14,7 +14,7 @@ your machine, Helmor picks the logins up automatically.
 
 ### Which platforms are supported?
 
-macOS (Apple Silicon and Intel) and Windows (x64).
+macOS (Apple Silicon and Intel).
 
 ### Where is my data?
 
@@ -30,7 +30,8 @@ or with your own checkout. See [Workspaces](../concepts/workspaces.md).
 ### Does Helmor work with GitLab?
 
 Yes. GitHub and GitLab are both supported, including PR/MR creation and merge,
-via the bundled `gh` and `glab` CLIs.
+via the bundled `gh` CLI and, for GitLab, a `glab` CLI installed on your machine
+(Helmor no longer bundles `glab`).
 
 ### What happens to my branch when I archive a workspace?
 
@@ -62,6 +63,5 @@ detection.
 
 ### Where do I ask questions or report bugs?
 
-The [Discord](https://discord.gg/ukyyuNfnDp), the feedback button at the
-bottom of Helmor's sidebar, or
+The [Discord](https://discord.gg/ukyyuNfnDp) or
 [GitHub issues](https://github.com/dohooo/helmor/issues).

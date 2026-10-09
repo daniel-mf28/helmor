@@ -54,7 +54,7 @@ pub struct WorkspaceRecord {
     pub message_count: i64,
     pub remote: Option<String>,
     pub forge_provider: Option<String>,
-    /// gh/glab account login bound to the parent repo. NULL means
+    /// gh account login bound to the parent repo. NULL means
     /// auto-detect found no logged-in account with access (or the row
     /// predates the binding feature).
     pub forge_login: Option<String>,

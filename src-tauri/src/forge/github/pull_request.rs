@@ -166,8 +166,7 @@ fn pick_workspace_pr(nodes: Vec<PullRequestNode>, bound_login: &str) -> Option<P
 }
 
 /// Convert a GraphQL pull-request node into the public
-/// `ChangeRequestInfo`. Tiny helper but symmetrical with
-/// `forge::gitlab::merge_request::mr_info`.
+/// `ChangeRequestInfo`.
 fn pr_info(node: PullRequestNode) -> ChangeRequestInfo {
     ChangeRequestInfo {
         url: node.url,

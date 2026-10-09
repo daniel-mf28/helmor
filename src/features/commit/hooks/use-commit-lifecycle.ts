@@ -299,7 +299,7 @@ export function useWorkspaceCommitLifecycle({
 			overrides?: {
 				modelId?: string | null;
 				/** Provider of the override model — pinned as agent_type so a
-				 *  slug-based model (e.g. opencode) routes correctly. */
+				 *  namespaced model (e.g. a Codex custom provider) routes correctly. */
 				provider?: string | null;
 				effort?: string | null;
 				fastMode?: boolean | null;
@@ -516,7 +516,7 @@ export function useWorkspaceCommitLifecycle({
 				return;
 			}
 			try {
-				// create-PR / open-PR (reopen) run `gh pr` / `glab mr` in the
+				// create-PR / open-PR (reopen) run `gh pr` in the
 				// agent. Fire the auth check in the BACKGROUND — never block
 				// dispatch on it — so the session opens instantly; a logged-out
 				// result aborts the turn below. (commit-and-push / fix /

@@ -1,11 +1,8 @@
 name: Publish Release
 
 # Release publish. Matrix/jobs produce:
-#   - macOS aarch64 DMG + .app.tar.gz updater artifact
-#   - macOS x86_64 DMG + .app.tar.gz updater artifact
-#   - Windows x86_64 NSIS installer + updater artifact
-# tauri-action@v0.6 merges each runner's per-platform entry into the same
-# latest.json on the release.
+#   - macOS aarch64 DMG
+#   - macOS x86_64 DMG
 
 on:
   workflow_dispatch:
@@ -20,10 +17,8 @@ on:
       - "v*"
 
 concurrency:
-  # One publish per tag ref at a time. tauri-action merges latest.json
-  # atomically across matrix entries so concurrent matrix jobs within one
-  # workflow run are fine — we just want to reject retries of the same tag
-  # racing with the original run.
+  # One publish per tag ref at a time. We want to reject retries of the same
+  # tag racing with the original run.
   group: publish-${{ github.ref }}
   cancel-in-progress: false
 
@@ -55,13 +50,6 @@ jobs:
       - name: Verify release config
         run: |
           bun run release:verify
-          test -n "${HELMOR_UPDATER_PUBKEY}"
-          test -n "${HELMOR_UPDATER_ENDPOINTS}"
-          test -n "${TAURI_SIGNING_PRIVATE_KEY}"
-        env:
-          HELMOR_UPDATER_PUBKEY: ${{ secrets.HELMOR_UPDATER_PUBKEY }}
-          HELMOR_UPDATER_ENDPOINTS: ${{ secrets.HELMOR_UPDATER_ENDPOINTS }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
       - name: Read version
         id: version
@@ -160,17 +148,12 @@ jobs:
           APPLE_KEYCHAIN_PASSWORD: ${{ steps.signing.outputs.APPLE_KEYCHAIN_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          HELMOR_UPDATER_PUBKEY: ${{ secrets.HELMOR_UPDATER_PUBKEY }}
-          HELMOR_UPDATER_ENDPOINTS: ${{ secrets.HELMOR_UPDATER_ENDPOINTS }}
         with:
           tagName: v__VERSION__
           releaseName: Helmor v__VERSION__
           releaseBody: ${{ needs.preflight.outputs.release_body }}
           releaseDraft: ${{ needs.preflight.outputs.draft == 'true' }}
           prerelease: false
-          includeUpdaterJson: true
           args: ${{ matrix.tauri-args }}
           # Force tauri-action to use bun instead of auto-detecting (it only knows npm/yarn/pnpm)
           tauriScript: bun run tauri
@@ -188,66 +171,9 @@ jobs:
             scripts/cleanup-macos-signing.sh "${{ steps.signing.outputs.APPLE_KEYCHAIN_PATH }}"
           fi
 
-  build-and-publish-windows:
-    name: Build and Publish Windows (x86_64-pc-windows-msvc)
-    needs: preflight
-    runs-on: windows-latest
-    timeout-minutes: 60
-    env:
-      # src-tauri/.cargo/config.toml sets rustc-wrapper = "sccache" for the
-      # macOS jobs; Windows runners don't install it, so clear the wrapper.
-      RUSTC_WRAPPER: ""
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Setup JS toolchain
-        uses: ./.github/actions/setup-js
-        with:
-          install-sccache: "false"
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          shared-key: windows-tauri-v1
-          workspaces: src-tauri -> target
-
-      - name: Cache bundle archives
-        uses: ./.github/actions/cache-bundle-archives
-        with:
-          target-triple: x86_64-pc-windows-msvc
-
-      # tauri-action's beforeBuildCommand runs prepare-sidecar.mjs, which
-      # stages the win32 vendor tree, builds the bun sidecar + helmor-cli,
-      # then bundles. NSIS only; WiX/MSI is not part of what Helmor ships.
-      - name: Build and publish Windows NSIS
-        id: tauri
-        uses: tauri-apps/tauri-action@v0.6
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          HELMOR_UPDATER_PUBKEY: ${{ secrets.HELMOR_UPDATER_PUBKEY }}
-          HELMOR_UPDATER_ENDPOINTS: ${{ secrets.HELMOR_UPDATER_ENDPOINTS }}
-        with:
-          tagName: v__VERSION__
-          releaseName: Helmor v__VERSION__
-          releaseBody: ${{ needs.preflight.outputs.release_body }}
-          releaseDraft: ${{ needs.preflight.outputs.draft == 'true' }}
-          prerelease: false
-          includeUpdaterJson: true
-          args: --bundles nsis
-          tauriScript: bun run tauri
-
   notify-marketing:
     name: Notify marketing site
-    needs: [preflight, build-and-publish, build-and-publish-windows]
+    needs: [preflight, build-and-publish]
     if: needs.preflight.outputs.draft == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 2

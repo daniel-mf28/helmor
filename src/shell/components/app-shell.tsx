@@ -43,17 +43,12 @@ export function AppShell({
 	const headerLeadingNode = useMemo(
 		() => (
 			<WorkspaceHeaderLeading
-				appUpdateStatus={s.appUpdateStatus}
 				leftSidebarToggleShortcut={chrome.leftSidebarToggleShortcut}
 				showOnDesktop={panels.sidebarCollapsed}
 				onExpandSidebar={() => panels.setSidebarCollapsed(false)}
 			/>
 		),
-		[
-			panels.sidebarCollapsed,
-			s.appUpdateStatus,
-			chrome.leftSidebarToggleShortcut,
-		],
+		[panels.sidebarCollapsed, chrome.leftSidebarToggleShortcut],
 	);
 	const headerActionsNode = useMemo(
 		() =>
@@ -97,10 +92,6 @@ export function AppShell({
 				sessionRunStates: data.effectiveSessionRunStates,
 				insertIntoComposer: data.pendingQueueActions.insertIntoComposer,
 			}}
-			feedbackOpen={s.feedbackOpen}
-			onFeedbackOpenChange={s.setFeedbackOpen}
-			onOpenSettings={data.handleOpenSettings}
-			onSubmitFeedbackPrompt={data.submitFeedbackPrompt}
 			workspaceViewMode={s.workspaceViewMode}
 			sidebar={{
 				collapsed: panels.sidebarCollapsed,
@@ -113,7 +104,6 @@ export function AppShell({
 				addRepositoryShortcut: chrome.addRepositoryShortcut,
 				sidebarFilterShortcut: chrome.sidebarFilterShortcut,
 				leftSidebarToggleShortcut: chrome.leftSidebarToggleShortcut,
-				appUpdateStatus: s.appUpdateStatus,
 				appSettings: s.appSettings,
 				onSelectWorkspace: sel.handleSelectWorkspace,
 				onOpenNewWorkspace: s.handleOpenWorkspaceStart,
@@ -121,7 +111,6 @@ export function AppShell({
 					sel.startSurfaceActions.addRepositoryNeedsStart,
 				onMoveLocalToWorktree: sel.startSurfaceActions.moveLocalToWorktree,
 				onCollapseSidebar: () => panels.setSidebarCollapsed(true),
-				onOpenFeedback: () => s.setFeedbackOpen(true),
 				onOpenSettings: data.handleOpenSettings,
 				pushWorkspaceToast: s.pushWorkspaceToast,
 			}}

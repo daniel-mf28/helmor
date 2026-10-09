@@ -78,7 +78,7 @@ export function UsageBar({
 	);
 }
 
-/** "Spent · $0.00" row (opencode only). */
+/** "Spent · $0.00" row (only when the baseline carries a cost). */
 export function SpentRow({ cost }: { cost: number }) {
 	return (
 		<div className="flex items-center justify-between text-small">

@@ -68,7 +68,6 @@ export const helmorQueryKeys = {
 	agentModelSections: ["agentModelSections"] as const,
 	allAgentModelSections: ["allAgentModelSections"] as const,
 	customProviders: (family: string) => ["customProviders", family] as const,
-	kimiProviderConfig: ["kimiProviderConfig"] as const,
 	agentLoginStatus: ["agentLoginStatus"] as const,
 	agentVersions: ["agentVersions"] as const,
 	providerCapabilities: ["providerCapabilities"] as const,
@@ -109,8 +108,6 @@ export const helmorQueryKeys = {
 		["workspaceChangeRequest", workspaceId] as const,
 	workspaceForge: (workspaceId: string) =>
 		["workspaceForge", workspaceId] as const,
-	forgeAccounts: (gitlabHosts: string[]) =>
-		["forgeAccounts", ...gitlabHosts] as const,
 	forgeAccountsAll: ["forgeAccounts"] as const,
 	workspaceAccountProfile: (workspaceId: string) =>
 		["workspaceAccountProfile", workspaceId] as const,
@@ -261,6 +258,13 @@ function ensureQueryCacheMigration(): Promise<void> {
 	return migrationPromise;
 }
 
+const TIMESTAMP_FIELD_RE = /"timestamp":\d+,?/;
+const PERSIST_REFRESH_MS = 10 * 60 * 1000;
+/** Persist at most once per this window (library default is 1s). */
+const PERSIST_THROTTLE_MS = 5000;
+const lastPersistedFingerprint = new Map<string, string>();
+const lastPersistedAt = new Map<string, number>();
+
 const tauriFsQueryCacheStorage = {
 	getItem: async (key: string): Promise<string | null> => {
 		await ensureQueryCacheMigration();
@@ -273,8 +277,24 @@ const tauriFsQueryCacheStorage = {
 		}
 	},
 	setItem: async (key: string, value: string): Promise<void> => {
+		// Skip writes whose content (ignoring the always-fresh timestamp)
+		// matches the last successful write. The persisted payload serializes
+		// `timestamp` before `clientState`, so the first match is the
+		// top-level one. Still refresh periodically so the restore-side
+		// `maxAge` check (which keys off the timestamp) never expires an
+		// unchanged-but-live cache.
+		const fingerprint = value.replace(TIMESTAMP_FIELD_RE, "");
+		const now = Date.now();
+		if (
+			fingerprint === lastPersistedFingerprint.get(key) &&
+			now - (lastPersistedAt.get(key) ?? 0) < PERSIST_REFRESH_MS
+		) {
+			return;
+		}
 		try {
 			await invoke<void>("write_query_cache", { key, value });
+			lastPersistedFingerprint.set(key, fingerprint);
+			lastPersistedAt.set(key, now);
 		} catch (error) {
 			const sizeKb = (value.length / 1024).toFixed(1);
 			console.error(
@@ -296,6 +316,7 @@ const tauriFsQueryCacheStorage = {
 export const helmorQueryPersister = createAsyncStoragePersister({
 	storage: tauriFsQueryCacheStorage,
 	key: QUERY_CACHE_KEY,
+	throttleTime: PERSIST_THROTTLE_MS,
 });
 
 export function workspaceGroupsQueryOptions() {
@@ -445,7 +466,7 @@ export function workspaceForgeQueryOptions(workspaceId: string) {
  *      `remoteState: "unauthenticated"` for invalid tokens).
  *
  *  Backend has matching throttles on the underlying CLI calls
- *  (`gh / glab auth status` and `gh / glab api user`) so a burst
+ *  (`gh auth status` and `gh api user`) so a burst
  *  of refocuses doesn't fan out N CLI invocations.
  *
  *  Avatar *image bytes* are a separate concern and cached on disk
@@ -472,10 +493,10 @@ export function workspaceAccountProfileQueryOptions(
 	});
 }
 
-export function forgeAccountsQueryOptions(gitlabHosts: string[]) {
+export function forgeAccountsQueryOptions() {
 	return queryOptions<ForgeAccount[]>({
-		queryKey: helmorQueryKeys.forgeAccounts(gitlabHosts),
-		queryFn: () => listForgeAccounts(gitlabHosts),
+		queryKey: helmorQueryKeys.forgeAccountsAll,
+		queryFn: () => listForgeAccounts(),
 		// Same cache contract as `workspaceAccountProfileQueryOptions`:
 		// cache forever, refetch on every window focus. Backend
 		// throttles the underlying CLI calls.
@@ -934,9 +955,7 @@ export function workspaceForgeRefetchInterval(
 	data: ForgeDetection | undefined,
 ): number | false {
 	if (!data) return WORKSPACE_FORGE_REFETCH_INTERVAL;
-	return data.provider === "github" || data.provider === "gitlab"
-		? WORKSPACE_FORGE_REFETCH_INTERVAL
-		: false;
+	return data.provider === "github" ? WORKSPACE_FORGE_REFETCH_INTERVAL : false;
 }
 
 export function workspaceChangesQueryOptions(

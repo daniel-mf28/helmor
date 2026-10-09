@@ -9,8 +9,6 @@ use serde::{Deserialize, Serialize};
 pub enum ProviderFamily {
     Claude,
     Codex,
-    Opencode,
-    Kimi,
 }
 
 impl ProviderFamily {
@@ -18,8 +16,6 @@ impl ProviderFamily {
         match value {
             "claude" => Some(Self::Claude),
             "codex" => Some(Self::Codex),
-            "opencode" => Some(Self::Opencode),
-            "kimi" => Some(Self::Kimi),
             _ => None,
         }
     }
@@ -50,7 +46,7 @@ pub struct CustomProvider {
     pub base_url: String,
     #[serde(default)]
     pub api_key: String,
-    /// OpenCode: "chat" | "responses". Claude: "anthropic" (default) | "vertex".
+    /// Wire type: "anthropic" (default) | "vertex".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_style: Option<String>,
     /// Vertex-type Claude providers (`api_style == "vertex"`) only.

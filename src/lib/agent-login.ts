@@ -2,13 +2,7 @@ import type {
 	AgentLoginItem,
 	AgentLoginStatus,
 } from "@/components/agent-login/types";
-import {
-	ClaudeIcon,
-	CursorIcon,
-	KimiIcon,
-	OpenAIIcon,
-	OpenCodeIcon,
-} from "@/components/icons";
+import { ClaudeIcon, OpenAIIcon } from "@/components/icons";
 import type { AgentLoginStatusResult } from "@/lib/api";
 import { formatSource, translateSource } from "@/lib/i18n";
 
@@ -23,17 +17,6 @@ export function buildAgentLoginItems(
 		checking ? "checking" : ready ? "ready" : "needsSetup";
 	const CHECKING_COPY = translateSource("miscCheckingSignIn");
 	return [
-		{
-			icon: OpenCodeIcon,
-			provider: "opencode",
-			label: "OpenCode",
-			description: checking
-				? CHECKING_COPY
-				: status?.opencode
-					? translateSource("miscOpencodeConnectedReady")
-					: translateSource("miscOpencodeSignIn"),
-			status: resolve(status?.opencode),
-		},
 		{
 			icon: ClaudeIcon,
 			provider: "claude",
@@ -51,28 +34,6 @@ export function buildAgentLoginItems(
 			label: "Codex",
 			description: checking ? CHECKING_COPY : codexDescription(status),
 			status: resolve(status?.codex),
-		},
-		{
-			icon: KimiIcon,
-			provider: "kimi",
-			label: "Kimi",
-			description: checking
-				? CHECKING_COPY
-				: status?.kimi
-					? translateSource("miscKimiSignedInReady")
-					: translateSource("miscKimiSignIn"),
-			status: resolve(status?.kimi),
-		},
-		{
-			icon: CursorIcon,
-			provider: "cursor",
-			label: "Cursor",
-			description: checking
-				? CHECKING_COPY
-				: status?.cursor
-					? translateSource("miscCursorApiKeySavedReady")
-					: translateSource("miscCursorAddApiKey"),
-			status: resolve(status?.cursor),
 		},
 	];
 }

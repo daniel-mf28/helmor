@@ -1,7 +1,7 @@
 // The shell's mutating-action layer (cluster B of the data split). Given the
 // query/editor outputs from `useWorkspaceDataControllers` plus the selection
 // outputs, this wires the action hooks AppShell exposes to the inspector, the
-// conversation surface and the keyboard table: feedback submit, the commit
+// conversation surface and the keyboard table: the commit
 // lifecycle (+ the action-model override wrapper), session close/create, the
 // confirm-close flow, keyboard navigation, quick-switch, and the pending-queue.
 // Split out of `useWorkspaceDataControllers` purely to keep each file focused
@@ -9,11 +9,9 @@
 // way round, and stays clear of the selection TDZ ring. Extracted verbatim —
 // call order and dependency arrays are preserved exactly.
 import type { QueryClient } from "@tanstack/react-query";
-import { type Dispatch, type SetStateAction, useCallback } from "react";
+import { useCallback } from "react";
 import type { WorkspaceCommitButtonMode } from "@/features/commit/button";
 import { useWorkspaceCommitLifecycle } from "@/features/commit/hooks/use-commit-lifecycle";
-import type { PendingCreatedWorkspaceSubmit } from "@/features/conversation";
-import { useFeedbackSubmit } from "@/features/feedback/use-feedback-submit";
 import { useConfirmSessionClose } from "@/features/panel/use-confirm-session-close";
 import { useTerminalResumeConfirm } from "@/features/terminal/use-terminal-resume-confirm";
 import type { WorkspaceGroup, WorkspaceRow } from "@/lib/api";
@@ -49,7 +47,6 @@ export function useWorkspaceActionControllers({
 	handleSelectSession,
 	selectedWorkspaceId,
 	workspaceViewMode,
-	setPendingCreatedWorkspaceSubmit,
 	selectedWorkspaceDetailQuery,
 	workspaceChangeRequest,
 	workspaceForge,
@@ -72,9 +69,6 @@ export function useWorkspaceActionControllers({
 	handleSelectSession: (sessionId: string | null) => void;
 	selectedWorkspaceId: string | null;
 	workspaceViewMode: ShellViewMode;
-	setPendingCreatedWorkspaceSubmit: Dispatch<
-		SetStateAction<PendingCreatedWorkspaceSubmit | null>
-	>;
 	selectedWorkspaceDetailQuery: WorkspaceForgeData["selectedWorkspaceDetailQuery"];
 	workspaceChangeRequest: WorkspaceForgeData["workspaceChangeRequest"];
 	workspaceForge: WorkspaceForgeData["workspaceForge"];
@@ -86,16 +80,6 @@ export function useWorkspaceActionControllers({
 	effectiveBusySessionIds: Set<string>;
 	readStateActions: ReadStateActions;
 }) {
-	const submitFeedbackPrompt = useFeedbackSubmit({
-		queryClient,
-		appSettings,
-		selectWorkspace: handleSelectWorkspace,
-		selectSession: handleSelectSession,
-		setViewMode: selectionActions.setViewMode,
-		setPendingCreatedWorkspaceSubmit,
-		pushToast: pushWorkspaceToast,
-	});
-
 	const {
 		commitButtonMode,
 		commitButtonState,
@@ -223,7 +207,6 @@ export function useWorkspaceActionControllers({
 	const pendingComposerInserts = pendingQueue.pendingComposerInserts;
 
 	return {
-		submitFeedbackPrompt,
 		commitButtonMode,
 		commitButtonState,
 		handleInspectorCommitAction,

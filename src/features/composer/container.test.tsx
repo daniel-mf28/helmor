@@ -171,18 +171,6 @@ const MODEL_SECTIONS = [
 			},
 		],
 	},
-	{
-		id: "opencode",
-		label: "OpenCode",
-		options: [
-			{
-				id: "opencode/big-pickle",
-				provider: "opencode",
-				label: "OpenCode Zen · Big Pickle",
-				cliModel: "opencode/big-pickle",
-			},
-		],
-	},
 ] as const;
 
 const WORKSPACE_DETAIL = {
@@ -252,9 +240,9 @@ const WORKSPACE_SESSIONS = [
 		id: "session-3",
 		workspaceId: "workspace-1",
 		title: "Session 3",
-		agentType: "opencode",
+		agentType: "codex",
 		status: "idle",
-		model: "opencode/big-pickle",
+		model: "gpt-5.4",
 		permissionMode: "default",
 		providerSessionId: null,
 		unreadCount: 0,
@@ -1257,7 +1245,7 @@ describe("WorkspaceComposerContainer", () => {
 		it("suppresses the SDK-reported /compact command for Claude sessions", async () => {
 			// claude-code lists /compact among its slash commands, but the Agent
 			// SDK has no programmatic compaction path, so Helmor hides it for
-			// Claude (Codex/OpenCode keep their built-in /compact).
+			// Claude (Codex keeps its built-in /compact).
 			apiMockState.listSlashCommands.mockResolvedValue({
 				commands: [
 					{
@@ -1351,28 +1339,6 @@ describe("WorkspaceComposerContainer", () => {
 				argumentHint: "<objective>",
 				source: "builtin",
 				providers: ["codex"],
-			});
-		});
-
-		it("adds a built-in /compact command for OpenCode sessions", async () => {
-			apiMockState.listSlashCommands.mockResolvedValue({
-				commands: [],
-				isComplete: true,
-			});
-
-			renderWithLinkedDirs([], "session-3");
-
-			await waitFor(() => {
-				expect(composerMockState.lastSlashCommands.map((c) => c.name)).toEqual([
-					"add-dir",
-					"compact",
-				]);
-			});
-			expect(composerMockState.lastSlashCommands[1]).toEqual({
-				name: "compact",
-				description: "Compact this conversation's context",
-				source: "builtin",
-				providers: ["opencode"],
 			});
 		});
 

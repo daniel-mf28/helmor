@@ -61,7 +61,6 @@ VENDOR_ROOT="${APP_BUNDLE}/Contents/Resources/vendor"
 VENDOR_BINARIES=(
   "${APP_BUNDLE}/Contents/MacOS/helmor-sidecar"
   "${VENDOR_ROOT}/gh/gh"
-  "${VENDOR_ROOT}/glab/glab"
   "${VENDOR_ROOT}/codex/codex"
   "${VENDOR_ROOT}/claude-code/claude"
 )

@@ -4,7 +4,6 @@ import {
 	ChevronDown,
 	HelpCircle,
 	Info,
-	Settings,
 	Volume2,
 } from "lucide-react";
 import { memo, useEffect, useState } from "react";
@@ -64,7 +63,6 @@ import { clampEffort, findModelOption } from "@/lib/workspace-helpers";
 import { SettingsGroup, SettingsRow } from "./components/settings-row";
 import { SettingsSelect } from "./components/settings-select";
 import { AccountPanel } from "./panels/account";
-import { AppUpdatesPanel } from "./panels/app-updates";
 import { AppearancePanel } from "./panels/appearance";
 import { ArchiveCleanupPanel } from "./panels/archive-cleanup";
 import { ComponentsPanel } from "./panels/components";
@@ -437,8 +435,7 @@ export const SettingsDialog = memo(function SettingsDialog({
 												<I18nText source="claudeCodeThinkingDisplay" />
 												{/* SettingsDialog renders outside AppShell's
 												 *  TooltipProvider tree, so panels need their
-												 *  own — same pattern as repository-settings /
-												 *  cursor-provider. */}
+												 *  own — same pattern as repository-settings. */}
 												<TooltipProvider>
 													<Tooltip>
 														<TooltipTrigger asChild>
@@ -504,7 +501,6 @@ export const SettingsDialog = memo(function SettingsDialog({
 										</ToggleGroup>
 									</SettingsRow>
 									<ArchiveCleanupPanel />
-									<AppUpdatesPanel />
 									<ComponentsPanel />
 								</SettingsGroup>
 							)}
@@ -865,43 +861,5 @@ function ModelSettingRow({
 				</div>
 			</div>
 		</SettingsRow>
-	);
-}
-
-export function SettingsButton({
-	onClick,
-	shortcut,
-}: {
-	onClick: () => void;
-	shortcut?: string | null;
-}) {
-	return (
-		<Tooltip>
-			<TooltipTrigger asChild>
-				<Button
-					variant="ghost"
-					size="icon"
-					onClick={onClick}
-					className="text-muted-foreground hover:text-foreground"
-				>
-					<Settings className="size-[15px]" strokeWidth={1.8} />
-				</Button>
-			</TooltipTrigger>
-			<TooltipContent
-				side="top"
-				sideOffset={4}
-				className="flex h-[24px] items-center gap-2 rounded-md px-2 text-small leading-none"
-			>
-				<span className="leading-none">
-					<I18nText source="settings" />
-				</span>
-				{shortcut ? (
-					<InlineShortcutDisplay
-						hotkey={shortcut}
-						className="text-background/60"
-					/>
-				) : null}
-			</TooltipContent>
-		</Tooltip>
 	);
 }

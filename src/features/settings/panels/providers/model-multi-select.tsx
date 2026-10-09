@@ -31,7 +31,7 @@ export function groupHeading(option: MultiSelectOption): string {
 
 // Plain substring match: every whitespace-separated token must appear in the
 // model's label or id. Replaces cmdk's default fuzzy (subsequence) scorer, which
-// let "opencode go" match unrelated models. Returns 0 to hide the item.
+// let "gpt mini" match unrelated models. Returns 0 to hide the item.
 export function scoreModel(value: string, search: string): number {
 	const query = search.trim().toLowerCase();
 	if (!query) return 1;
@@ -59,7 +59,7 @@ export function ModelMultiSelect({
 	/** Unselect all — clears the entire selection, ignoring the search. */
 	onClear: () => void;
 	loading: boolean;
-	/** Group by sub-provider (OpenCode). Off → flat list (Cursor has no groups). */
+	/** Group by sub-provider. Off → flat list. */
 	grouped?: boolean;
 	triggerClassName?: string;
 }) {

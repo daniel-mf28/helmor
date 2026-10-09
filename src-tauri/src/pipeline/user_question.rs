@@ -1,11 +1,11 @@
 //! Provider-raw question payloads → the canonical `UserQuestion` shape.
 //!
-//! All three question-capable providers ride the same `userInputRequest`
-//! wire event but with their native question arrays:
+//! Question-capable providers ride the same `userInputRequest` wire event
+//! but with their native question arrays:
 //!
-//! - Claude AskUserQuestion: `{question, header, multiSelect, options:[{label, description, preview?}]}`
+//! - Claude AskUserQuestion:
+//!   `{question, header, multiSelect, options:[{label, description, preview?}]}`
 //! - Codex `requestUserInput`: `{id?, header?, question?, isOther?, options:[{label?, description?}]}`
-//! - OpenCode `question`: `{question, header, options:[{label, description}], multiple?}`
 //!
 //! This module is the single adaptation point (used by the streaming
 //! bridge for the live panel AND by the accumulator/adapter for the
@@ -19,8 +19,7 @@ use serde_json::Value;
 use super::types::{MessagePart, UserQuestionItem, UserQuestionOption, UserQuestionStatus};
 
 /// Normalize a provider-raw `questions` array. Unknown providers fall
-/// back to the Claude/AUQ field names, which OpenCode's shape is a
-/// superset-compatible variant of (`multiple` vs `multiSelect`).
+/// back to the Claude/AUQ field names.
 pub fn normalize_questions(provider: &str, raw: &Value) -> Vec<UserQuestionItem> {
     let Some(items) = raw.as_array() else {
         return Vec::new();
@@ -88,13 +87,6 @@ fn normalize_question(provider: &str, raw: &Value, idx: usize) -> Option<UserQue
             }
             (false, is_other)
         }
-        // OpenCode uses the `multiple` flag shape.
-        "opencode" => (
-            obj.get("multiple")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-            true,
-        ),
         _ => (
             obj.get("multiSelect")
                 .and_then(Value::as_bool)
@@ -256,21 +248,6 @@ mod tests {
         assert_eq!(items[2].options.len(), 1);
         assert!(!items[2].allow_free_text);
         assert!(!items[2].multi_select);
-    }
-
-    #[test]
-    fn normalizes_opencode_multiple_flag() {
-        let raw = json!([{
-            "question": "Which files?",
-            "header": "Files",
-            "multiple": true,
-            "options": [{"label": "a.rs", "description": ""}]
-        }]);
-        let items = normalize_questions("opencode", &raw);
-        assert_eq!(items.len(), 1);
-        assert!(items[0].multi_select);
-        assert!(items[0].allow_free_text);
-        assert_eq!(items[0].options[0].description, None);
     }
 
     #[test]

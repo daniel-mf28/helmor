@@ -226,11 +226,9 @@ fn build_persisted_snapshot(pipeline: &MessagePipeline) -> PersistedTurnsSnapsho
         // payload (or, for batched assistant turns, the template with
         // `message.content` rewritten from cur_asst_blocks).
         let parsed: Value = serde_json::from_str(&turn.content_json).unwrap_or(Value::Null);
-        // Claude/Codex persist `message.content[]`; opencode persists `parts[]`.
         let block_types: Vec<String> = parsed
             .get("message")
             .and_then(|m| m.get("content"))
-            .or_else(|| parsed.get("parts"))
             .and_then(Value::as_array)
             .map(|blocks| {
                 blocks
@@ -273,10 +271,7 @@ fn stream_replay() {
             .and_then(|n| n.to_str())
             .unwrap_or_else(|| panic!("fixture {path:?} is missing a provider parent dir"));
         assert!(
-            matches!(
-                provider,
-                "claude" | "codex" | "cursor" | "opencode" | "kimi"
-            ),
+            matches!(provider, "claude" | "codex"),
             "fixture {path:?} is under unknown provider directory {provider:?}"
         );
 
@@ -316,12 +311,8 @@ fn stream_replay() {
 
         // Mirror the persistence-side finalization that agents.rs runs after
         // the stream loop — this flushes the staged final assistant turn
-        // into `accumulator.turns`, which the snapshot below reads. Kimi
-        // flushes on every termination path (see agents/streaming) so
-        // fixtures ending without `kimi/turn_complete` (error mid-turn)
-        // still persist the partial turn; no-op for other providers.
+        // into `accumulator.turns`, which the snapshot below reads.
         pipeline.accumulator.flush_pending();
-        pipeline.accumulator.flush_kimi_in_progress();
         let persisted_turns = build_persisted_snapshot(&pipeline);
         let historical_render = build_historical_snapshot(&pipeline);
 

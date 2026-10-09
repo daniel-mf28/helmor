@@ -1,12 +1,7 @@
-// Centered modal hosting the agent-login PTY (claude / codex / opencode).
+// Centered modal hosting the agent-login PTY (claude / codex).
 import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import {
-	ClaudeColorIcon,
-	KimiIcon,
-	OpenAIIcon,
-	OpenCodeIcon,
-} from "@/components/icons";
+import { ClaudeColorIcon, OpenAIIcon } from "@/components/icons";
 import { TerminalOutput } from "@/components/terminal-output";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -21,10 +16,6 @@ import {
 function providerIcon(provider: AgentLoginProvider) {
 	const className = "size-3.5";
 	if (provider === "claude") return <ClaudeColorIcon className={className} />;
-	if (provider === "opencode")
-		return <OpenCodeIcon className={`${className} text-foreground`} />;
-	if (provider === "kimi")
-		return <KimiIcon className={`${className} text-foreground`} />;
 	return <OpenAIIcon className={`${className} text-foreground`} />;
 }
 

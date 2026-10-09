@@ -48,11 +48,7 @@ describe("RepositoryCliStep", () => {
 	});
 
 	it("lists existing forge logins by handle when checks complete", async () => {
-		// Per-provider so the GitLab probe (which also fires on mount)
-		// doesn't echo the same login back and double-render the row.
-		apiMocks.listForgeLogins.mockImplementation((provider: string) =>
-			Promise.resolve(provider === "github" ? ["octocat"] : []),
-		);
+		apiMocks.listForgeLogins.mockResolvedValue(["octocat"]);
 		apiMocks.listForgeAccounts.mockResolvedValue([
 			{
 				provider: "github",
@@ -102,36 +98,5 @@ describe("RepositoryCliStep", () => {
 			);
 		});
 		expect(screen.getByText("gh auth login")).toBeInTheDocument();
-	});
-
-	it("asks for a GitLab domain before launching the GitLab auth terminal", async () => {
-		const user = userEvent.setup({ pointerEventsCheck: 0 });
-		apiMocks.listForgeLogins.mockResolvedValue([]);
-		apiMocks.spawnForgeCliAuthTerminal.mockResolvedValue(undefined);
-
-		renderWithProviders(
-			<RepositoryCliStep step="corner" onBack={vi.fn()} onNext={vi.fn()} />,
-		);
-
-		await user.click(screen.getByRole("button", { name: /^gitlab$/i }));
-
-		const input = await screen.findByRole("textbox", { name: "GitLab domain" });
-		expect(input).toHaveValue("gitlab.com");
-
-		await user.clear(input);
-		await user.type(input, "gitlab.example.com");
-		await user.click(screen.getByRole("button", { name: /log in/i }));
-
-		await waitFor(() => {
-			expect(apiMocks.spawnForgeCliAuthTerminal).toHaveBeenCalledWith(
-				"gitlab",
-				"gitlab.example.com",
-				expect.any(String),
-				expect.any(Function),
-			);
-		});
-		expect(
-			screen.getByText("glab auth login · gitlab.example.com"),
-		).toBeInTheDocument();
 	});
 });

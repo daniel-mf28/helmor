@@ -1,4 +1,4 @@
-import { type SimpleIcon, siGithub, siGitlab, siLinear } from "simple-icons";
+import { type SimpleIcon, siGithub, siLinear } from "simple-icons";
 import { cn } from "@/lib/utils";
 
 type BrandIconProps = {
@@ -48,11 +48,6 @@ export function BrandIcon({
 /** GitHub brand glyph (Simple Icons). Uses `currentColor`. */
 export function GithubBrandIcon(props: Omit<BrandIconProps, "icon">) {
 	return <BrandIcon icon={siGithub} {...props} />;
-}
-
-/** GitLab brand glyph (Simple Icons). Uses `currentColor`. */
-export function GitlabBrandIcon(props: Omit<BrandIconProps, "icon">) {
-	return <BrandIcon icon={siGitlab} {...props} />;
 }
 
 /** Linear brand glyph (Simple Icons). Uses `currentColor`. */

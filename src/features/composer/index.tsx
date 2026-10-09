@@ -150,8 +150,6 @@ type WorkspaceComposerProps = {
 	 *  so the right section's option is matched. */
 	selectedModelProvider?: string | null;
 	modelSections: AgentModelSection[];
-	/** false → OpenCode picker shows an "Add custom model…" jump. */
-	hasOpencodeCustomProviders?: boolean;
 	modelsLoading?: boolean;
 	onSelectModel: (modelId: string, provider: string | null) => void;
 	provider?: string;
@@ -217,9 +215,9 @@ type WorkspaceComposerProps = {
 	 *  context-usage ring for its hover-triggered live fetch. */
 	providerSessionId?: string | null;
 	/** Agent provider for this session — gates the Claude-only rich fetch
-	 *  and selects which rate-limits API to query. `"cursor"` exists but
-	 *  Cursor's SDK doesn't expose rate-limit / context-usage endpoints
-	 *  yet, so the indicators just hide for cursor sessions. */
+	 *  and selects which rate-limits API to query. Providers without
+	 *  rate-limit / context-usage endpoints just hide the
+	 *  indicators. */
 	agentType?: AgentProvider | null;
 	/** Claude account the chat runs on (`null` = default); keys the usage
 	 *  meter so it follows the session's account. */
@@ -310,7 +308,6 @@ export const WorkspaceComposer = memo(function WorkspaceComposer({
 	selectedModelId,
 	selectedModelProvider = null,
 	modelSections,
-	hasOpencodeCustomProviders = false,
 	modelsLoading = false,
 	onSelectModel,
 	provider: _provider = "claude",
@@ -1111,20 +1108,6 @@ export const WorkspaceComposer = memo(function WorkspaceComposer({
 														))}
 														{section.id === "claude" &&
 														!hasConfiguredClaudeProviderModels ? (
-															<DropdownMenuItem
-																onClick={handleOpenProviderSettings}
-																className="flex items-center gap-3"
-															>
-																<span className="flex size-4 items-center justify-center text-muted-foreground">
-																	<Plus className="size-4" strokeWidth={1.8} />
-																</span>
-																<span className="font-mono tabular-nums">
-																	<I18nText source="addCustomModel" />
-																</span>
-															</DropdownMenuItem>
-														) : null}
-														{section.id === "opencode" &&
-														!hasOpencodeCustomProviders ? (
 															<DropdownMenuItem
 																onClick={handleOpenProviderSettings}
 																className="flex items-center gap-3"

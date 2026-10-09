@@ -47,7 +47,6 @@ pub fn run_workspace_ship_action(
                     repo_preferences: &repo_preferences,
                     target_branch,
                     remote: detail.remote.as_deref(),
-                    forge_provider: detail.forge_provider.as_deref(),
                 },
             )?;
             let overrides = action_session_overrides(action)?;
@@ -93,7 +92,7 @@ fn action_session_overrides(action: WorkspaceShipActionKind) -> Result<OwnedSess
     }
 
     // The model pref carries its provider (new `{provider, modelId}` form);
-    // pin it as the session's agent_type so a non-default provider (e.g. opencode)
+    // pin it as the session's agent_type so a non-default provider (e.g. a Codex custom provider)
     // isn't misresolved from the bare slug. Legacy bare ids leave it None.
     let model_pref =
         load_model_pref("app.pr_model_id")?.or(load_model_pref("app.default_model_id")?);

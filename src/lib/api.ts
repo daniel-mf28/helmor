@@ -160,9 +160,6 @@ export type DataInfo = {
 export type AgentProvider =
 	| "claude"
 	| "codex"
-	| "cursor"
-	| "opencode"
-	| "kimi"
 	// Custom Codex providers: `codex:<id>` per instance.
 	| `codex:${string}`;
 
@@ -312,7 +309,7 @@ export type RepositoryCreateOption = {
 	branchPrefixType?: BranchPrefixType | null;
 	branchPrefixCustom?: string | null;
 	forgeProvider?: ForgeProvider | null;
-	/** gh/glab account login bound to this repo, or null when none had
+	/** gh account login bound to this repo, or null when none had
 	 * access at add-time. UI shows a "Connect" prompt when null. */
 	forgeLogin?: string | null;
 	repoIconSrc?: string | null;
@@ -323,7 +320,7 @@ export type AddRepositoryDefaults = {
 	lastCloneDirectory?: string | null;
 };
 
-/** A single gh / glab account with display profile attached. Listed
+/** A single gh account with display profile attached. Listed
  * by `listForgeAccounts` for the Settings → Account panel. */
 export type ForgeAccount = {
 	provider: ForgeProvider;
@@ -333,11 +330,11 @@ export type ForgeAccount = {
 	avatarUrl?: string | null;
 	email?: string | null;
 	/** True for the gh account currently marked active by `gh auth
-	 * switch`. Always true for GitLab (one account per host). */
+	 * switch`. */
 	active: boolean;
 };
 
-export type ForgeProvider = "github" | "gitlab" | "unknown";
+export type ForgeProvider = "github" | "unknown";
 
 export type ForgeLabels = {
 	providerName: string;
@@ -418,7 +415,7 @@ export type WorkspaceDetail = {
 	sessionCount: number;
 	messageCount: number;
 	forgeProvider?: ForgeProvider | null;
-	/** gh/glab account login bound to the parent repo. NULL means no
+	/** gh account login bound to the parent repo. NULL means no
 	 * account is bound — UI shows the "Connect" prompt. */
 	forgeLogin?: string | null;
 	/** Set when this workspace's setup script last finished with exit
@@ -555,39 +552,6 @@ export type EditorFileStatResponse = {
 	size: number | null;
 };
 
-export type AppUpdateStage =
-	| "disabled"
-	| "idle"
-	| "checking"
-	| "downloading"
-	| "downloaded"
-	| "installing"
-	| "error";
-
-export type AppUpdateInfo = {
-	currentVersion: string;
-	version: string;
-	body?: string | null;
-	date?: string | null;
-	releaseUrl: string;
-};
-
-export type AppUpdateProgress = {
-	downloaded: number;
-	total?: number | null;
-};
-
-export type AppUpdateStatus = {
-	stage: AppUpdateStage;
-	configured: boolean;
-	autoUpdateEnabled: boolean;
-	update?: AppUpdateInfo | null;
-	lastError?: string | null;
-	lastAttemptAt?: string | null;
-	downloadedAt?: string | null;
-	progress?: AppUpdateProgress | null;
-};
-
 const DEFAULT_WORKSPACE_GROUPS: WorkspaceGroup[] = [
 	{ id: "done", label: "Done", tone: "done", rows: [] },
 	{ id: "review", label: "In review", tone: "review", rows: [] },
@@ -608,7 +572,7 @@ export async function loadWorkspaceGroups(): Promise<WorkspaceGroup[]> {
 
 /**
  * Re-run the per-repo forge auto-bind. Frontend calls this after the
- * user finishes a `gh auth login` / `glab auth login` flow so the repo
+ * user finishes a `gh auth login` flow so the repo
  * picks up the new account without an app restart. Returns the bound
  * login (or `null` when no logged-in account had access).
  */
@@ -630,17 +594,10 @@ export async function getWorkspaceForge(
 	}
 }
 
-/** Enumerate all gh accounts plus one glab account per known host.
- * `gitlabHosts` is the list of GitLab hosts to probe (gathered from the
- * repos table — we don't shell out to glab for hosts the user isn't
- * actively using). */
-export async function listForgeAccounts(
-	gitlabHosts: string[],
-): Promise<ForgeAccount[]> {
+/** Enumerate all gh accounts across every host gh knows about. */
+export async function listForgeAccounts(): Promise<ForgeAccount[]> {
 	try {
-		return await invoke<ForgeAccount[]>("list_forge_accounts", {
-			gitlabHosts,
-		});
+		return await invoke<ForgeAccount[]>("list_forge_accounts");
 	} catch (error) {
 		throw new Error(
 			describeInvokeError(error, "Unable to list forge accounts."),
@@ -670,7 +627,7 @@ export async function checkWorkspaceForgeAuth(
 	}
 }
 
-/** Spot-fetch the gh/glab account bound to a workspace's parent repo,
+/** Spot-fetch the gh account bound to a workspace's parent repo,
  * with display profile (avatar / name / email). Returns null when the
  * repo has no resolvable forge account. Backed by the same per-process
  * cache that `listForgeAccounts` populates. */
@@ -844,20 +801,6 @@ export async function getHelmorSkillsStatus(): Promise<HelmorSkillsStatus> {
 	}
 }
 
-export async function getAppUpdateStatus(): Promise<AppUpdateStatus> {
-	return invoke<AppUpdateStatus>("get_app_update_status");
-}
-
-export async function checkForAppUpdate(
-	force = false,
-): Promise<AppUpdateStatus> {
-	return invoke<AppUpdateStatus>("check_for_app_update", { force });
-}
-
-export async function installDownloadedAppUpdate(): Promise<AppUpdateStatus> {
-	return invoke<AppUpdateStatus>("install_downloaded_app_update");
-}
-
 export type OsGlobalHotkeyId = "global.hotkey" | "quickPanel.hotkey";
 
 export async function syncGlobalHotkey(
@@ -887,14 +830,6 @@ export async function revealWorkspaceInMainWindow(
 		workspaceId,
 		sessionId,
 	});
-}
-
-export async function listenAppUpdateStatus(
-	callback: (payload: AppUpdateStatus) => void,
-): Promise<UnlistenFn> {
-	return listen<AppUpdateStatus>("app-update-status", (event) =>
-		callback(event.payload),
-	);
 }
 
 export async function installCli(): Promise<CliStatus> {
@@ -957,19 +892,11 @@ export async function toggleMiniWindowMode(): Promise<boolean> {
 	return await invoke("toggle_mini_window_mode");
 }
 
-export type AgentLoginProvider =
-	| "claude"
-	| "codex"
-	| "cursor"
-	| "opencode"
-	| "kimi";
+export type AgentLoginProvider = "claude" | "codex";
 
 export type AgentLoginStatusResult = {
 	claude: boolean;
 	codex: boolean;
-	cursor: boolean;
-	opencode: boolean;
-	kimi: boolean;
 	codexProvider?: string | null;
 	codexAuthMethod?: "login" | "apiKey" | string | null;
 };
@@ -978,12 +905,9 @@ export async function getAgentLoginStatus(): Promise<AgentLoginStatusResult> {
 	return await invoke<AgentLoginStatusResult>("get_agent_login_status");
 }
 
-// Cursor is an SDK (no versioned CLI), so it has no entry.
 export type AgentVersionsResult = {
 	claude: string | null;
 	codex: string | null;
-	opencode: string | null;
-	kimi: string | null;
 };
 
 export async function getAgentVersions(): Promise<AgentVersionsResult> {
@@ -1256,14 +1180,12 @@ export async function fetchProviderModels(
 	family: ProviderFamily,
 	baseUrl: string,
 	apiKey: string,
-	apiStyle?: string,
 ): Promise<CustomProviderModel[]> {
 	try {
 		return await invoke<CustomProviderModel[]>("fetch_provider_models", {
 			family,
 			baseUrl,
 			apiKey,
-			apiStyle,
 		});
 	} catch (error) {
 		// Surface the real reason (e.g. "models endpoint returned HTTP 401")
@@ -1315,36 +1237,6 @@ export const DEFAULT_PROVIDER_CAPABILITIES: ProviderCapabilities[] = [
 		supportsSlashCommands: true,
 		requiresApiKey: false,
 	},
-	{
-		provider: "cursor",
-		displayName: "Cursor",
-		supportsPlanMode: true,
-		supportsActiveGoal: false,
-		supportsContextUsage: false,
-		supportsSteer: false,
-		supportsSlashCommands: true,
-		requiresApiKey: true,
-	},
-	{
-		provider: "opencode",
-		displayName: "OpenCode",
-		supportsPlanMode: true,
-		supportsActiveGoal: false,
-		supportsContextUsage: true,
-		supportsSteer: true,
-		supportsSlashCommands: true,
-		requiresApiKey: false,
-	},
-	{
-		provider: "kimi",
-		displayName: "Kimi",
-		supportsPlanMode: false,
-		supportsActiveGoal: false,
-		supportsContextUsage: false,
-		supportsSteer: false,
-		supportsSlashCommands: true,
-		requiresApiKey: false,
-	},
 ];
 
 /** Look up a single provider's capabilities from a previously-fetched
@@ -1358,91 +1250,6 @@ export function findProviderCapabilities(
 	// Custom Codex providers (`codex:<id>`) share the official Codex caps.
 	const normalized = isCodexProvider(provider) ? "codex" : provider;
 	return table.find((caps) => caps.provider === normalized) ?? null;
-}
-
-export type CursorModelParameterValue = {
-	value: string;
-	displayName?: string;
-};
-
-export type CursorModelParameter = {
-	id: string;
-	displayName?: string;
-	values: CursorModelParameterValue[];
-};
-
-export type CursorModelEntry = {
-	id: string;
-	label: string;
-	/** Raw `parameters[]` — persisted into `cursorProvider.cachedModels`. */
-	parameters?: CursorModelParameter[];
-};
-
-/// Live `Cursor.models.list` via sidecar. Optional `apiKey` overrides
-/// the stored key for one-off probes (e.g. onboarding validation).
-export async function listCursorModels(
-	apiKey?: string,
-): Promise<CursorModelEntry[]> {
-	try {
-		return await invoke<CursorModelEntry[]>("list_cursor_models", {
-			apiKey: apiKey ?? null,
-		});
-	} catch (error) {
-		throw new Error(
-			describeInvokeError(error, "Unable to list Cursor models."),
-		);
-	}
-}
-
-export type OpencodeModelEntry = {
-	// `<providerID>/<modelID>` slug — doubles as the cliModel.
-	id: string;
-	label: string;
-	// Effort tiers (the model's `variants` keys). Empty ⟺ no effort switch.
-	effortLevels?: string[];
-};
-
-// `forceReload` restarts the opencode server to pick up config changes.
-export async function listOpencodeModels(
-	forceReload = false,
-): Promise<OpencodeModelEntry[]> {
-	try {
-		return await invoke<OpencodeModelEntry[]>("list_opencode_models", {
-			forceReload,
-		});
-	} catch (error) {
-		throw new Error(
-			describeInvokeError(error, "Unable to list opencode models."),
-		);
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Kimi — model picker config. Custom-provider CRUD goes through the unified
-// `provider` commands (family = "kimi"); this read feeds the "Models" row.
-// ---------------------------------------------------------------------------
-
-export type KimiProviderInfo = {
-	id: string;
-	label: string;
-	modelCount: number;
-};
-/** `id` is the Kimi model alias (what the model picker / `session/set_model` use). */
-export type KimiModelInfo = { id: string; label: string; providerId: string };
-export type KimiProviderConfig = {
-	providers: KimiProviderInfo[];
-	models: KimiModelInfo[];
-};
-
-/** Parsed `~/.kimi-code/config.toml` → configured providers + models. */
-export async function getKimiProviderConfig(): Promise<KimiProviderConfig> {
-	try {
-		return await invoke<KimiProviderConfig>("get_kimi_provider_config");
-	} catch (error) {
-		throw new Error(
-			describeInvokeError(error, "Unable to read Kimi providers."),
-		);
-	}
 }
 
 export type SlashCommandEntry = {
@@ -2209,7 +2016,7 @@ export type ActionStatusKind =
 	| "pending"
 	| "running"
 	| "failure";
-export type ActionProvider = "github" | "gitlab" | "vercel" | "unknown";
+export type ActionProvider = "github" | "vercel" | "unknown";
 export type WorkspaceGitSyncStatus = "upToDate" | "behind" | "unknown";
 export type WorkspacePushStatus = "published" | "unpublished" | "unknown";
 
@@ -2880,7 +2687,7 @@ export type UserQuestionStatus =
 	| "cancelled";
 /**
  * Normalized agent→user question card — one shape for Claude
- * AskUserQuestion, Codex `requestUserInput` and OpenCode `question`.
+ * AskUserQuestion, Codex `requestUserInput` questions.
  * `answers` maps question text → answer string (multi-select answers are
  * comma-joined labels; free-text answers pass through verbatim).
  */
@@ -3013,7 +2820,7 @@ export type AgentStreamEvent =
 			message: string;
 			/** Discriminated by `payload.kind`:
 			 *  - `ask-user-question` → canonical question card (Claude AskUserQuestion,
-			 *    Codex requestUserInput, OpenCode question — normalized by Rust's
+			 *    Codex requestUserInput — normalized by Rust's
 			 *    `pipeline::user_question`, see `UserQuestionItem`)
 			 *  - `form` → JSON-Schema form (MCP form elicitation)
 			 *  - `url` → URL launcher (MCP url-mode elicitation)
@@ -4140,42 +3947,6 @@ export async function resizeTerminal(
 }
 
 export { DEFAULT_WORKSPACE_GROUPS };
-
-// ---------------------------------------------------------------------------
-// Feedback / "Quick fix" contribution flow
-// ---------------------------------------------------------------------------
-
-export type ForkResult = {
-	owner: string;
-	repo: string;
-	cloneUrl: string;
-	htmlUrl: string;
-};
-
-export type ExistingHelmorRepo = {
-	repoId: string;
-	repoName: string;
-};
-
-export async function forkHelmorUpstream(): Promise<ForkResult> {
-	return invoke<ForkResult>("fork_helmor_upstream");
-}
-
-export type IssueResult = {
-	url: string;
-	number: number;
-};
-
-export async function createHelmorIssue(
-	title: string,
-	body: string,
-): Promise<IssueResult> {
-	return invoke<IssueResult>("create_helmor_issue", { title, body });
-}
-
-export async function findExistingHelmorRepo(): Promise<ExistingHelmorRepo | null> {
-	return invoke<ExistingHelmorRepo | null>("find_existing_helmor_repo");
-}
 
 function describeInvokeError(error: unknown, fallback: string): string {
 	return extractError(error, fallback).message;

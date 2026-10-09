@@ -509,8 +509,8 @@ describe("deriveCommitButtonState", () => {
 		).toBe("idle");
 	});
 
-	// Regression: GitLab maps `not_open` → "UNKNOWN" and the action-status
-	// poller stops once a PR is merged/closed, so the last recorded mergeable
+	// Regression: a closed/merged change request can report "UNKNOWN"
+	// mergeable and the action-status poller stops once a PR is merged/closed, so the last recorded mergeable
 	// sticks on UNKNOWN forever. Tying the disabled gate to mode="merge"
 	// (not "merged"/"closed") prevents that stale UNKNOWN from leaking into
 	// the ghost-mode header.

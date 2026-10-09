@@ -224,15 +224,15 @@ describe("MemoConversationMessage plan review", () => {
 
 	it("renders system notices inside assistant messages", () => {
 		const message: ThreadMessageLike = {
-			id: "opencode-error",
+			id: "agent-error",
 			role: "assistant",
 			createdAt: "2026-04-12T12:00:00.000Z",
 			content: [
 				{
 					type: "system-notice",
-					id: "opencode-error:notice",
+					id: "agent-error:notice",
 					severity: "error",
-					label: "OpenCode error",
+					label: "Agent error",
 					body: 'Bad Request: {"detail":"Unsupported parameter: max_output_tokens"}',
 				},
 			],
@@ -246,7 +246,7 @@ describe("MemoConversationMessage plan review", () => {
 			/>,
 		);
 
-		expect(screen.getByText("OpenCode error")).toBeInTheDocument();
+		expect(screen.getByText("Agent error")).toBeInTheDocument();
 		expect(
 			screen.getByText(/Unsupported parameter: max_output_tokens/),
 		).toBeInTheDocument();

@@ -71,10 +71,10 @@ describe("parseStoredMeta", () => {
 		).toBeNull();
 	});
 
-	it("reads the optional opencode `cost` field; omits it when absent", () => {
+	it("reads the optional `cost` field; omits it when absent", () => {
 		const withCost = parseStoredMeta(
 			JSON.stringify({
-				modelId: "opencode/big-pickle",
+				modelId: "m",
 				usedTokens: 13_988,
 				maxTokens: 1_000_000,
 				percentage: 1,
@@ -94,10 +94,10 @@ describe("parseStoredMeta", () => {
 		});
 	});
 
-	it("reads the opencode `categories` breakdown and surfaces it on the display", () => {
+	it("reads a baseline `categories` breakdown and surfaces it on the display", () => {
 		const meta = parseStoredMeta(
 			JSON.stringify({
-				modelId: "opencode/big-pickle",
+				modelId: "m",
 				usedTokens: 13_988,
 				maxTokens: 0,
 				percentage: 0,
@@ -133,7 +133,7 @@ describe("parseStoredMeta", () => {
 });
 
 describe("formatUsd", () => {
-	it("formats cumulative spend like opencode's TUI", () => {
+	it("formats cumulative spend as USD", () => {
 		expect(formatUsd(0)).toBe("$0.00");
 		expect(formatUsd(0.42)).toBe("$0.42");
 		expect(formatUsd(12.3)).toBe("$12.30");

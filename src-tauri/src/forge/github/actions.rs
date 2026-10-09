@@ -2,9 +2,6 @@
 //! latest commit (checks + deployments), normalise it into the
 //! provider-agnostic `ForgeActionStatus`, and produce the insert text
 //! the inspector dumps when the user clicks a check.
-//!
-//! Counterpart to `forge::gitlab::pipeline` — same shape, GitHub-flavoured
-//! data sources.
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -492,7 +489,6 @@ fn format_duration(started_at: Option<&str>, completed_at: Option<&str>) -> Opti
 fn action_provider_label(provider: ActionProvider) -> &'static str {
     match provider {
         ActionProvider::Github => "GitHub",
-        ActionProvider::Gitlab => "GitLab",
         ActionProvider::Vercel => "Vercel",
         ActionProvider::Unknown => "Unknown",
     }
@@ -590,8 +586,8 @@ mod tests {
 
     #[test]
     fn infer_provider_falls_back_to_default_when_no_known_match() {
-        let provider = infer_provider(ActionProvider::Gitlab, [Some("custom-runner"), None]);
-        assert_eq!(provider, ActionProvider::Gitlab);
+        let provider = infer_provider(ActionProvider::Unknown, [Some("custom-runner"), None]);
+        assert_eq!(provider, ActionProvider::Unknown);
     }
 
     #[test]

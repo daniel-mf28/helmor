@@ -1,6 +1,6 @@
 import { CircleAlert, Loader2 } from "lucide-react";
 import { useMemo } from "react";
-import { GithubBrandIcon, GitlabBrandIcon } from "@/components/brand-icon";
+import { GithubBrandIcon } from "@/components/brand-icon";
 import { CachedAvatar } from "@/components/cached-avatar";
 import {
 	Tooltip,
@@ -24,12 +24,9 @@ export function AccountPanel() {
 	const accountsQuery = useForgeAccountsAll();
 	const accounts = accountsQuery.data ?? [];
 
-	// Stable order: GitHub first, then GitLab grouped by host, then by login.
+	// Stable order: grouped by host, then by login.
 	const sortedAccounts = useMemo(() => {
 		return [...accounts].sort((a, b) => {
-			if (a.provider !== b.provider) {
-				return a.provider === "github" ? -1 : 1;
-			}
 			if (a.host !== b.host) return a.host.localeCompare(b.host);
 			return a.login.localeCompare(b.login);
 		});
@@ -86,25 +83,15 @@ export function AccountPanel() {
 
 function AccountRow({ account }: { account: ForgeAccount }) {
 	const displayName = account.name?.trim() || account.login;
-	const providerBadge =
-		account.provider === "gitlab" ? (
-			<GitlabBrandIcon size={11} className="text-[#FC6D26]" />
-		) : (
-			<GithubBrandIcon size={11} />
-		);
+	const providerBadge = <GithubBrandIcon size={11} />;
 	// GitHub Enterprise users have a non-default host worth showing as
-	// a subtle caption; gitlab.com gets the same treatment as
-	// self-hosted (always show the host since multiple are possible).
-	const showHostCaption =
-		account.provider === "gitlab" ||
-		(account.provider === "github" && account.host !== GITHUB_DEFAULT_HOST);
+	// a subtle caption.
+	const showHostCaption = account.host !== GITHUB_DEFAULT_HOST;
 
 	return (
 		<div className="flex min-h-[80px] items-center gap-3 py-4">
 			<div className="relative shrink-0">
-				{/* Initials fallback kicks in when no URL or the <img> errors
-				 * (self-hosted GitLab gates /uploads/ behind a cookie our
-				 * PAT can't satisfy, etc.). */}
+				{/* Initials fallback kicks in when no URL or the <img> errors. */}
 				<CachedAvatar
 					size="lg"
 					className="size-10"

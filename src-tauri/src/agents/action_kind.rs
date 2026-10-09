@@ -48,8 +48,6 @@ impl ActionKind {
 
     /// The human-facing default title for a session created with this
     /// action kind. Used by `default_session_title_for_action_kind`.
-    /// Defaults to "PR" terminology — callers with forge context should
-    /// prefer `default_title_for_change_request` to get "MR" on GitLab.
     pub const fn default_title(&self) -> &'static str {
         match self {
             Self::CreatePr => "Create PR",
@@ -62,17 +60,6 @@ impl ActionKind {
             Self::OpenPr => "Open PR",
             Self::Merged => "Merged",
             Self::Closed => "Closed",
-        }
-    }
-
-    /// Forge-aware default title. Pass the workspace's change-request
-    /// noun ("PR" for GitHub, "MR" for GitLab) — everything else uses the
-    /// same wording as `default_title`.
-    pub fn default_title_for_change_request(&self, change_request_name: &str) -> String {
-        match self {
-            Self::CreatePr => format!("Create {change_request_name}"),
-            Self::OpenPr => format!("Open {change_request_name}"),
-            _ => self.default_title().to_string(),
         }
     }
 }

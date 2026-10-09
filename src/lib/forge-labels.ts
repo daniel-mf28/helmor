@@ -14,14 +14,6 @@ const GITHUB: ForgeLabels = {
 	connectAction: "Connect GitHub",
 };
 
-const GITLAB: ForgeLabels = {
-	providerName: "GitLab",
-	cliName: "glab",
-	changeRequestName: "MR",
-	changeRequestFullName: "merge request",
-	connectAction: "Connect GitLab",
-};
-
 const UNKNOWN: ForgeLabels = {
 	providerName: "Git",
 	cliName: "",
@@ -36,8 +28,6 @@ export function forgeLabelsFor(
 	switch (provider) {
 		case "github":
 			return GITHUB;
-		case "gitlab":
-			return GITLAB;
 		default:
 			return UNKNOWN;
 	}

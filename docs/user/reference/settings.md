@@ -21,9 +21,6 @@ Defaults for new sessions and app-wide behavior:
 
 Provider configuration:
 
-- **Cursor** — API key; once set, Cursor models appear in the picker.
-- **OpenCode** — connect providers and choose which models to expose
-  (read from your `~/.config/opencode/opencode.jsonc`).
 - **Custom Claude-compatible providers** — base URL + API key for any endpoint
   speaking the Claude API.
 
@@ -33,7 +30,7 @@ onboarding (or re-run from here). See
 
 ## Accounts
 
-GitHub and GitLab accounts, via the bundled `gh`/`glab` CLIs. Multiple
+GitHub and GitLab accounts, via the bundled `gh` CLI (GitLab needs your own `glab`). Multiple
 accounts are supported; each repository binds to the account that has access.
 Re-authenticate from here if a token expires — the login flow runs in an
 embedded terminal.
@@ -53,11 +50,6 @@ Per-repository configuration (also reachable from the sidebar):
 Every keybinding in the app is rebindable, per scope (app, chat, composer,
 editor, terminal), with conflict detection and a reset-to-defaults. The full
 map: [Keyboard shortcuts](keyboard-shortcuts.md).
-
-## App Updates
-
-Current version, update channel status, manual *Check for updates*. Updates
-download in the background and apply on restart.
 
 ## Local LLM
 

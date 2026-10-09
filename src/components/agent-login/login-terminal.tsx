@@ -13,10 +13,6 @@ import { useI18n } from "@/lib/i18n";
 export const providerLabels: Record<AgentLoginProvider, string> = {
 	claude: "Claude Code",
 	codex: "Codex",
-	// Cursor never reaches the login terminal; here for the exhaustive Record.
-	cursor: "Cursor",
-	opencode: "OpenCode",
-	kimi: "Kimi",
 };
 
 export function LoginTerminalPreview({

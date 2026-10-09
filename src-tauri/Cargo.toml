@@ -13,7 +13,8 @@ default-run = "helmor"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "helmor_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# rlib only; mobile builds would need "staticlib" and "cdylib" back.
+crate-type = ["rlib"]
 
 [build-dependencies]
 dotenvy = "0.15"
@@ -41,12 +42,9 @@ r2d2 = "0.8"
 r2d2_sqlite = "0.24"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# CST editing of the user's global opencode config (preserve comments/format)
-# + serde read path. See agents/opencode_config.rs.
-jsonc-parser = { version = "0.32", features = ["cst", "serde"] }
 sha2 = "0.10"
 hex = "0.4"
-tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "test", "devtools"] }
+tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "devtools"] }
 tempfile = "3"
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
@@ -54,7 +52,6 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-mcp-bridge = "0.11.0"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
 tokio = { version = "1", features = [
     "fs",
@@ -72,10 +69,6 @@ notify-debouncer-full = "0.4"
 # terminal and interactive run-action scripts. See `workspace/scripts.rs`.
 portable-pty = "0.8"
 toml = "0.8"
-# CST editing of the user's `~/.kimi-code/config.toml` (preserve comments /
-# formatting on write). Already in the tree as a transitive dep — no new weight.
-# See agents/kimi_config.rs.
-toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = [
     "json",
@@ -125,20 +118,22 @@ path = "src/bin/helmor-cli.rs"
 
 [dev-dependencies]
 anyhow = "1"
+# Mock runtime for tests only — kept out of shipped builds.
+tauri = { version = "2", features = ["test"] }
 insta = { version = "1", features = ["yaml", "glob"] }
 tempfile = "3"
 
 # ---------------------------------------------------------------------------
 # Dev profile: optimised for fastest compilation, not runtime performance.
-# sccache is the cross-worktree cache; incremental is disabled because the
-# two are mutually exclusive.
+# Incremental is on for the local crate (registry deps are never incremental,
+# so sccache still caches them).
 # ---------------------------------------------------------------------------
 [profile.dev]
 debug = "line-tables-only"   # keep backtraces, skip 80% of debug info
 split-debuginfo = "unpacked" # skip dsymutil merge (macOS default, explicit)
 opt-level = 0
 codegen-units = 256          # max intra-crate parallelism
-incremental = false          # required for sccache compatibility
+incremental = true
 
 [profile.dev.package."*"]
 debug = false       # deps don't need debug info at all

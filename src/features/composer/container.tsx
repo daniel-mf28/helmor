@@ -24,7 +24,6 @@ import {
 	createSession,
 	findProviderCapabilities,
 	isCodexProvider,
-	listCustomProviders,
 	mutateCodexGoal,
 	type SlashCommandEntry,
 	saveAutoCloseActionKinds,
@@ -110,13 +109,6 @@ const CODEX_COMPACT_COMMAND: SlashCommandEntry = {
 	providers: ["codex"],
 };
 
-const OPENCODE_COMPACT_COMMAND: SlashCommandEntry = {
-	name: "compact",
-	description: "compactConversationSContext",
-	source: "builtin",
-	providers: ["opencode"],
-};
-
 const CODEX_GOAL_COMMAND: SlashCommandEntry = {
 	name: "goal",
 	description: "setPersistentGoalCodexPursuesTurn",
@@ -143,7 +135,6 @@ const CLAUDE_WORKFLOWS_COMMAND: SlashCommandEntry = {
 const BUILTIN_CLIENT_COMMANDS: readonly SlashCommandEntry[] = [
 	ADD_DIR_COMMAND,
 	CODEX_COMPACT_COMMAND,
-	OPENCODE_COMPACT_COMMAND,
 	CODEX_GOAL_COMMAND,
 	CLAUDE_GOAL_COMMAND,
 	CLAUDE_WORKFLOWS_COMMAND,
@@ -151,7 +142,7 @@ const BUILTIN_CLIENT_COMMANDS: readonly SlashCommandEntry[] = [
 
 // SDK-reported commands to hide per provider. claude-code lists /compact among
 // its slash commands, but the Agent SDK exposes no programmatic compaction path
-// (unlike Codex's thread/compact/start and OpenCode's session.summarize), so
+// (unlike Codex's thread/compact/start), so
 // sending it is a no-op — suppress it instead of showing a dead command.
 const SUPPRESSED_AGENT_COMMANDS: Partial<
 	Record<AgentProvider, ReadonlySet<string>>
@@ -541,17 +532,6 @@ export const WorkspaceComposerContainer = memo(
 		const modelsLoading =
 			modelSectionsQuery.isLoading &&
 			availableModelSections.every((s) => s.options.length === 0);
-		// Drives the OpenCode "Add custom model…" jump; only fetched when an OpenCode section exists.
-		const opencodeSectionPresent = availableModelSections.some(
-			(s) => s.id === "opencode",
-		);
-		const opencodeCustomProvidersQuery = useQuery({
-			queryKey: helmorQueryKeys.customProviders("opencode"),
-			queryFn: () => listCustomProviders("opencode"),
-			enabled: opencodeSectionPresent,
-		});
-		const hasOpencodeCustomProviders =
-			(opencodeCustomProvidersQuery.data?.length ?? 0) > 0;
 		const currentSession =
 			(sessionsQuery.data ?? []).find(
 				(session) => session.id === displayedSessionId,
@@ -709,9 +689,9 @@ export const WorkspaceComposerContainer = memo(
 		const handleModelSelect = useCallback(
 			async (modelId: string, pickedProvider: string | null) => {
 				const currentProvider = provider;
-				// Provider comes straight from the picked option — opencode
-				// sub-providers share a slug namespace, so re-deriving it from the
-				// id alone would resolve to the wrong section.
+				// Provider comes straight from the picked option — different
+				// sections can share a model id, so re-deriving it from the id
+				// alone could resolve to the wrong section.
 				const newProvider =
 					pickedProvider ??
 					findModelOption(modelSections, modelId)?.provider ??
@@ -782,16 +762,11 @@ export const WorkspaceComposerContainer = memo(
 		// Narrow `provider` (which can be the loosely-typed agentType from a
 		// historical session) to a real AgentProvider before keying the
 		// query. Anything outside the known set degrades to claude so we
-		// never miss the popup. NOTE: the prior version of this branch
-		// collapsed everything except codex into claude, which masked
-		// cursor sessions as claude — the Rust cache then served cached
-		// claude skills back to the cursor popup. Keep cursor explicit.
+		// never miss the popup.
 		// Custom Codex providers (`codex:<id>`) collapse to "codex".
 		const slashProvider: AgentProvider = isCodexProvider(provider)
 			? "codex"
-			: provider === "cursor" || provider === "opencode" || provider === "kimi"
-				? provider
-				: "claude";
+			: "claude";
 		// Prefer the repoId from a real workspace; on the start page there's no
 		// workspace yet, so fall back to the caller-supplied repoId hint.
 		const effectiveRepoId =
@@ -1379,7 +1354,6 @@ export const WorkspaceComposerContainer = memo(
 						selectedModelId={effectiveSelectedModelId}
 						selectedModelProvider={effectiveModel?.provider ?? null}
 						modelSections={modelSections}
-						hasOpencodeCustomProviders={hasOpencodeCustomProviders}
 						modelsLoading={modelsLoading}
 						onSelectModel={handleSelectModelInner}
 						provider={provider}

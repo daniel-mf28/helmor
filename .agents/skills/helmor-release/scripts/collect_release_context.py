@@ -30,18 +30,12 @@ def detect_base() -> str:
 
 
 def group_path(path: str) -> str:
-    if path.startswith("src-tauri/src/updater/") or path.endswith(
-        "updater_commands.rs",
-    ):
-        return "App updater runtime"
     if path.startswith(".github/workflows/") or path.startswith("scripts/"):
         return "Release automation"
     if path.startswith(".changeset/") or path == "CHANGELOG.md":
         return "Release notes and versioning"
-    if path.startswith("src/features/settings/") or path.startswith(
-        "src/features/updater/",
-    ):
-        return "Settings and update UI"
+    if path.startswith("src/features/settings/"):
+        return "Settings UI"
     if path.startswith("src/") or path.startswith("src-tauri/"):
         return "Application code"
     if path.startswith("docs/"):
@@ -91,10 +85,6 @@ def main() -> int:
     print()
 
     suggestions = []
-    if "App updater runtime" in grouped or "Settings and update UI" in grouped:
-        suggestions.append(
-            "Add background app-update checks and a ready-to-install prompt.",
-        )
     if "Release automation" in grouped or "Release notes and versioning" in grouped:
         suggestions.append(
             "Add release automation for signed macOS builds and GitHub Releases.",

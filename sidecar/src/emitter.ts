@@ -120,7 +120,7 @@ export type UserInputPayload =
 	| {
 			readonly kind: "ask-user-question";
 			/** PROVIDER-RAW question array (Claude AUQ / Codex requestUserInput
-			 *  / OpenCode question shapes). Rust's `pipeline::user_question`
+			 *  question shapes). Rust's `pipeline::user_question`
 			 *  normalizes it into the one canonical shape the frontend renders. */
 			readonly questions: ReadonlyArray<Record<string, unknown>>;
 			readonly metadata?: Record<string, unknown>;
@@ -159,15 +159,6 @@ export type ModelsListedEvent = {
 		readonly cliModel: string;
 		readonly effortLevels?: readonly string[];
 		readonly supportsFastMode?: boolean;
-		/** Cursor only — raw `parameters[]` from `Cursor.models.list`. */
-		readonly cursorParameters?: ReadonlyArray<{
-			readonly id: string;
-			readonly displayName?: string;
-			readonly values: ReadonlyArray<{
-				readonly value: string;
-				readonly displayName?: string;
-			}>;
-		}>;
 	}>;
 };
 
@@ -273,7 +264,7 @@ export interface SidecarEmitter {
 		payload: UserInputPayload,
 	): void;
 	/**
-	 * Stream-position marker for a resolved Codex/OpenCode question. Rust's
+	 * Stream-position marker for a resolved Codex question. Rust's
 	 * accumulator turns it into a persisted `user_question` transcript row
 	 * (the Q&A card), so the answer survives reload at its natural position.
 	 * Claude AskUserQuestion does NOT emit this — its tool_use/tool_result
@@ -298,14 +289,6 @@ export interface SidecarEmitter {
 			cliModel: string;
 			effortLevels?: readonly string[];
 			supportsFastMode?: boolean;
-			cursorParameters?: ReadonlyArray<{
-				id: string;
-				displayName?: string;
-				values: ReadonlyArray<{
-					value: string;
-					displayName?: string;
-				}>;
-			}>;
 		}>,
 	): void;
 	contextUsageUpdated(

@@ -237,11 +237,20 @@ export function useConversationStreaming({
 	// the interaction-tracking effect uses it as a fallback when
 	// `interactionWorkspaceByContext` hasn't been populated yet.
 	const sendingWorkspaceMapRef = useRef<Map<string, string>>(new Map());
-	const isSending = sendingContextKeys.has(composerContextKey);
-	const pendingPermissions =
-		pendingPermissionsByContext[composerContextKey] ??
-		EMPTY_PENDING_PERMISSIONS;
-	const hasPlanReview = planReviewByContext[composerContextKey] ?? false;
+	// Current-context reads use their own narrow selectors so they stay
+	// cheap and don't depend on the cross-context bundle above (which
+	// exists only for interaction aggregation + the busy-session set).
+	const isSending = useStreamingStore((state) =>
+		state.sendingContextKeys.has(composerContextKey),
+	);
+	const pendingPermissions = useStreamingStore(
+		(state) =>
+			state.pendingPermissionsByContext[composerContextKey] ??
+			EMPTY_PENDING_PERMISSIONS,
+	);
+	const hasPlanReview = useStreamingStore(
+		(state) => state.planReviewByContext[composerContextKey] ?? false,
+	);
 
 	const seedSessionTitleCallback = useCallback(
 		(sessionId: string, workspaceId: string | null, title: string) => {
@@ -692,7 +701,8 @@ export function useConversationStreaming({
 							provider: backendLiveStream.provider,
 						}
 					: null);
-			const hasPlanReviewForContext = planReviewByContext[contextKey] ?? false;
+			const hasPlanReviewForContext =
+				streamingStore.getState().planReviewByContext[contextKey] ?? false;
 			if (liveStream && !hasPlanReviewForContext) {
 				// `forceQueue` is a caller-supplied override that pins
 				// the routing to the queue regardless of the user's
@@ -948,20 +958,34 @@ export function useConversationStreaming({
 				// `cleanup` fires one FINAL refresh on stream end (any terminal arm
 				// or the RPC-reject catch) so the post-turn diff is fresh despite the
 				// longer interval.
-				const refreshChanges = () => {
-					if (!workingDirectory) return;
-					void queryClient.invalidateQueries({
-						queryKey: helmorQueryKeys.workspaceChanges(
+				const changesQueryKey = workingDirectory
+					? helmorQueryKeys.workspaceChanges(
 							workingDirectory,
 							targetWorkspaceId,
-						),
-					});
+						)
+					: null;
+				const refreshChanges = () => {
+					if (!changesQueryKey) return;
+					void queryClient.invalidateQueries({ queryKey: changesQueryKey });
+				};
+				// Periodic tick: skip when a fetch is already in flight or the
+				// data landed moments ago (the query's own refetchInterval /
+				// watcher events overlap with this timer). The final refresh in
+				// `cleanup` always runs.
+				const tickChanges = () => {
+					if (!changesQueryKey) return;
+					const state = queryClient.getQueryState(changesQueryKey);
+					if (
+						state &&
+						(state.fetchStatus === "fetching" ||
+							Date.now() - state.dataUpdatedAt < 3_000)
+					) {
+						return;
+					}
+					refreshChanges();
 				};
 
-				const changesRefreshInterval = window.setInterval(
-					refreshChanges,
-					7_000,
-				);
+				const changesRefreshInterval = window.setInterval(tickChanges, 7_000);
 
 				const flushers = createStreamFlushers({
 					accumulator,
@@ -1095,7 +1119,6 @@ export function useConversationStreaming({
 			setFastPreludeActive,
 			setPlanReviewActive,
 			activeStreams,
-			planReviewByContext,
 			followUpBehavior,
 			storeActions,
 			streamingStore,

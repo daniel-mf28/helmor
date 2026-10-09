@@ -15,9 +15,9 @@ export type StoredContextUsageMeta = {
 	readonly usedTokens: number;
 	readonly maxTokens: number;
 	readonly percentage: number;
-	/** Cumulative session cost (USD); opencode only. */
+	/** Cumulative session cost (USD), when the provider reports one in the baseline. */
 	readonly cost?: number;
-	/** opencode stores the breakdown in the baseline; Claude on the rich payload. */
+	/** Breakdown when the provider stores it in the baseline; Claude uses the rich payload. */
 	readonly categories?: ReadonlyArray<ContextCategory>;
 };
 

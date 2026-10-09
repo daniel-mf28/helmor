@@ -169,11 +169,11 @@ pub struct WorkspaceDetail {
     pub archive_commit: Option<String>,
     pub session_count: i64,
     pub message_count: i64,
-    /// Cached forge classification ("github" / "gitlab" / "unknown") on
+    /// Cached forge classification ("github" / "unknown") on
     /// the parent repo. Drives whether the right-top "Connect" button
-    /// targets `gh auth login` or `glab auth login`.
+    /// targets `gh auth login`.
     pub forge_provider: Option<String>,
-    /// gh/glab account login bound to this repo. NULL when no account
+    /// gh account login bound to this repo. NULL when no account
     /// has been bound (auto-detect didn't find one); the UI shows the
     /// "Connect" prompt in that case.
     pub forge_login: Option<String>,

@@ -10,9 +10,6 @@
 //!   collection helpers used by both submodules.
 
 mod codex;
-mod cursor;
-mod kimi;
-mod opencode;
 mod streaming;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -153,22 +150,6 @@ pub struct StreamAccumulator {
     /// Timestamp (ms since epoch) when the current Codex turn started.
     /// Used to compute turn duration since the App Server doesn't provide it.
     pub(super) codex_turn_started_at: Option<f64>,
-
-    // ── Cursor state ─────────────────────────────────────────────────
-    /// Per-run cursor state; see `cursor.rs`.
-    cursor_state: cursor::CursorRunState,
-
-    // ── opencode state ───────────────────────────────────────────────
-    /// Per-turn opencode part accumulation; see `opencode.rs`.
-    opencode_state: opencode::OpencodeRunState,
-    /// Index into `collected[]` driving `build_opencode_partial`.
-    opencode_partial_idx: Option<usize>,
-
-    // ── kimi (ACP) state ─────────────────────────────────────────────
-    /// Per-turn kimi part accumulation; see `kimi.rs`.
-    kimi_state: kimi::KimiRunState,
-    /// Index into `collected[]` driving `build_kimi_partial`.
-    kimi_partial_idx: Option<usize>,
 
     // ── Coverage guard ───────────────────────────────────────────────
     /// Top-level event types that fell through `push_event`'s match
@@ -354,11 +335,6 @@ impl StreamAccumulator {
             codex_items: codex::new_item_states(),
             codex_partial_idx: None,
             codex_turn_started_at: None,
-            cursor_state: cursor::new_run_state(),
-            opencode_state: opencode::new_run_state(),
-            opencode_partial_idx: None,
-            kimi_state: kimi::new_run_state(),
-            kimi_partial_idx: None,
             dropped_event_types: Vec::new(),
         }
     }
@@ -458,7 +434,7 @@ impl StreamAccumulator {
                 PushOutcome::Finalized
             }
             Some("auth_status") => PushOutcome::NoOp,
-            // Resolved Codex/OpenCode user-input question — the sidecar
+            // Resolved Codex user-input question — the sidecar
             // emits this at answer time so the Q&A lands in the transcript
             // at its natural stream position. Claude AskUserQuestion skips
             // this path (its tool_use already lives in the assistant turn).
@@ -542,56 +518,6 @@ impl StreamAccumulator {
                 }
                 PushOutcome::NoOp
             }
-
-            // ── Cursor SDK events (namespaced by sidecar manager) ─────
-            // Synthetic — session_id already lifted by push_event extractor.
-            Some("cursor/agent_init") => PushOutcome::NoOp,
-            Some("cursor/status") => cursor::handle_status(self, value),
-            Some("cursor/thinking") => cursor::handle_thinking(self, value),
-            Some("cursor/assistant") => cursor::handle_assistant_delta(self, value),
-            Some("cursor/tool_call_start") => cursor::handle_tool_call_start(self, value),
-            Some("cursor/tool_call_end") => cursor::handle_tool_call_end(self, value),
-
-            // ── opencode events (namespaced by the sidecar manager) ───
-            Some("opencode/session_init") => PushOutcome::NoOp,
-            Some("opencode/message.updated") => opencode::handle_message_updated(self, value),
-            Some("opencode/message.part.updated") => opencode::handle_part_updated(self, value),
-            // Token-by-token text/reasoning deltas (parallel to part.updated snapshots).
-            Some("opencode/message.part.delta") => opencode::handle_part_delta(self, value),
-            // Subagent (`task` tool) parts, tagged with the parent `callID`.
-            Some("opencode/subtask.message.updated") => {
-                opencode::handle_subtask_message_updated(self, value)
-            }
-            Some("opencode/subtask.message.part.updated") => {
-                opencode::handle_subtask_part_updated(self, value)
-            }
-            Some("opencode/subtask.message.part.delta") => {
-                opencode::handle_subtask_part_delta(self, value)
-            }
-            // A turn finalizes when its session goes idle.
-            Some("opencode/session.idle") => opencode::handle_session_idle(self),
-            Some("opencode/session.status") => opencode::handle_session_status(self, value),
-            // Redundant/informational forms — handled as NoOps for the coverage guard.
-            Some("opencode/session.error") => opencode::handle_session_error(self, value),
-            Some("opencode/session.created")
-            | Some("opencode/session.updated")
-            | Some("opencode/session.diff")
-            | Some("opencode/todo.updated")
-            | Some("opencode/message.removed")
-            | Some("opencode/message.part.removed") => PushOutcome::NoOp,
-
-            // ── kimi (ACP) events (namespaced by the sidecar manager) ─
-            // session_id already lifted by push_event; nothing to render.
-            Some("kimi/session_init") => PushOutcome::NoOp,
-            Some("kimi/agent_message_chunk") => kimi::handle_message_chunk(self, value),
-            Some("kimi/agent_thought_chunk") => kimi::handle_thought_chunk(self, value),
-            // tool_call + tool_call_update both merge by tool_call_id.
-            Some("kimi/tool_call") | Some("kimi/tool_call_update") => {
-                kimi::handle_tool_call(self, value)
-            }
-            Some("kimi/plan") => kimi::handle_plan(self, value),
-            // The sidecar's `session/prompt` response → finalize the turn.
-            Some("kimi/turn_complete") => kimi::handle_turn_complete(self, value),
 
             // ── Codex informational notifications (no render) ────────
             Some("thread/status/changed")
@@ -698,42 +624,12 @@ impl StreamAccumulator {
         })
     }
 
-    /// Streaming partial = clone of the last opencode `collected[]` snapshot.
-    pub fn build_opencode_partial(&mut self) -> Option<IntermediateMessage> {
-        let idx = self.opencode_partial_idx.take()?;
-        let entry = self.collected.get(idx)?;
-        Some(IntermediateMessage {
-            id: entry.id.clone(),
-            role: entry.role,
-            raw_json: entry.raw_json.clone(),
-            parsed: entry.parsed.clone(),
-            created_at: entry.created_at.clone(),
-            is_streaming: true,
-        })
-    }
-
-    /// Streaming partial = clone of the last kimi `collected[]` snapshot.
-    pub fn build_kimi_partial(&mut self) -> Option<IntermediateMessage> {
-        let idx = self.kimi_partial_idx.take()?;
-        let entry = self.collected.get(idx)?;
-        Some(IntermediateMessage {
-            id: entry.id.clone(),
-            role: entry.role,
-            raw_json: entry.raw_json.clone(),
-            parsed: entry.parsed.clone(),
-            created_at: entry.created_at.clone(),
-            is_streaming: true,
-        })
-    }
-
     /// Whether the accumulator has an active streaming partial.
     pub fn has_active_partial(&self) -> bool {
         !self.blocks.is_empty()
             || !self.fallback_text.trim().is_empty()
             || !self.fallback_thinking.trim().is_empty()
             || self.codex_partial_idx.is_some()
-            || self.opencode_partial_idx.is_some()
-            || self.kimi_partial_idx.is_some()
     }
 
     // ── Persistence accessors ───────────────────────────────────────
@@ -857,23 +753,6 @@ impl StreamAccumulator {
     /// on abort. No-op when no items are in flight.
     pub fn flush_codex_in_progress(&mut self) {
         codex::flush_in_progress(self);
-    }
-
-    /// Drain in-flight cursor state on abort (no FINISHED will arrive).
-    /// Idempotent.
-    pub fn flush_cursor_in_progress(&mut self) {
-        cursor::flush_in_progress(self);
-    }
-
-    /// Finalize the in-flight opencode message on abort. Idempotent.
-    pub fn flush_opencode_in_progress(&mut self) {
-        opencode::flush_in_progress(self);
-    }
-
-    /// Finalize the in-flight kimi message on abort or error termination
-    /// (in-flight tool parts settle to `failed`). Idempotent.
-    pub fn flush_kimi_in_progress(&mut self) {
-        kimi::flush_in_progress(self);
     }
 
     /// Convert any active streaming partial into a finalized assistant
@@ -1188,7 +1067,7 @@ impl StreamAccumulator {
         self.collect_message(raw_line, value, MessageRole::Error, None);
     }
 
-    /// Sidecar `user_question` event — a Codex/OpenCode question the user
+    /// Sidecar `user_question` event — a Codex question the user
     /// just answered (or declined). Normalizes the provider-raw questions
     /// into the canonical persisted shape and pushes a standalone turn so
     /// the Q&A card sits at its natural position between stream items.

@@ -4,8 +4,8 @@ description: Build the Bun sidecar and bundled CLI companion, then stage both un
 inputs:
   target-triple:
     description: |
-      Rust target triple suffix used by Tauri externalBin. Defaults are
-      wrong for Windows / macOS, so callers from publish workflows MUST
+      Rust target triple suffix used by Tauri externalBin. The default is
+      wrong for macOS, so callers from publish workflows MUST
       set this explicitly. Defaults to x86_64-unknown-linux-gnu to keep
       the existing Linux rust-test job working without changes.
     required: false

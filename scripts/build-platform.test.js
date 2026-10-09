@@ -19,14 +19,12 @@ describe("build platform boundary", () => {
 				arch: "arm64",
 				targetTriple: "aarch64-apple-darwin",
 				tauriArgs: "--target aarch64-apple-darwin",
-				updaterPlatformKey: "darwin-aarch64",
 			},
 			{
 				os: "macos",
 				arch: "x64",
 				targetTriple: "x86_64-apple-darwin",
 				tauriArgs: "--target x86_64-apple-darwin",
-				updaterPlatformKey: "darwin-x86_64",
 			},
 		]);
 	});
@@ -89,7 +87,7 @@ describe("build platform boundary", () => {
 		});
 	});
 
-	it("keeps Tauri bundle, updater, and macOS signing config unchanged", () => {
+	it("keeps Tauri bundle and macOS signing config unchanged", () => {
 		const config = JSON.parse(
 			readFileSync(resolve(repoRoot, "src-tauri/tauri.conf.json"), "utf8"),
 		);
@@ -103,18 +101,9 @@ describe("build platform boundary", () => {
 		expect(config.bundle.resources).toEqual({
 			"../sidecar/dist/vendor/": "vendor",
 		});
-		// This fork builds a local .app/.dmg only — no updater artifacts.
-		expect(config.bundle.createUpdaterArtifacts).toBe(false);
 		expect(config.bundle.targets).toEqual(["app", "dmg"]);
 		expect(config.bundle.macOS).toEqual({
 			entitlements: "Entitlements.plist",
-		});
-		expect(config.plugins.updater).toEqual({
-			pubkey:
-				"dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM5QkE5MEUwRjc5N0EzQ0QKUldUTm81ZjM0SkM2T2RweXFnOTYvanRkSENTRW9Zc25sMXRmeFlxazN1MFNZdjZPb2crVWNISzMK",
-			endpoints: [
-				"https://github.com/dohooo/helmor/releases/latest/download/latest.json",
-			],
 		});
 	});
 });

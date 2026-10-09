@@ -4,25 +4,25 @@ import type { ForgeDetection } from "@/lib/api";
 // our prompts is forge-agnostic (plain git, prose). Keep this surface tight —
 // only add a field when the prompt actually needs to render it.
 export type ForgePromptDialect = {
-	/** Short label, e.g. "PR" / "MR". */
+	/** Short label, e.g. "PR". */
 	changeRequestName: string;
-	/** Long label, e.g. "pull request" / "merge request". */
+	/** Long label, e.g. "pull request". */
 	changeRequestFullName: string;
-	/** Forge CLI binary, e.g. "gh" / "glab". */
+	/** Forge CLI binary, e.g. "gh". */
 	cliName: string;
-	/** Renders the create-PR/MR command for a given target branch. */
+	/** Renders the create-PR command for a given target branch. */
 	createCommand: (targetBranch: string) => string;
-	/** Reopen a closed PR/MR, e.g. "gh pr reopen" / "glab mr reopen". */
+	/** Reopen a closed PR, e.g. "gh pr reopen". */
 	reopenCommand: string;
-	/** Comment on a PR/MR, e.g. "gh pr comment" / "glab mr note". */
+	/** Comment on a PR, e.g. "gh pr comment". */
 	commentCommand: string;
-	/** List CI runs, e.g. "gh run list" / "glab ci list". */
+	/** List CI runs, e.g. "gh run list". */
 	ciListCommand: string;
-	/** Inspect a CI run, e.g. "gh run view" / "glab ci view". */
+	/** Inspect a CI run, e.g. "gh run view". */
 	ciViewCommand: string;
-	/** CI system name as it appears in prose, e.g. "CI" / "GitLab CI". */
+	/** CI system name as it appears in prose, e.g. "CI". */
 	ciSystemName: string;
-	/** What the CI system calls a single run, e.g. "run" / "pipeline". */
+	/** What the CI system calls a single run, e.g. "run". */
 	ciJobNoun: string;
 };
 
@@ -39,22 +39,10 @@ const GITHUB_DIALECT: ForgePromptDialect = {
 	ciJobNoun: "run",
 };
 
-const GITLAB_DIALECT: ForgePromptDialect = {
-	changeRequestName: "MR",
-	changeRequestFullName: "merge request",
-	cliName: "glab",
-	createCommand: (branch) => `glab mr create --target-branch ${branch}`,
-	reopenCommand: "glab mr reopen",
-	commentCommand: "glab mr note",
-	ciListCommand: "glab ci list",
-	ciViewCommand: "glab ci view",
-	ciSystemName: "GitLab CI",
-	ciJobNoun: "pipeline",
-};
-
-/** Pick the prompt dialect for the given forge. Falls back to GitHub. */
+/** Prompt dialect for agent prompts. GitHub is the only supported forge;
+ * the argument is kept so call sites stay forge-aware. */
 export function forgePromptDialect(
-	forge?: ForgeDetection | null,
+	_forge?: ForgeDetection | null,
 ): ForgePromptDialect {
-	return forge?.provider === "gitlab" ? GITLAB_DIALECT : GITHUB_DIALECT;
+	return GITHUB_DIALECT;
 }

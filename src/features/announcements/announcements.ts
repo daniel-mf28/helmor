@@ -1,6 +1,7 @@
 import type { SettingsSection } from "@/features/settings";
 
-export const GITHUB_RELEASES_URL = "https://github.com/dohooo/helmor/releases";
+export const GITHUB_RELEASES_URL =
+	"https://github.com/daniel-mf28/helmor/releases";
 
 export type ReleaseAnnouncementAction =
 	// Legacy: older catalog entries pointed at the removed Contexts sidebar.

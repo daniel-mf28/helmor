@@ -4,8 +4,8 @@ use crate::forge::{
     ChangeRequestInfo, ForgeActionStatus, ForgeDetection, ForgeProvider, RemoteState,
 };
 // `accounts` re-exports the dispatchers; provider-specific work
-// happens inside `forge::github::accounts` / `forge::gitlab::accounts`
-// via the `ForgeAccountBackend` trait.
+// happens inside `forge::github::accounts` via the
+// `ForgeAccountBackend` trait.
 use crate::ui_sync::{self, UiMutationEvent};
 use crate::workspace::scripts::{ScriptContext, ScriptEvent, ScriptProcessManager};
 use std::collections::HashSet;
@@ -29,12 +29,11 @@ pub async fn get_workspace_forge(workspace_id: String) -> CmdResult<ForgeDetecti
     run_blocking(move || forge::get_workspace_forge(&workspace_id)).await
 }
 
-/// Enumerate all gh accounts (across every host) plus one glab account
-/// per `gitlab_hosts` entry. Used by Settings → Account to render the
-/// avatar/name/login/email roster.
+/// Enumerate all gh accounts (across every host). Used by Settings →
+/// Account to render the avatar/name/login/email roster.
 #[tauri::command]
-pub async fn list_forge_accounts(gitlab_hosts: Vec<String>) -> CmdResult<Vec<ForgeAccount>> {
-    run_blocking(move || Ok(accounts::list_forge_accounts(&gitlab_hosts))).await
+pub async fn list_forge_accounts() -> CmdResult<Vec<ForgeAccount>> {
+    run_blocking(move || Ok(accounts::list_forge_accounts())).await
 }
 
 /// Auth pre-check for create-PR / reopen. Frontend blocks + flips the
@@ -46,7 +45,7 @@ pub async fn check_workspace_forge_auth(
     run_blocking(move || accounts::workspace_forge_auth_state(&workspace_id)).await
 }
 
-/// Resolve the gh/glab account bound to a workspace's parent repo and
+/// Resolve the gh account bound to a workspace's parent repo and
 /// return its display profile (avatar / name / email). Powers the
 /// branch-chip avatar; reuses the per-process profile cache.
 #[tauri::command]
@@ -121,8 +120,8 @@ pub async fn spawn_forge_cli_auth_terminal(
     instance_id: String,
     channel: Channel<ScriptEvent>,
 ) -> CmdResult<()> {
-    let host = host.unwrap_or_else(|| "gitlab.com".to_string());
-    let command = forge::forge_cli_auth_command(provider, Some(&host))?;
+    let host = host.unwrap_or_else(|| "github.com".to_string());
+    let command = forge::forge_cli_auth_command(provider)?;
     let working_dir = crate::platform::paths::home_dir_or_current_or_root()
         .display()
         .to_string();
@@ -170,7 +169,7 @@ pub async fn stop_forge_cli_auth_terminal(
     host: Option<String>,
     instance_id: String,
 ) -> CmdResult<bool> {
-    let host = host.unwrap_or_else(|| "gitlab.com".to_string());
+    let host = host.unwrap_or_else(|| "github.com".to_string());
     let key = (
         FORGE_CLI_AUTH_REPO_ID.to_string(),
         forge_cli_auth_script_type(provider, &host, &instance_id),
@@ -188,7 +187,7 @@ pub async fn invalidate_forge_caches(
     provider: ForgeProvider,
     host: Option<String>,
 ) -> CmdResult<()> {
-    let host = host.unwrap_or_else(|| "gitlab.com".to_string());
+    let host = host.unwrap_or_else(|| "github.com".to_string());
     run_blocking(move || {
         accounts::invalidate_caches_for_host(provider, &host);
         Ok(())
@@ -204,7 +203,7 @@ pub async fn write_forge_cli_auth_terminal_stdin(
     instance_id: String,
     data: String,
 ) -> CmdResult<bool> {
-    let host = host.unwrap_or_else(|| "gitlab.com".to_string());
+    let host = host.unwrap_or_else(|| "github.com".to_string());
     let key = (
         FORGE_CLI_AUTH_REPO_ID.to_string(),
         forge_cli_auth_script_type(provider, &host, &instance_id),
@@ -222,7 +221,7 @@ pub async fn resize_forge_cli_auth_terminal(
     cols: u16,
     rows: u16,
 ) -> CmdResult<bool> {
-    let host = host.unwrap_or_else(|| "gitlab.com".to_string());
+    let host = host.unwrap_or_else(|| "github.com".to_string());
     let key = (
         FORGE_CLI_AUTH_REPO_ID.to_string(),
         forge_cli_auth_script_type(provider, &host, &instance_id),

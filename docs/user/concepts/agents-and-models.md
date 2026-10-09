@@ -11,8 +11,6 @@ own servers.
 | --- | --- | --- |
 | **Claude Code** | Your existing Claude Code login (Claude subscription) or an Anthropic API key | The default provider. Supports skills, MCP servers, extended thinking |
 | **OpenAI Codex** | Your existing Codex login (ChatGPT) or an OpenAI API key | Supports goal tracking and skills |
-| **Cursor** | Cursor API key (Settings → Models) | Cursor's agent models; the section appears once a key is set |
-| **OpenCode** | Providers from your `~/.config/opencode/opencode.jsonc` | Bring any OpenCode-compatible provider/model |
 
 If you are already signed in to Claude Code or Codex on this machine, Helmor
 picks the login up automatically. Otherwise, onboarding (or Settings) walks
@@ -57,9 +55,8 @@ Type `/` in the composer to browse what the current agent can do:
 
 - **Claude Code** exposes its built-in commands and any skills installed in
   your project or user scope.
-- **Codex and Cursor** discover skills from `.agents/skills`,
-  `.claude/skills`, `.cursor/skills`, and `.codex/skills` directories (project
-  and user scope).
+- **Codex** discovers skills from `.agents/skills`, `.claude/skills`, and
+  `.codex/skills` directories (project and user scope).
 
 ## MCP servers
 
@@ -76,9 +73,3 @@ Helmor bundles a llama.cpp runtime used for small on-device features (like
 automatic session titles), with models managed under **Settings → Local LLM**.
 Your prompts to coding agents always go to the provider you selected — never
 to a third party.
-
-## Network and proxies
-
-Agent processes inherit your proxy configuration: Helmor can follow the macOS
-system proxy or use a custom HTTP/SOCKS5 proxy (**Settings**). This applies to
-Claude Code, Codex, and Cursor traffic alike.

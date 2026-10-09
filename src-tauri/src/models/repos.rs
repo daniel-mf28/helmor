@@ -38,7 +38,7 @@ pub struct RepositoryCreateOption {
     pub branch_prefix_type: Option<crate::settings::BranchPrefixType>,
     pub branch_prefix_custom: Option<String>,
     pub forge_provider: Option<String>,
-    /// gh/glab account login bound to this repo. NULL when no logged-in
+    /// gh account login bound to this repo. NULL when no logged-in
     /// account had access at add-repo time; UI surfaces a "Connect"
     /// affordance.
     pub forge_login: Option<String>,
@@ -94,12 +94,12 @@ pub(crate) struct RepositoryRecord {
     /// Auto-run the setup script when a workspace is created.
     /// Defaults to true; users disable it from repo settings.
     pub auto_run_setup: bool,
-    /// Cached forge classification ("github" / "gitlab" / "unknown").
+    /// Cached forge classification ("github" / "unknown").
     /// NULL for repos created before the detection feature — the loader
     /// re-runs detection on demand in that case.
     #[allow(dead_code)]
     pub forge_provider: Option<String>,
-    /// gh/glab account login bound to this repo. NULL when no logged-in
+    /// gh account login bound to this repo. NULL when no logged-in
     /// account had access (auto-detect failed) or the repo predates the
     /// feature. See `crate::forge::accounts`.
     #[allow(dead_code)]
@@ -638,7 +638,7 @@ pub fn update_repository_forge_provider(repo_id: &str, provider: &str) -> Result
     Ok(())
 }
 
-/// IDs of repos that look like a forge repo (provider is github/gitlab)
+/// IDs of repos that look like a forge repo (provider is github)
 /// but haven't been bound to an account yet. Drives the startup backfill
 /// in `forge::accounts::backfill_unbound_repos` and the post-login retry
 /// triggered after Settings → Account adds a fresh CLI login.
@@ -650,7 +650,7 @@ pub fn list_repos_needing_forge_binding() -> Result<Vec<String>> {
             SELECT id
             FROM repos
             WHERE forge_login IS NULL
-              AND forge_provider IN ('github', 'gitlab')
+              AND forge_provider = 'github'
               AND COALESCE(hidden, 0) = 0
             ORDER BY created_at ASC
             "#,
@@ -666,7 +666,7 @@ pub fn list_repos_needing_forge_binding() -> Result<Vec<String>> {
 
 /// Snapshot of a forge-bound repo: id + provider + bound login. Used by
 /// the backfill sweep to detect bindings that have gone stale (login
-/// no longer present in `gh / glab auth status`) and re-run auto-bind
+/// no longer present in `gh auth status`) and re-run auto-bind
 /// against whatever fresh logins do exist.
 #[derive(Debug, Clone)]
 pub struct ForgeBoundRepo {
@@ -688,7 +688,7 @@ pub fn list_forge_bound_repos() -> Result<Vec<ForgeBoundRepo>> {
             SELECT id, forge_provider, forge_login
             FROM repos
             WHERE forge_login IS NOT NULL
-              AND forge_provider IN ('github', 'gitlab')
+              AND forge_provider = 'github'
               AND COALESCE(hidden, 0) = 0
             ORDER BY created_at ASC
             "#,
@@ -708,7 +708,7 @@ pub fn list_forge_bound_repos() -> Result<Vec<ForgeBoundRepo>> {
     Ok(rows)
 }
 
-/// Bind / unbind the gh/glab account login for a repo. Pass `None` to
+/// Bind / unbind the gh account login for a repo. Pass `None` to
 /// clear the binding (e.g. when auto-detect found no account with access).
 pub fn update_repository_forge_login(repo_id: &str, login: Option<&str>) -> Result<()> {
     let connection = db::write_conn()?;
@@ -1562,7 +1562,7 @@ pub fn add_repository_from_local_path(folder_path: &str) -> Result<AddRepository
     let repository_id = insert_repository(&resolved_repository)
         .with_context(|| format!("Failed to persist repository {}", resolved_repository.name))?;
 
-    // Auto-bind a gh/glab account to the repo. Best-effort — failures
+    // Auto-bind a gh account to the repo. Best-effort — failures
     // (no CLI installed, no auth, no candidate with access) leave
     // forge_login NULL and the UI prompts the user to Connect when
     // needed. Don't propagate the error: a working bind is a nice-to-
@@ -1843,18 +1843,18 @@ mod tests {
     fn insert_and_load_repository_round_trips_forge_provider() {
         let env = crate::testkit::TestEnv::new("repos-forge-provider");
         let repo = ResolvedRepositoryInput {
-            name: "gitlab-repo".to_string(),
+            name: "github-repo".to_string(),
             normalized_root_path: env.root.join("repo").display().to_string(),
             remote: Some("origin".to_string()),
-            remote_url: Some("git@gitlab.com:acme/gitlab-repo.git".to_string()),
+            remote_url: Some("git@github.com:acme/github-repo.git".to_string()),
             default_branch: Some("main".to_string()),
-            forge_provider: Some("gitlab".to_string()),
+            forge_provider: Some("github".to_string()),
         };
 
         let repo_id = insert_repository(&repo).unwrap();
         let loaded = load_repository_by_id(&repo_id).unwrap().unwrap();
 
-        assert_eq!(loaded.forge_provider.as_deref(), Some("gitlab"));
+        assert_eq!(loaded.forge_provider.as_deref(), Some("github"));
         assert_eq!(loaded.remote.as_deref(), Some("origin"));
     }
 

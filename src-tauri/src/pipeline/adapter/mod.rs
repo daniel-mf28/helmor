@@ -17,9 +17,7 @@
 mod blocks;
 mod codex_items;
 mod grouping;
-mod kimi_parts;
 mod labels;
-mod opencode_parts;
 mod task_state;
 
 #[cfg(test)]
@@ -281,7 +279,7 @@ fn convert_flat(
             continue;
         }
 
-        // Persisted Q&A card from a resolved Codex/OpenCode user-input
+        // Persisted Q&A card from a resolved Codex user-input
         // request (Claude's AskUserQuestion renders from its tool_use
         // instead — see `push_tool_use`).
         if msg_type == Some("user_question") {
@@ -347,48 +345,6 @@ fn convert_flat(
                 .unwrap_or("Goal updated")
                 .to_string();
             result.push(make_system(msg, &text));
-            i += 1;
-            continue;
-        }
-
-        // opencode native assistant message → universal render parts.
-        if msg_type == Some("opencode_message") {
-            if let Some(p) = parsed {
-                let content: Vec<ExtendedMessagePart> =
-                    opencode_parts::render_parts(p, &msg.id, msg.is_streaming)
-                        .into_iter()
-                        .map(ExtendedMessagePart::Basic)
-                        .collect();
-                result.push(ThreadMessageLike {
-                    role: MessageRole::Assistant,
-                    id: Some(msg.id.clone()),
-                    created_at: Some(msg.created_at.clone()),
-                    content,
-                    status: None,
-                    streaming: if msg.is_streaming { Some(true) } else { None },
-                });
-            }
-            i += 1;
-            continue;
-        }
-
-        // kimi (ACP) native assistant message → universal render parts.
-        if msg_type == Some("kimi_message") {
-            if let Some(p) = parsed {
-                let content: Vec<ExtendedMessagePart> =
-                    kimi_parts::render_parts(p, &msg.id, msg.is_streaming)
-                        .into_iter()
-                        .map(ExtendedMessagePart::Basic)
-                        .collect();
-                result.push(ThreadMessageLike {
-                    role: MessageRole::Assistant,
-                    id: Some(msg.id.clone()),
-                    created_at: Some(msg.created_at.clone()),
-                    content,
-                    status: None,
-                    streaming: if msg.is_streaming { Some(true) } else { None },
-                });
-            }
             i += 1;
             continue;
         }
@@ -838,7 +794,7 @@ fn convert_rate_limit_msg(msg: &IntermediateMessage, out: &mut Vec<ThreadMessage
 }
 
 /// Convert a persisted `user_question` row (written by the accumulator
-/// when a Codex/OpenCode question is answered or declined) into a
+/// when a Codex question is answered or declined) into a
 /// single-part `UserQuestion` message. The payload already carries
 /// canonical questions — see `pipeline::user_question`.
 fn convert_user_question_msg(

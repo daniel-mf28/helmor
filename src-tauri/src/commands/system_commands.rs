@@ -79,23 +79,18 @@ pub struct DataInfo {
 pub struct AgentLoginStatus {
     pub claude: bool,
     pub codex: bool,
-    pub cursor: bool,
-    pub opencode: bool,
-    pub kimi: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_provider: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_auth_method: Option<String>,
 }
 
-// `None` when the binary couldn't be resolved or `--version` failed. Cursor is SDK-only.
+// `None` when the binary couldn't be resolved or `--version` failed.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentVersions {
     pub claude: Option<String>,
     pub codex: Option<String>,
-    pub opencode: Option<String>,
-    pub kimi: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -494,11 +489,6 @@ fn helmor_skills_status() -> anyhow::Result<HelmorSkillsStatus> {
         &AgentLoginStatus {
             claude: claude_login_ready(),
             codex: codex_auth_status().ready,
-            cursor: cursor_login_ready(),
-            // opencode readiness comes from the login-status path, not here.
-            opencode: false,
-            // kimi has no Helmor-skills install path; irrelevant here.
-            kimi: false,
             codex_provider: None,
             codex_auth_method: None,
         },
@@ -637,10 +627,6 @@ pub async fn install_helmor_skills() -> CmdResult<HelmorSkillsStatus> {
         let login = AgentLoginStatus {
             claude: claude_login_ready(),
             codex: codex_auth_status().ready,
-            cursor: cursor_login_ready(),
-            // opencode readiness comes from the login-status path, not here.
-            opencode: false,
-            kimi: false,
             codex_provider: None,
             codex_auth_method: None,
         };
@@ -845,9 +831,6 @@ fn run_components_check_inner(force: bool) -> ComponentsUpdateCheck {
     let login = AgentLoginStatus {
         claude: claude_login_ready(),
         codex: codex_auth_status().ready,
-        cursor: cursor_login_ready(),
-        opencode: false,
-        kimi: false,
         codex_provider: None,
         codex_auth_method: None,
     };
@@ -1204,9 +1187,6 @@ pub async fn get_agent_login_status() -> CmdResult<AgentLoginStatus> {
         Ok(AgentLoginStatus {
             claude: claude_login_ready(),
             codex: codex.ready,
-            cursor: cursor_login_ready(),
-            opencode: opencode_login_ready(),
-            kimi: kimi_login_ready(),
             codex_provider: codex.provider,
             codex_auth_method: codex.auth_method.map(str::to_string),
         })
@@ -1220,8 +1200,6 @@ pub async fn get_agent_versions() -> CmdResult<AgentVersions> {
         Ok(AgentVersions {
             claude: agent_cli_version("claude"),
             codex: agent_cli_version("codex"),
-            opencode: agent_cli_version("opencode"),
-            kimi: agent_cli_version("kimi"),
         })
     })
     .await
@@ -1261,38 +1239,6 @@ fn parse_semver(text: &str) -> Option<String> {
     None
 }
 
-/// Cursor "ready" = non-empty `app.cursor_provider.apiKey`.
-fn cursor_login_ready() -> bool {
-    let raw = match crate::models::settings::load_setting_value("app.cursor_provider") {
-        Ok(Some(value)) => value,
-        Ok(None) => return false,
-        Err(error) => {
-            tracing::debug!("Failed to read app.cursor_provider: {error}");
-            return false;
-        }
-    };
-    serde_json::from_str::<serde_json::Value>(&raw)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("apiKey")
-                .and_then(serde_json::Value::as_str)
-                .map(|key| !key.trim().is_empty())
-        })
-        .unwrap_or(false)
-}
-
-/// Kimi "ready" = a non-empty credentials store under the kimi-code home
-/// (`$KIMI_CODE_HOME`, else `~/.kimi-code`), which `kimi login` populates.
-fn kimi_login_ready() -> bool {
-    let Some(home) = crate::provider::kimi::kimi_code_home() else {
-        return false;
-    };
-    std::fs::read_dir(home.join("credentials"))
-        .map(|mut entries| entries.next().is_some())
-        .unwrap_or(false)
-}
-
 /// Resolve the binary to spawn for an agent CLI subcommand.
 ///
 /// Prefers the bundled binary under `Helmor.app/Contents/Resources/vendor/`
@@ -1304,83 +1250,9 @@ fn resolve_agent_binary(provider: &str) -> PathBuf {
     let bundled_path = match provider {
         "claude" => bundled.claude_bin,
         "codex" => bundled.codex_bin,
-        "opencode" => bundled.opencode_bin,
-        "kimi" => bundled.kimi_bin,
         _ => None,
     };
     bundled_path.unwrap_or_else(|| crate::platform::executable::resolve_for_spawn(provider))
-}
-
-// "Ready" means the user explicitly SIGNED IN (`<cli> auth login`), i.e. the
-// "Credentials" section of `<cli> auth list` is non-empty. Ambient env-var
-// providers and Helmor-configured custom providers (jsonc) still populate the
-// model list, but they are NOT a login — the Login entry must stay available
-// until the user signs in, so it can't be hidden behind a "Ready" badge.
-fn opencode_login_ready() -> bool {
-    auth_list_has_credentials("opencode")
-}
-
-fn auth_list_has_credentials(provider: &str) -> bool {
-    let mut command = std::process::Command::new(resolve_agent_binary(provider));
-    crate::platform::process::configure_background_cli(&mut command);
-    match command.args(["auth", "list"]).output() {
-        Ok(output) if output.status.success() => {
-            parse_auth_list_credentials(&String::from_utf8_lossy(&output.stdout))
-        }
-        Ok(output) => {
-            tracing::trace!(
-                provider,
-                stderr = %String::from_utf8_lossy(&output.stderr).trim(),
-                "auth list returned non-zero"
-            );
-            false
-        }
-        Err(error) => {
-            tracing::debug!("{provider} auth list unavailable: {error}");
-            false
-        }
-    }
-}
-
-/// Parse the credential count from `<cli> auth list`. Its "Credentials" section
-/// prints "<N> credentials"; the "Environment" section prints "environment
-/// variable(s)" (no "credential" token), so the count preceding a `credential*`
-/// token is exactly the logged-in (auth.json) total — env providers are
-/// excluded by construction. ANSI styling is stripped first.
-fn parse_auth_list_credentials(output: &str) -> bool {
-    let stripped = strip_ansi(output);
-    let tokens: Vec<&str> = stripped.split_whitespace().collect();
-    for (i, token) in tokens.iter().enumerate() {
-        if token.starts_with("credential") {
-            if let Some(count) = i
-                .checked_sub(1)
-                .and_then(|j| tokens.get(j))
-                .and_then(|prev| prev.parse::<u64>().ok())
-            {
-                return count > 0;
-            }
-        }
-    }
-    false
-}
-
-/// Drop ANSI CSI escape sequences (`ESC [ … m`) so token parsing isn't fooled
-/// by color codes wrapping the count.
-fn strip_ansi(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let mut chars = input.chars();
-    while let Some(c) = chars.next() {
-        if c == '\u{1b}' {
-            for next in chars.by_ref() {
-                if next.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
 }
 
 fn claude_login_ready() -> bool {
@@ -1493,9 +1365,6 @@ fn agent_login_command(provider: &str) -> anyhow::Result<String> {
     let args = match provider {
         "claude" => "auth login",
         "codex" => "login",
-        "opencode" => "auth login",
-        // `kimi login` runs the device-code OAuth flow in the PTY.
-        "kimi" => "login",
         _ => anyhow::bail!("Unknown agent provider: {provider}"),
     };
     // Quote the resolved binary path so spaces in `Helmor.app` survive
@@ -2128,7 +1997,7 @@ mod tests {
             parse_semver("1.2.3-beta.1").as_deref(),
             Some("1.2.3-beta.1")
         );
-        assert_eq!(parse_semver("opencode cli"), None);
+        assert_eq!(parse_semver("some cli"), None);
         assert_eq!(parse_semver("version 1.2"), None);
     }
 
@@ -2264,23 +2133,6 @@ mod tests {
             command,
             "sudo ln -sfn '/Applications/Helmor.app/Contents/MacOS/helmor-cli' '/usr/local/bin/helmor-dev'"
         );
-    }
-
-    #[test]
-    fn parse_auth_list_credentials_counts_only_credentials_section() {
-        // 0 credentials + an env var present → signed OUT (env ≠ login).
-        assert!(!parse_auth_list_credentials(
-            "Credentials ~/.local/share/opencode/auth.json\n0 credentials\nEnvironment\nOpenAI OPENAI_API_KEY\n1 environment variable"
-        ));
-        // A real login → ready, regardless of env providers.
-        assert!(parse_auth_list_credentials(
-            "Credentials ~/x/auth.json\n2 credentials\nEnvironment\n0 environment variables"
-        ));
-        // ANSI-wrapped count still parses.
-        assert!(parse_auth_list_credentials(
-            "Credentials\n\u{1b}[1m1\u{1b}[0m credential\n"
-        ));
-        assert!(!parse_auth_list_credentials("garbage with no count"));
     }
 
     #[cfg(target_os = "macos")]

@@ -5,7 +5,6 @@ export type ReleaseTarget = {
 	arch: "arm64" | "x64";
 	targetTriple: "aarch64-apple-darwin" | "x86_64-apple-darwin";
 	tauriArgs: string;
-	updaterPlatformKey: "darwin-aarch64" | "darwin-x86_64";
 };
 
 export type BundleProfile = "debug" | "release";

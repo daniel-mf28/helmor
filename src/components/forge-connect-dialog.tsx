@@ -1,5 +1,5 @@
 //! Centered modal that hosts an in-app terminal running
-//! `gh auth login` / `glab auth login`. Replaces the previous
+//! `gh auth login`. Replaces the previous
 //! "open macOS Terminal" path used by the inspector / settings
 //! Connect surfaces. Onboarding's inline-slide terminal stays as-is —
 //! it's a different visual treatment for a different stage.
@@ -21,7 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { GithubBrandIcon, GitlabBrandIcon } from "@/components/brand-icon";
+import { GithubBrandIcon } from "@/components/brand-icon";
 import {
 	type TerminalHandle,
 	TerminalOutput,
@@ -120,15 +120,7 @@ async function detectLoginAfterClose(
 
 function providerLabel(provider: ForgeProvider): string {
 	if (provider === "github") return "GitHub";
-	if (provider === "gitlab") return "GitLab";
 	return "Forge";
-}
-
-function providerIcon(provider: ForgeProvider) {
-	if (provider === "gitlab") {
-		return <GitlabBrandIcon size={12} className="text-[#FC6D26]" />;
-	}
-	return <GithubBrandIcon size={12} />;
 }
 
 export function ForgeConnectDialog({
@@ -185,7 +177,7 @@ export function ForgeConnectDialog({
 	// Keep onOpenChange off the spawn effect's deps — parent re-renders
 	// recreate the callback, and a re-run kills the just-started shell
 	// mid-init via register's replace-by-key, dropping the auto-typed
-	// `gh|glab auth login` bytes.
+	// `gh auth login` bytes.
 	const onOpenChangeRef = useRef(onOpenChange);
 
 	// On close: stop the PTY, poll for the new login until it lands
@@ -400,13 +392,10 @@ export function ForgeConnectDialog({
 				</DialogTitle>
 				<header className="flex h-10 items-center gap-2 border-b border-border/55 px-3">
 					<div className="flex items-center gap-1.5 text-small font-medium text-foreground">
-						{providerIcon(provider)}
+						<GithubBrandIcon size={12} />
 						<span>
 							<I18nText source="connect" /> {providerLabel(provider)}
 						</span>
-						{provider === "gitlab" ? (
-							<span className="ml-1 text-muted-foreground/80">· {host}</span>
-						) : null}
 					</div>
 					<div className="ml-auto">
 						<Button

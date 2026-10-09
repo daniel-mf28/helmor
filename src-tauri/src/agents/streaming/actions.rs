@@ -26,10 +26,14 @@
 // migration; suppress dead-code warnings until each migrates.
 #![allow(dead_code)]
 
+use std::cell::RefCell;
+use std::time::Instant;
+
 use serde_json::Value;
 use tauri::ipc::Channel;
 use tauri::AppHandle;
 
+use crate::agents::partial_coalescer::PartialCoalescer;
 use crate::agents::AgentStreamEvent;
 use crate::pipeline::types::ThreadMessageLike;
 
@@ -120,6 +124,43 @@ pub(super) struct ApplyContext<'a> {
     pub hub: &'a super::stream_hub::SessionStreamHub,
     /// Helmor session id this stream belongs to; `None` ⇒ no fan-out target.
     pub session_id: Option<&'a str>,
+    /// Rate-limits `StreamingPartial` emits (latest wins). EVERY frontend
+    /// emit of the turn must go through [`apply_action`] so the coalescer
+    /// can resolve its pending partial before any other event hits the
+    /// wire — see `crate::agents::partial_coalescer` for the ordering
+    /// contract. The event loop services the trailing-edge flush via
+    /// [`partial_flush_deadline`] / [`flush_due_partial`].
+    pub partials: RefCell<PartialCoalescer>,
+}
+
+/// When the event loop must wake to flush a parked partial, if any.
+pub(super) fn partial_flush_deadline(ctx: &ApplyContext) -> Option<Instant> {
+    ctx.partials.borrow().deadline()
+}
+
+/// Trailing-edge timer tick: send the parked partial if its time has come.
+pub(super) fn flush_due_partial(ctx: &ApplyContext, now: Instant) {
+    let due = ctx.partials.borrow_mut().flush_due(now);
+    if let Some(partial) = due {
+        send_to_frontend(partial, ctx);
+    }
+}
+
+/// Raw wire send: watcher fan-out + the initiating client's channel.
+/// Only call with events that already passed through the coalescer.
+fn send_to_frontend(event: AgentStreamEvent, ctx: &ApplyContext) {
+    // Fan out to watcher clients FIRST (borrows `event`), then hand the
+    // owned event to the initiating client's direct channel. The hub
+    // early-outs on a single atomic load when nobody is watching, so
+    // the desktop-only path is unaffected.
+    if let Some(session_id) = ctx.session_id {
+        ctx.hub.publish(session_id, &event);
+    }
+    // The legacy event loop also ignores send errors with
+    // `let _ = on_event.send(...)`; matching that behavior keeps
+    // this iteration a no-op-equivalent migration. The
+    // disconnected-channel cleanup is on the iteration-N+ list.
+    let _ = ctx.on_event.send(event);
 }
 
 /// Execute a single action against the runtime resources.
@@ -131,18 +172,14 @@ pub(super) struct ApplyContext<'a> {
 pub(super) fn apply_action(action: Action, ctx: &ApplyContext) {
     match action {
         Action::EmitToFrontend(event) => {
-            // Fan out to watcher clients FIRST (borrows `event`), then hand the
-            // owned event to the initiating client's direct channel. The hub
-            // early-outs on a single atomic load when nobody is watching, so
-            // the desktop-only path is unaffected.
-            if let Some(session_id) = ctx.session_id {
-                ctx.hub.publish(session_id, &event);
+            // The coalescer may hold back a partial, or prepend the parked
+            // partial ahead of a non-partial event; send in returned order.
+            // Borrow released before sending (send never re-enters, but
+            // keep the RefCell scope minimal anyway).
+            let ready = ctx.partials.borrow_mut().route(event, Instant::now());
+            for event in ready {
+                send_to_frontend(event, ctx);
             }
-            // The legacy event loop also ignores send errors with
-            // `let _ = on_event.send(...)`; matching that behavior keeps
-            // this iteration a no-op-equivalent migration. The
-            // disconnected-channel cleanup is on the iteration-N+ list.
-            let _ = ctx.on_event.send(event);
         }
         Action::PersistContextUsage { raw } => {
             super::context_usage::persist_context_usage_event(ctx.app, &raw);

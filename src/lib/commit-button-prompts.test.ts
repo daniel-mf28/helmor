@@ -5,22 +5,6 @@ import {
 	usesActionModelOverride,
 } from "./commit-button-prompts";
 
-const GITLAB_FORGE: ForgeDetection = {
-	provider: "gitlab",
-	host: "gitlab.example.com",
-	namespace: "acme",
-	repo: "repo",
-	remoteUrl: "git@gitlab.example.com:acme/repo.git",
-	labels: {
-		providerName: "GitLab",
-		cliName: "glab",
-		changeRequestName: "MR",
-		changeRequestFullName: "merge request",
-		connectAction: "Connect GitLab",
-	},
-	detectionSignals: [],
-};
-
 const GITHUB_FORGE: ForgeDetection = {
 	provider: "github",
 	host: "github.com",
@@ -78,21 +62,6 @@ describe("buildCommitButtonPrompt", () => {
 		);
 	});
 
-	it("passes the target branch into create-pr prompts (GitLab forge)", () => {
-		const prompt = buildCommitButtonPrompt(
-			"create-pr",
-			{},
-			"release/next",
-			GITLAB_FORGE,
-		);
-		expect(prompt).toContain("Create a merge request");
-		expect(prompt).toContain(
-			"Open a merge request against `release/next` using `glab mr create --target-branch release/next`.",
-		);
-		expect(prompt).not.toContain("`gh pr create`");
-		expect(prompt).not.toContain("the repository's default branch");
-	});
-
 	it("passes the target branch into resolve-conflicts prompts", () => {
 		expect(
 			buildCommitButtonPrompt("resolve-conflicts", {}, "release/next"),
@@ -116,51 +85,23 @@ describe("buildCommitButtonPrompt", () => {
 		expect(prompt).toContain("`gh run list` / `gh run view`");
 	});
 
-	it("uses GitLab CI inspection commands for GitLab forge", () => {
-		const prompt = buildCommitButtonPrompt("fix", null, null, GITLAB_FORGE);
-		expect(prompt).toContain("GitLab CI is failing");
-		expect(prompt).toContain("`glab ci list` / `glab ci view`");
-		expect(prompt).toContain("failing pipeline");
-		expect(prompt).not.toContain("`gh run list`");
-	});
-
-	it("uses the same root-cause guidance for both forges", () => {
-		const githubPrompt = buildCommitButtonPrompt("fix", null);
-		const gitlabPrompt = buildCommitButtonPrompt(
+	it("uses the same root-cause guidance with or without forge context", () => {
+		const defaultPrompt = buildCommitButtonPrompt("fix", null);
+		const githubPrompt = buildCommitButtonPrompt(
 			"fix",
 			null,
 			null,
-			GITLAB_FORGE,
+			GITHUB_FORGE,
 		);
 		const clause = "— don't just paper over the symptom";
+		expect(defaultPrompt).toContain(clause);
 		expect(githubPrompt).toContain(clause);
-		expect(gitlabPrompt).toContain(clause);
 	});
 
 	it("uses GitHub reopen commands for open-pr by default", () => {
 		const prompt = buildCommitButtonPrompt("open-pr", null);
 		expect(prompt).toContain("Reopen the closed pull request");
 		expect(prompt).toContain("`gh pr reopen` + `gh pr comment`");
-	});
-
-	it("uses GitLab reopen commands for open-pr on GitLab forge", () => {
-		const prompt = buildCommitButtonPrompt("open-pr", null, null, GITLAB_FORGE);
-		expect(prompt).toContain("Reopen the closed merge request");
-		expect(prompt).toContain("`glab mr reopen` + `glab mr note`");
-	});
-
-	it("appends create-pr preferences after the GitLab prompt", () => {
-		const prompt = buildCommitButtonPrompt(
-			"create-pr",
-			{ createPr: "Mention deployment order." },
-			"release/next",
-			GITLAB_FORGE,
-		);
-
-		expect(prompt).toContain("`glab mr create --target-branch release/next`");
-		expect(prompt).toContain(
-			"### User Preferences\n\nMention deployment order.",
-		);
 	});
 
 	it("uses pure-git instructions for commit-and-push regardless of forge", () => {
@@ -171,14 +112,14 @@ describe("buildCommitButtonPrompt", () => {
 			GITHUB_FORGE,
 			"origin",
 		);
-		const gitlabPrompt = buildCommitButtonPrompt(
+		const noForgePrompt = buildCommitButtonPrompt(
 			"commit-and-push",
 			null,
 			null,
-			GITLAB_FORGE,
+			null,
 			"origin",
 		);
-		expect(githubPrompt).toBe(gitlabPrompt);
+		expect(githubPrompt).toBe(noForgePrompt);
 		expect(githubPrompt).toContain("Commit and push all uncommitted work");
 	});
 
@@ -228,29 +169,27 @@ describe("buildCommitButtonPrompt", () => {
 		expect(prompt).toContain("git diff origin/main...HEAD");
 		expect(prompt).toContain("IN THIS CHAT ONLY");
 		expect(prompt).toContain("Do NOT modify files");
-		// Forge-agnostic — never touches gh/glab.
+		// Forge-agnostic — never touches gh.
 		expect(prompt).not.toContain("pull request");
-		expect(prompt).not.toContain("merge request");
 		expect(prompt).not.toContain("gh pr");
-		expect(prompt).not.toContain("glab mr");
 	});
 
-	it("produces the same review prompt regardless of forge (GitLab vs GitHub)", () => {
+	it("produces the same review prompt regardless of forge context", () => {
+		const noForgePrompt = buildCommitButtonPrompt(
+			"review",
+			null,
+			"main",
+			null,
+			"origin",
+		);
 		const githubPrompt = buildCommitButtonPrompt(
 			"review",
 			null,
 			"main",
-			null,
+			GITHUB_FORGE,
 			"origin",
 		);
-		const gitlabPrompt = buildCommitButtonPrompt(
-			"review",
-			null,
-			"main",
-			GITLAB_FORGE,
-			"origin",
-		);
-		expect(gitlabPrompt).toBe(githubPrompt);
+		expect(githubPrompt).toBe(noForgePrompt);
 	});
 
 	it("appends review preferences after the built-in prompt", () => {

@@ -2,15 +2,15 @@
 # Compute the darwin arm64 + x64 npm-tarball SHA256s for a Helmor class-B staged binary,
 # ready to paste into the matching table in sidecar/scripts/vendor-platform.ts.
 #
-# Usage:   npm_vendor_sha.sh <claude-code|codex|opencode> <version>
-# Example: npm_vendor_sha.sh opencode 1.17.10
+# Usage:   npm_vendor_sha.sh <claude-code|codex> <version>
+# Example: npm_vendor_sha.sh codex 0.155.1
 #
 # Prints two lines:  arm64: <sha256>   /   x64: <sha256>
 # These are SHA256 of the *.tgz tarballs (what downloadAndVerify compares), NOT the npm
 # registry's sha1/sha512 dist metadata — so they must be computed from the tarball itself.
 set -euo pipefail
 
-vendor="${1:?usage: npm_vendor_sha.sh <claude-code|codex|opencode> <version>}"
+vendor="${1:?usage: npm_vendor_sha.sh <claude-code|codex> <version>}"
 version="${2:?missing version (e.g. 2.1.191)}"
 
 tarball_url() { # $1 = arm64|x64
@@ -18,8 +18,7 @@ tarball_url() { # $1 = arm64|x64
   case "$vendor" in
     claude-code) printf 'https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-%s/-/claude-code-darwin-%s-%s.tgz' "$arch" "$arch" "$version" ;;
     codex)       printf 'https://registry.npmjs.org/@openai/codex/-/codex-%s-darwin-%s.tgz' "$version" "$arch" ;;
-    opencode)    printf 'https://registry.npmjs.org/opencode-darwin-%s/-/opencode-darwin-%s-%s.tgz' "$arch" "$arch" "$version" ;;
-    *) printf 'unknown vendor: %s (expected claude-code|codex|opencode)\n' "$vendor" >&2; exit 2 ;;
+    *) printf 'unknown vendor: %s (expected claude-code|codex)\n' "$vendor" >&2; exit 2 ;;
   esac
 }
 

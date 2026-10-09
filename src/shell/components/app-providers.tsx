@@ -1,12 +1,23 @@
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { RouterProvider } from "@tanstack/react-router";
-import { type ComponentType, useCallback, useMemo } from "react";
+import {
+	type ComponentType,
+	lazy,
+	Suspense,
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
 import { QuitConfirmDialog } from "@/components/quit-confirm-dialog";
 import { SplashScreen } from "@/components/splash-screen";
 import { ClaudeAccountsSeeder } from "@/features/claude-accounts/seeder";
-import { AppOnboarding } from "@/features/onboarding";
 import type { SettingsSection } from "@/features/settings";
-import { SettingsDialog } from "@/features/settings";
+import {
+	loadSettingsModule,
+	preloadSettings,
+} from "@/features/settings/preload";
+import { preloadFileIconsWhenIdle } from "@/lib/file-icons";
 import { I18nText } from "@/lib/i18n";
 import { helmorQueryPersister, QUERY_CACHE_BUSTER } from "@/lib/query-client";
 import { SettingsContext } from "@/lib/settings";
@@ -14,6 +25,14 @@ import { isQuickPanelWindow } from "@/lib/window-role";
 import { router } from "@/router";
 import { EMPTY_SESSION_RUN_STATES } from "@/shell/constants";
 import type { AppBootstrap } from "@/shell/hooks/use-app-bootstrap";
+
+// Settings + onboarding are big and rarely needed at startup: split them out.
+const SettingsDialog = lazy(() =>
+	loadSettingsModule().then((m) => ({ default: m.SettingsDialog })),
+);
+const AppOnboarding = lazy(() =>
+	import("@/features/onboarding").then((m) => ({ default: m.AppOnboarding })),
+);
 
 interface AppProvidersProps extends AppBootstrap {
 	AppShell: ComponentType<{
@@ -42,6 +61,24 @@ export function AppProviders({
 	setSettingsInitialSection,
 	AppShell,
 }: AppProvidersProps) {
+	// Mount the dialog only once it has been opened (and keep it mounted
+	// afterwards so close animations / state survive). Warm the chunk when
+	// the app goes idle so the first open is instant.
+	const [settingsMounted, setSettingsMounted] = useState(false);
+	if (settingsOpen && !settingsMounted) setSettingsMounted(true);
+	useEffect(() => {
+		preloadFileIconsWhenIdle();
+	}, []);
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const idle = window.requestIdleCallback;
+		if (idle) {
+			const handle = idle(() => preloadSettings(), { timeout: 5000 });
+			return () => window.cancelIdleCallback?.(handle);
+		}
+		const timer = window.setTimeout(preloadSettings, 2000);
+		return () => window.clearTimeout(timer);
+	}, []);
 	const onOpenSettings = useCallback(
 		(
 			workspaceId: string | null,
@@ -83,7 +120,9 @@ export function AppProviders({
 						</div>
 					) : (
 						<>
-							<AppOnboarding onComplete={completeOnboarding} />
+							<Suspense fallback={null}>
+								<AppOnboarding onComplete={completeOnboarding} />
+							</Suspense>
 							<QuitConfirmDialog sessionRunStates={EMPTY_SESSION_RUN_STATES} />
 						</>
 					)
@@ -93,18 +132,22 @@ export function AppProviders({
 				{splashMounted && !isQuickPanelWindow && (
 					<SplashScreen visible={splashVisible} />
 				)}
-				<SettingsDialog
-					open={settingsOpen}
-					workspaceId={settingsWorkspaceId}
-					workspaceRepoId={settingsWorkspaceRepoId}
-					initialSection={settingsInitialSection}
-					onClose={() => {
-						setSettingsOpen(false);
-						void queryClient.invalidateQueries({
-							queryKey: ["repoScripts"],
-						});
-					}}
-				/>
+				{settingsMounted ? (
+					<Suspense fallback={null}>
+						<SettingsDialog
+							open={settingsOpen}
+							workspaceId={settingsWorkspaceId}
+							workspaceRepoId={settingsWorkspaceRepoId}
+							initialSection={settingsInitialSection}
+							onClose={() => {
+								setSettingsOpen(false);
+								void queryClient.invalidateQueries({
+									queryKey: ["repoScripts"],
+								});
+							}}
+						/>
+					</Suspense>
+				) : null}
 			</PersistQueryClientProvider>
 		</SettingsContext.Provider>
 	);

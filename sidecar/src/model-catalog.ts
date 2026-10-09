@@ -16,7 +16,6 @@ const GPT_5_6_LUNA_EFFORT_LEVELS = [
 	"max",
 ] as const;
 const LEGACY_CODEX_EFFORT_LEVELS = ["low", "medium", "high", "xhigh"] as const;
-const CURSOR_REASONING_LEVELS = ["low", "medium", "high"] as const;
 
 // NOTE: the Claude/Codex sections here MUST stay in sync with the Rust
 // catalog in `src-tauri/src/agents/catalog.rs` (`official_claude_section` /
@@ -169,74 +168,6 @@ const MODEL_CATALOG: Record<Provider, readonly ProviderModelInfo[]> = {
 			cliModel: "gpt-5.4-mini",
 			effortLevels: LEGACY_CODEX_EFFORT_LEVELS,
 			supportsFastMode: true,
-		},
-	],
-	// Static seed; live set comes from `OpencodeProtocolSessionManager.listModels`.
-	// MUST stay in sync with Rust `opencode_section()` in agents/catalog.rs.
-	// Ids are opencode's `provider/model` slug.
-	opencode: [
-		{
-			id: "anthropic/claude-opus-4-5",
-			label: "Claude Opus 4.5",
-			cliModel: "anthropic/claude-opus-4-5",
-		},
-		{
-			id: "anthropic/claude-sonnet-4-6",
-			label: "Claude Sonnet 4.6",
-			cliModel: "anthropic/claude-sonnet-4-6",
-		},
-		{
-			id: "anthropic/claude-haiku-4-5",
-			label: "Claude Haiku 4.5",
-			cliModel: "anthropic/claude-haiku-4-5",
-		},
-		{
-			id: "openai/gpt-5.2",
-			label: "GPT-5.2",
-			cliModel: "openai/gpt-5.2",
-		},
-		{
-			id: "openai/gpt-5-codex",
-			label: "GPT-5-Codex",
-			cliModel: "openai/gpt-5-codex",
-		},
-	],
-	// Static fallback only — `CursorSessionManager.listModels` hits the live
-	// `Cursor.models.list` API for the full set with up-to-date capability
-	// metadata. This list is what shows when the API key isn't configured
-	// yet (so the picker still shows reasonable defaults).
-	cursor: [
-		{
-			id: "composer-2",
-			label: "Composer 2",
-			cliModel: "composer-2",
-			supportsFastMode: true,
-		},
-		{
-			id: "gpt-5.3-codex",
-			label: "Codex 5.3",
-			cliModel: "gpt-5.3-codex",
-			effortLevels: CURSOR_REASONING_LEVELS,
-		},
-		{
-			id: "claude-sonnet-4-5",
-			label: "Sonnet 4.5",
-			cliModel: "claude-sonnet-4-5",
-			effortLevels: CURSOR_REASONING_LEVELS,
-		},
-	],
-	// Kimi Code resolves models from the user's `~/.kimi-code` config; the
-	// universally-available default is the managed alias
-	// `kimi-code/kimi-for-coding` (`kimi login` keys models as
-	// `kimi-code/<id>`, and `session/set_model` only accepts those exact
-	// alias keys). The live set is account/config-specific (discoverable over
-	// ACP once authed), so this is just the stable seed. MUST stay in sync
-	// with Rust `kimi_section()`.
-	kimi: [
-		{
-			id: "kimi-for-coding",
-			label: "Kimi for Coding",
-			cliModel: "kimi-code/kimi-for-coding",
 		},
 	],
 };

@@ -5,7 +5,7 @@ import { ToolApprovalCard } from "./generic-renderer";
 afterEach(cleanup);
 
 describe("ToolApprovalCard", () => {
-	it("renders the description as the body when toolInput is empty (OpenCode read/skill/todo/shell)", () => {
+	it("renders the description as the body when toolInput is empty", () => {
 		render(
 			<ToolApprovalCard
 				toolName="read"

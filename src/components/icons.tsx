@@ -3,7 +3,6 @@ import BasetenMono from "@lobehub/icons/es/Baseten/components/Mono";
 import CerebrasColor from "@lobehub/icons/es/Cerebras/components/Color";
 import ClaudeColor from "@lobehub/icons/es/Claude/components/Color";
 import CohereColor from "@lobehub/icons/es/Cohere/components/Color";
-import CursorMono from "@lobehub/icons/es/Cursor/components/Mono";
 import DeepInfraColor from "@lobehub/icons/es/DeepInfra/components/Color";
 import DeepSeekColor from "@lobehub/icons/es/DeepSeek/components/Color";
 import FireworksColor from "@lobehub/icons/es/Fireworks/components/Color";
@@ -17,7 +16,6 @@ import ModelScopeColor from "@lobehub/icons/es/ModelScope/components/Color";
 import NebiusMono from "@lobehub/icons/es/Nebius/components/Mono";
 import NvidiaColor from "@lobehub/icons/es/Nvidia/components/Color";
 import OpenAIMono from "@lobehub/icons/es/OpenAI/components/Mono";
-import OpenCodeMono from "@lobehub/icons/es/OpenCode/components/Mono";
 import OpenRouterMono from "@lobehub/icons/es/OpenRouter/components/Mono";
 import PerplexityColor from "@lobehub/icons/es/Perplexity/components/Color";
 import QwenColor from "@lobehub/icons/es/Qwen/components/Color";
@@ -59,14 +57,6 @@ export function OpenAIIcon(props: SVGProps<SVGSVGElement>) {
 	);
 }
 
-export function CursorIcon(props: SVGProps<SVGSVGElement>) {
-	return <CursorMono {...props} />;
-}
-
-export function OpenCodeIcon(props: SVGProps<SVGSVGElement>) {
-	return <OpenCodeMono {...props} />;
-}
-
 export function ClaudeColorIcon(props: SVGProps<SVGSVGElement>) {
 	return <ClaudeColor {...props} />;
 }
@@ -99,7 +89,7 @@ export function ZhipuIcon(props: SVGProps<SVGSVGElement>) {
 	return <ZhipuColor {...props} />;
 }
 
-// opencode preset brand icons (lobehub): color when the brand ships one, Mono otherwise.
+// Provider preset brand icons (lobehub): color when the brand ships one, Mono otherwise.
 export function Ai302Icon(props: SVGProps<SVGSVGElement>) {
 	return <Ai302Color {...props} />;
 }

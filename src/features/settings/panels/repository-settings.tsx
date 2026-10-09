@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BranchPickerPopover } from "@/components/branch-picker";
-import { GithubBrandIcon, GitlabBrandIcon } from "@/components/brand-icon";
+import { GithubBrandIcon } from "@/components/brand-icon";
 import { CachedAvatar } from "@/components/cached-avatar";
 import { ForgeConnectDialog } from "@/components/forge-connect-dialog";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,7 @@ import { initialsFor } from "@/lib/initials";
 import { useForgeAccountsAll } from "@/lib/use-forge-accounts";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "../components/settings-row";
-import { parseRemoteHost } from "./cli-install-gitlab-hosts";
+import { parseRemoteHost } from "./remote-host";
 import { RepositoryPreferencesSection } from "./repository-preferences-section";
 import { BranchPrefixSection } from "./repository-settings/branch-prefix-section";
 import { DeleteRepoSection } from "./repository-settings/delete-repo-section";
@@ -55,7 +55,7 @@ export function RepositorySettingsPanel({
 	onRepoSettingsChanged: () => void;
 	onRepoDeleted: () => void;
 }) {
-	// The bound gh/glab account login lives on the repo row now;
+	// The bound gh account login lives on the repo row now;
 	// no more global OAuth identity.
 	const { f } = useI18n();
 	// Three states:
@@ -314,19 +314,12 @@ function ForgeAccountHeader({
 	const accounts = accountsQuery.data ?? [];
 
 	const provider = repo.forgeProvider ?? "unknown";
-	const providerIcon =
-		provider === "gitlab" ? (
-			<GitlabBrandIcon size={14} className="text-[#FC6D26]" />
-		) : (
-			<GithubBrandIcon size={14} />
-		);
-	const providerLabel =
-		provider === "gitlab" ? "GitLab" : provider === "github" ? "GitHub" : "Git";
+	const providerIcon = <GithubBrandIcon size={14} />;
+	const providerLabel = provider === "github" ? "GitHub" : "Git";
 
 	// No per-repo probe — cross-check the binding against the loaded roster.
 	const probeProvider = provider === "unknown" ? "github" : provider;
-	const probeHost =
-		parseRemoteHost(repo.remoteUrl) ?? defaultHostFor(probeProvider);
+	const probeHost = parseRemoteHost(repo.remoteUrl) ?? DEFAULT_FORGE_HOST;
 	const persistedLogin = repo.forgeLogin;
 	// Assume good until the roster lands (avoids a first-paint flash).
 	const rosterLoaded = accountsQuery.data !== undefined;
@@ -423,8 +416,7 @@ function ForgeAccountHeader({
 
 	return (
 		<div className="flex items-center gap-3 py-5">
-			{/* Initials fallback for missing URL or <img> errors (e.g.
-			 * self-hosted GitLab gating /uploads/ behind a session cookie). */}
+			{/* Initials fallback for missing URL or <img> errors. */}
 			<CachedAvatar
 				size="lg"
 				className="size-10"
@@ -466,7 +458,7 @@ function NotConnectedConnectButton({
 }) {
 	const provider: ForgeProvider = (repo.forgeProvider ??
 		"github") as ForgeProvider;
-	const host = parseRemoteHost(repo.remoteUrl) ?? defaultHostFor(provider);
+	const host = parseRemoteHost(repo.remoteUrl) ?? DEFAULT_FORGE_HOST;
 	const [open, setOpen] = useState(false);
 	const [connecting, setConnecting] = useState(false);
 
@@ -510,6 +502,4 @@ function NotConnectedConnectButton({
 	);
 }
 
-function defaultHostFor(provider: ForgeProvider): string {
-	return provider === "gitlab" ? "gitlab.com" : "github.com";
-}
+const DEFAULT_FORGE_HOST = "github.com";

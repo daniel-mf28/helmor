@@ -1,4 +1,3 @@
-import { getMaterialFileIcon } from "file-extension-icon-js";
 import {
 	AlertCircle,
 	Check,
@@ -19,6 +18,7 @@ import {
 	partKey,
 	type ToolCallPart,
 } from "@/lib/api";
+import { getFileIconSrc, useFileIconsReady } from "@/lib/file-icons";
 import { I18nText, useI18n } from "@/lib/i18n";
 import { childrenStructurallyEqual } from "@/lib/structural-equality";
 import { cn } from "@/lib/utils";
@@ -91,6 +91,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 	compact = false,
 	childParts,
 }: AssistantToolCallProps) {
+	useFileIconsReady();
 	const { t, f } = useI18n();
 	const info = getToolInfo(toolName, args, t, f);
 	const isEdit = toolName === "Edit";
@@ -152,7 +153,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 						unifiedDiff={unifiedDiff}
 						icon={
 							<img
-								src={getMaterialFileIcon(info.file)}
+								src={getFileIconSrc(info.file)}
 								alt=""
 								className="size-4 shrink-0"
 							/>
@@ -161,7 +162,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 				) : (
 					<>
 						<img
-							src={getMaterialFileIcon(info.file)}
+							src={getFileIconSrc(info.file)}
 							alt=""
 							className="size-4 shrink-0"
 						/>
@@ -286,7 +287,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 											variant="row"
 											icon={
 												<img
-													src={getMaterialFileIcon(f.name)}
+													src={getFileIconSrc(f.name)}
 													alt=""
 													className="size-3.5 shrink-0"
 												/>
@@ -298,7 +299,7 @@ export const AssistantToolCall = memo(function AssistantToolCall({
 											className="flex max-w-full items-center gap-1.5 rounded-md px-2 py-1 text-small leading-4 text-muted-foreground transition-colors hover:bg-accent/60"
 										>
 											<img
-												src={getMaterialFileIcon(f.name)}
+												src={getFileIconSrc(f.name)}
 												alt=""
 												className="size-3.5 shrink-0"
 											/>
