@@ -33,6 +33,10 @@ const PREFERENCE_KEYS: RepoPreferenceKey[] = [
 	"general",
 ];
 
+// Stable fallback while the query is pending: a fresh `{}` each render would
+// re-fire the draft-sync effect below and loop forever.
+const EMPTY_PREFERENCES: RepoPreferences = {};
+
 // Non-git repos have no PR / review / branch actions — only the
 // "general" (every-new-chat) custom instructions apply.
 const NON_GIT_PREFERENCE_KEYS: RepoPreferenceKey[] = ["general"];
@@ -51,7 +55,7 @@ export function RepositoryPreferencesSection({
 		queryFn: () => loadRepoPreferences(repoId),
 		staleTime: 0,
 	});
-	const preferences = preferencesQuery.data ?? {};
+	const preferences = preferencesQuery.data ?? EMPTY_PREFERENCES;
 	const [drafts, setDrafts] = useState<RepoPreferences>({});
 	const [openKey, setOpenKey] = useState<RepoPreferenceKey | null>(null);
 	const [savingKey, setSavingKey] = useState<RepoPreferenceKey | null>(null);
