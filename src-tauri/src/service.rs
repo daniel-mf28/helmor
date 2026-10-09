@@ -163,6 +163,44 @@ fn select_send_model(
     })
 }
 
+/// Pin model/permission onto the session and queue the pending send in one
+/// transaction. Deliberately does NOT insert a `session_messages` user row:
+/// the app persists the user prompt itself when it drains the queue and
+/// submits through the normal streaming path (`persist_user_message`).
+/// Inserting here too wrote every CLI-sent prompt twice.
+fn queue_delegated_send(
+    conn: &mut rusqlite::Connection,
+    workspace_id: &str,
+    session_id: &str,
+    prompt: &str,
+    model_id: &str,
+    permission_mode: Option<&str>,
+    timestamp: &str,
+) -> Result<()> {
+    let tx = conn.transaction()?;
+    // The App composer reads model/permission off `currentSession` when it
+    // auto-submits the drained prompt, so pin them before queuing.
+    tx.execute(
+        "UPDATE sessions SET model = ?2, permission_mode = COALESCE(?3, permission_mode), updated_at = ?4 WHERE id = ?1",
+        params![session_id, model_id, permission_mode, timestamp],
+    )?;
+    tx.execute(
+        r#"INSERT INTO pending_cli_sends
+           (id, workspace_id, session_id, prompt, model_id, permission_mode)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6)"#,
+        params![
+            Uuid::new_v4().to_string(),
+            workspace_id,
+            session_id,
+            prompt,
+            Some(model_id),
+            permission_mode
+        ],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Send a prompt to an AI agent. When the Helmor desktop app is running,
 /// the message is queued as a pending CLI send so the app's shared sidecar
 /// handles it — this gives the frontend live streaming updates. When the
@@ -258,56 +296,17 @@ pub fn send_message(
         // borrow + single tx eliminates both the deadlock and the
         // partial-write window.
         let timestamp = crate::models::db::current_timestamp()?;
-        let user_msg_id = Uuid::new_v4().to_string();
-        let user_content = serde_json::json!({
-            "type": "user_prompt",
-            "text": params.prompt,
-        })
-        .to_string();
-        let pending_id = Uuid::new_v4().to_string();
         {
             let mut conn = crate::models::db::write_conn()?;
-            let tx = conn.transaction()?;
-            // Persist user message so the app's conversation container
-            // shows the optimistic user bubble right away.
-            tx.execute(
-                r#"INSERT INTO session_messages
-                   (id, session_id, role, content, created_at, sent_at)
-                   VALUES (?1, ?2, 'user', ?3, ?4, ?4)"#,
-                params![user_msg_id, session_id, user_content, timestamp],
+            queue_delegated_send(
+                &mut conn,
+                &workspace_id,
+                &session_id,
+                &params.prompt,
+                &model_id,
+                params.permission_mode.as_deref(),
+                &timestamp,
             )?;
-
-            // Pin the resolved model + (optional) permission_mode onto
-            // the session row before queuing. The App composer reads
-            // these off `currentSession` when it auto-submits the
-            // drained prompt — without this the row still has
-            // model=NULL and the composer falls back to
-            // settings.defaultModelId, ignoring the CLI's
-            // --model / --plan override.
-            tx.execute(
-                "UPDATE sessions SET model = ?2, permission_mode = COALESCE(?3, permission_mode), updated_at = ?4 WHERE id = ?1",
-                params![
-                    session_id,
-                    model_id,
-                    params.permission_mode.as_deref(),
-                    timestamp,
-                ],
-            )?;
-
-            tx.execute(
-                r#"INSERT INTO pending_cli_sends
-                   (id, workspace_id, session_id, prompt, model_id, permission_mode)
-                   VALUES (?1, ?2, ?3, ?4, ?5, ?6)"#,
-                params![
-                    pending_id,
-                    workspace_id,
-                    session_id,
-                    params.prompt,
-                    Some(&model_id),
-                    params.permission_mode.as_deref()
-                ],
-            )?;
-            tx.commit()?;
         }
 
         let _ = crate::ui_sync::notify_running_app(
@@ -888,6 +887,54 @@ mod tests {
         // Second drain should be empty — rows were deleted.
         let sends2 = drain_pending_cli_sends().unwrap();
         assert!(sends2.is_empty());
+    }
+
+    #[test]
+    fn delegated_send_queues_without_persisting_user_message() {
+        // Regression: CLI wrote a user_prompt row AND the app re-persisted
+        // it on drain+submit, so `helmor send` showed the prompt twice.
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _dir = TestDataDir::new("delegated-no-dup");
+        let mut conn = crate::models::db::write_conn().unwrap();
+        conn.execute(
+            "INSERT INTO sessions (id, workspace_id, status) VALUES ('s1','w1','idle')",
+            [],
+        )
+        .unwrap();
+        queue_delegated_send(
+            &mut conn,
+            "w1",
+            "s1",
+            "hello",
+            "opus",
+            Some("plan"),
+            "2026-01-01T00:00:00Z",
+        )
+        .unwrap();
+        let msgs: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM session_messages WHERE session_id='s1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(msgs, 0, "CLI must not persist the user prompt itself");
+        let (model, permission): (String, String) = conn
+            .query_row(
+                "SELECT model, permission_mode FROM sessions WHERE id='s1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(model, "opus");
+        assert_eq!(permission, "plan");
+        drop(conn);
+        let sends = drain_pending_cli_sends().unwrap();
+        assert_eq!(sends.len(), 1);
+        assert_eq!(sends[0].prompt, "hello");
+        assert_eq!(sends[0].model_id.as_deref(), Some("opus"));
+        assert_eq!(sends[0].permission_mode.as_deref(), Some("plan"));
+        assert_eq!(sends[0].session_id, "s1");
     }
 
     #[test]
