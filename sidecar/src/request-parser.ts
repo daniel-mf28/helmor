@@ -105,7 +105,7 @@ export function parseSendMessageParams(
 		),
 		claudeEnvironment: parseOptionalStringRecord(params, "claudeEnvironment"),
 		claudeConfigDir: optionalString(params, "claudeConfigDir"),
-		claudeSettings: parseOptionalStringRecord(params, "claudeSettings"),
+		claudeSettings: parseOptionalJsonObject(params, "claudeSettings"),
 		codexProvider: parseCodexProvider(params, "codexProvider"),
 		additionalDirectories: parseOptionalStringArray(
 			params,
@@ -157,6 +157,20 @@ export function parseOptionalStringRecord(
 		out[recordKey] = recordValue;
 	}
 	return out;
+}
+
+/** Inline Claude `--settings` keys. Values are arbitrary JSON (e.g. a
+ *  `permissions.deny` list), so only the top level must be an object. */
+export function parseOptionalJsonObject(
+	params: Record<string, unknown>,
+	key: string,
+): Readonly<Record<string, unknown>> | undefined {
+	const value = params[key];
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "object" || Array.isArray(value)) {
+		throw new Error(`params.${key} must be an object`);
+	}
+	return value as Record<string, unknown>;
 }
 
 function parseOptionalStringArray(

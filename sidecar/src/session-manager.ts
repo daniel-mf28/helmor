@@ -39,7 +39,7 @@ export interface SendMessageParams {
 	/** Per-turn Claude Code settings overrides, forwarded to the CLI as an
 	 *  inline `--settings` JSON (e.g. `apiKeyHelper` for Vertex keychain
 	 *  auth). Only the Claude manager reads it. */
-	readonly claudeSettings?: Readonly<Record<string, string>>;
+	readonly claudeSettings?: Readonly<Record<string, unknown>>;
 	/** Custom Codex provider definition; only the Codex manager reads it. */
 	readonly codexProvider?: CodexProviderConfig;
 	/**
