@@ -33,6 +33,10 @@ export interface SendMessageParams {
 	 *  absent, the manager falls back to its hardcoded default. */
 	readonly claudeThinkingDisplay?: "summarized" | "omitted";
 	readonly claudeEnvironment?: Readonly<Record<string, string>>;
+	/** Claude subscription account for this session: the absolute
+	 *  `CLAUDE_CONFIG_DIR`. Absent = default account (no env override).
+	 *  Only the Claude manager reads it, and only for subscription turns. */
+	readonly claudeConfigDir?: string;
 	/** Per-turn Claude Code settings overrides, forwarded to the CLI as an
 	 *  inline `--settings` JSON (e.g. `apiKeyHelper` for Vertex keychain
 	 *  auth). Only the Claude manager reads it. */
@@ -70,6 +74,9 @@ export interface SendMessageParams {
 export interface ListSlashCommandsParams {
 	readonly cwd: string | undefined;
 	readonly additionalDirectories?: readonly string[];
+	/** Claude account (absolute `CLAUDE_CONFIG_DIR`) whose skills/commands to
+	 *  list. Absent = default account. Only the Claude manager reads it. */
+	readonly claudeConfigDir?: string;
 }
 
 /**
@@ -84,11 +91,15 @@ export interface GetContextUsageParams {
 	readonly model: string;
 	readonly cwd: string | undefined;
 	readonly agentProxy?: AgentProxySettings;
+	/** Account the session ran under; needed to `resume` its transcript. */
+	readonly claudeConfigDir?: string;
 }
 
 export interface GenerateTitleOptions {
 	readonly model?: string;
 	readonly claudeEnvironment?: Readonly<Record<string, string>>;
+	/** Claude subscription account (absolute `CLAUDE_CONFIG_DIR`). */
+	readonly claudeConfigDir?: string;
 	/** Custom Codex provider; only the Codex manager reads it. */
 	readonly codexProvider?: CodexProviderConfig;
 	readonly agentProxy?: AgentProxySettings;

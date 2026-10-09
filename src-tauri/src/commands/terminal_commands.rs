@@ -101,6 +101,14 @@ pub async fn spawn_terminal(
     };
 
     tauri::async_runtime::spawn_blocking(move || {
+        // The terminal instance id IS the helmor session id, so a Claude
+        // terminal runs under that session's account (None = default). Only
+        // looked up for Claude; plain shells / Codex never touch it.
+        let claude_config_dir = if agent_kind.as_deref() == Some("claude") {
+            crate::claude_accounts::session::lookup_session_config_dir(Some(&instance_id))
+        } else {
+            None
+        };
         // Wrap the preset command: export the hook env (so the agent hook can
         // report its real session id via `helmor terminal-hook`) and, for
         // Claude, inject a `--settings` file carrying the hook.
@@ -109,6 +117,7 @@ pub async fn spawn_terminal(
             agent_kind.as_deref(),
             boot_command.as_deref(),
             fast_mode.unwrap_or(false),
+            claude_config_dir.as_deref(),
         );
         if let Err(e) = crate::workspace::scripts::run_terminal_session(
             &mgr,
@@ -261,14 +270,46 @@ fn merge_codex_hooks(existing: Option<&str>, command: &str) -> anyhow::Result<se
     Ok(root)
 }
 
+/// `export CLAUDE_CONFIG_DIR=...; ` for a Claude terminal bound to a
+/// non-default account; empty for the default account (`None` / blank), for
+/// Codex, and for bare shells, so those boot exactly as before.
+fn claude_account_export(agent_kind: Option<&str>, claude_config_dir: Option<&str>) -> String {
+    match (agent_kind, claude_config_dir.map(str::trim)) {
+        (Some("claude"), Some(dir)) if !dir.is_empty() => {
+            format!("export CLAUDE_CONFIG_DIR={}; ", sh_quote(dir))
+        }
+        _ => String::new(),
+    }
+}
+
+/// Env-export prefix that precedes the agent command in the PTY boot line.
+fn boot_prefix(
+    path_prefix: &str,
+    instance_id: &str,
+    cli_path: &str,
+    agent_kind: Option<&str>,
+    claude_config_dir: Option<&str>,
+) -> String {
+    format!(
+        "{path_prefix}export HELMOR_TERMINAL_SESSION_ID={}; export HELMOR_CLI_PATH={}; {}",
+        sh_quote(instance_id),
+        sh_quote(cli_path),
+        claude_account_export(agent_kind, claude_config_dir),
+    )
+}
+
 /// Build the PTY boot command for a Terminal-Mode agent. `None` (bare shell /
 /// no preset) returns `None`. Otherwise prefixes the hook env exports and, for
-/// Claude, injects the `--settings` hooks file.
+/// Claude, injects the `--settings` hooks file. `claude_config_dir` is the
+/// session's account (`None` = default); it only applies to Claude. The hooks
+/// file lives under Helmor's own run dir and is passed by absolute path, so it
+/// is independent of CLAUDE_CONFIG_DIR.
 fn build_terminal_boot(
     instance_id: &str,
     agent_kind: Option<&str>,
     boot_command: Option<&str>,
     fast_mode: bool,
+    claude_config_dir: Option<&str>,
 ) -> Option<String> {
     let cmd = boot_command?;
     let cli_path = crate::cli::agent_invocation_path();
@@ -307,10 +348,12 @@ fn build_terminal_boot(
             sh_quote(&bundled_dirs.join(":"))
         )
     };
-    let prefix = format!(
-        "{path_prefix}export HELMOR_TERMINAL_SESSION_ID={}; export HELMOR_CLI_PATH={}; ",
-        sh_quote(instance_id),
-        sh_quote(&cli_path),
+    let prefix = boot_prefix(
+        &path_prefix,
+        instance_id,
+        &cli_path,
+        agent_kind,
+        claude_config_dir,
     );
     let final_cmd = match agent_kind {
         Some(kind @ "claude") => match ensure_agent_hooks_file(&cli_path, kind, fast_mode) {
@@ -414,6 +457,52 @@ mod tests {
     use super::*;
 
     const CMD: &str = "/path/helmor terminal-hook --agent codex";
+
+    #[test]
+    fn claude_boot_exports_config_dir_for_non_default_account() {
+        let prefix = boot_prefix(
+            "",
+            "sess-1",
+            "/bin/helmor",
+            Some("claude"),
+            Some("/Users/me/.claude-work"),
+        );
+        assert!(
+            prefix.ends_with("export CLAUDE_CONFIG_DIR='/Users/me/.claude-work'; "),
+            "export must come last so the next token is the claude command: {prefix}"
+        );
+        assert!(prefix.contains("export HELMOR_TERMINAL_SESSION_ID='sess-1'; "));
+    }
+
+    #[test]
+    fn claude_boot_shell_quotes_config_dir() {
+        let export = claude_account_export(Some("claude"), Some("/Users/o'brien/.claude"));
+        assert_eq!(
+            export,
+            "export CLAUDE_CONFIG_DIR='/Users/o'\\''brien/.claude'; "
+        );
+    }
+
+    #[test]
+    fn claude_boot_omits_export_for_default_account() {
+        for dir in [None, Some(""), Some("   ")] {
+            let prefix = boot_prefix("", "sess-1", "/bin/helmor", Some("claude"), dir);
+            assert!(!prefix.contains("CLAUDE_CONFIG_DIR"), "{prefix}");
+        }
+        // Identical to the pre-account prefix.
+        assert_eq!(
+            boot_prefix("", "sess-1", "/bin/helmor", Some("claude"), None),
+            "export HELMOR_TERMINAL_SESSION_ID='sess-1'; export HELMOR_CLI_PATH='/bin/helmor'; "
+        );
+    }
+
+    #[test]
+    fn non_claude_boot_never_exports_config_dir() {
+        for kind in [Some("codex"), None] {
+            let prefix = boot_prefix("", "s", "/bin/helmor", kind, Some("/Users/me/.claude-work"));
+            assert!(!prefix.contains("CLAUDE_CONFIG_DIR"), "{prefix}");
+        }
+    }
 
     #[test]
     fn merge_codex_hooks_rejects_invalid_json() {

@@ -856,12 +856,14 @@ pub fn move_local_workspace_to_worktree_impl(
     // "empty resume" error on the next turn — not worth rolling back the
     // whole worktree creation. Codex sessions are cwd-independent so
     // they need no migration.
-    match crate::models::sessions::list_claude_provider_session_ids(workspace_id) {
-        Ok(ids) if !ids.is_empty() => {
-            crate::agents::claude_project_files::migrate_session_files(
+    // Each session's transcripts live under its own Claude account's
+    // projects dir, so migrate per `claude_config_dir` group.
+    match crate::models::sessions::list_claude_provider_session_ids_by_account(workspace_id) {
+        Ok(groups) if !groups.is_empty() => {
+            crate::agents::claude_project_files::migrate_session_files_by_account(
                 &repo_root,
                 &workspace_dir,
-                &ids,
+                &groups,
             );
         }
         Ok(_) => {}

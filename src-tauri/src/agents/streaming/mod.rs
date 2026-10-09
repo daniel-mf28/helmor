@@ -157,6 +157,10 @@ pub(super) fn stream_via_sidecar(
             Ok(Some(v)) if v == "summarized" || v == "omitted" => Some(v),
             _ => None,
         };
+    // The session's Claude account (set before its first message; fixed after).
+    let claude_config_dir = crate::claude_accounts::session::lookup_session_config_dir(
+        request.helmor_session_id.as_deref(),
+    );
     let params = build_send_message_params(BuildSendMessageParamsInput {
         sidecar_session_id: &sidecar_session_id,
         prompt: &combined_prompt,
@@ -176,6 +180,7 @@ pub(super) fn stream_via_sidecar(
         claude_thinking_display: claude_thinking_display.as_deref(),
         images: &images_for_wire,
         codex_provider: model.codex_provider.as_ref(),
+        claude_config_dir: claude_config_dir.as_deref(),
     });
 
     // Surface the `/add-dir` decision in logs — we often debug linked-

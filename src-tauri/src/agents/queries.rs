@@ -141,6 +141,26 @@ fn build_title_attempts() -> Vec<Value> {
     attempts
 }
 
+/// Run subscription-Claude title attempts under the session's account so a
+/// Personal-account chat doesn't spend the Work subscription on its title.
+/// Custom-provider attempts (which carry `claudeEnvironment`) and other
+/// providers are left untouched.
+fn apply_claude_account_to_title_attempts(attempts: &mut [Value], config_dir: Option<&str>) {
+    let Some(config_dir) = config_dir.map(str::trim).filter(|dir| !dir.is_empty()) else {
+        return;
+    };
+    for attempt in attempts {
+        let Some(obj) = attempt.as_object_mut() else {
+            continue;
+        };
+        let is_subscription_claude = obj.get("provider").and_then(Value::as_str) == Some("claude")
+            && !obj.contains_key("claudeEnvironment");
+        if is_subscription_claude {
+            obj.insert("claudeConfigDir".to_string(), Value::from(config_dir));
+        }
+    }
+}
+
 /// First custom opencode model the user configured in `opencode.jsonc`, as a
 /// `provider/model` slug (e.g. `hundun/deepseek-v4-flash`). `None` when no
 /// custom opencode provider is set up.
@@ -352,7 +372,14 @@ pub async fn generate_session_title(
             // and stops at the first attempt that produces a title. Skip the
             // branch slug instruction when we won't apply it (local mode,
             // already-renamed worktree, etc.) to save LLM output.
-            let attempts = build_title_attempts();
+            let mut attempts = build_title_attempts();
+            apply_claude_account_to_title_attempts(
+                &mut attempts,
+                crate::claude_accounts::session::lookup_session_config_dir(Some(
+                    &request.session_id,
+                ))
+                .as_deref(),
+            );
             // No intermediate events reset `recv_timeout`, so the Rust wait must
             // cover the whole chain end-to-end: attempts × per-attempt + buffer.
             let title_timeout = std::time::Duration::from_secs(
@@ -685,6 +712,28 @@ pub struct ListSlashCommandsRequest {
     /// exact workspace cache is cold (different workspaces on the same repo
     /// usually share the same skill directories).
     pub repo_id: Option<String>,
+    /// Claude account (absolute `CLAUDE_CONFIG_DIR`) whose skills/commands to
+    /// list; `None` = default account. Ignored for non-Claude providers.
+    #[serde(default)]
+    pub claude_config_dir: Option<String>,
+}
+
+impl ListSlashCommandsRequest {
+    /// Collapse the account to what actually matters: only Claude has
+    /// accounts, and blank means the default one. Run before building cache
+    /// keys or sidecar params so both agree.
+    fn with_normalized_account(mut self) -> Self {
+        self.claude_config_dir = if self.provider == "claude" {
+            self.claude_config_dir
+                .as_deref()
+                .map(str::trim)
+                .filter(|dir| !dir.is_empty())
+                .map(str::to_string)
+        } else {
+            None
+        };
+        self
+    }
 }
 
 /// Sidecar timeout for `listSlashCommands`. Claude's in-sidecar AbortController
@@ -715,7 +764,7 @@ pub async fn list_slash_commands(
     // Start page has no workspace, so `working_directory` is empty. Fall
     // back to the repo's `root_path` so Claude CLI can scan the project's
     // `.claude/commands/` and the cache key aligns with the repo prewarm.
-    let request = resolve_repo_fallback_cwd(request);
+    let request = resolve_repo_fallback_cwd(request.with_normalized_account());
     let cwd = request.working_directory.as_deref().unwrap_or("");
     let repo_id = request.repo_id.as_deref().unwrap_or("");
     let additional_directories = slash_command_scan_directories(&request);
@@ -737,7 +786,11 @@ pub async fn list_slash_commands(
             "list_slash_commands: cwd missing, returning empty (cached repo fallback may still apply)"
         );
         if additional_directories.is_empty() && !repo_id.is_empty() {
-            let rkey = super::slash_commands::repo_key(&request.provider, repo_id);
+            let rkey = super::slash_commands::repo_key(
+                &request.provider,
+                repo_id,
+                request.claude_config_dir.as_deref(),
+            );
             if let Some(commands) = cache.get_repo(&rkey) {
                 return Ok(SlashCommandsResponse { commands });
             }
@@ -751,6 +804,7 @@ pub async fn list_slash_commands(
         &request.provider,
         request.working_directory.as_deref(),
         &additional_directories,
+        request.claude_config_dir.as_deref(),
     );
 
     // 1. Workspace-level exact hit → return instantly + SWR refresh.
@@ -761,7 +815,11 @@ pub async fn list_slash_commands(
 
     // 2. Repo-level fallback → return stale-but-plausible + SWR refresh.
     if additional_directories.is_empty() && !repo_id.is_empty() {
-        let rkey = super::slash_commands::repo_key(&request.provider, repo_id);
+        let rkey = super::slash_commands::repo_key(
+            &request.provider,
+            repo_id,
+            request.claude_config_dir.as_deref(),
+        );
         if let Some(commands) = cache.get_repo(&rkey) {
             tracing::debug!(
                 provider = %request.provider,
@@ -990,11 +1048,15 @@ fn dispatch_prewarm(app: &AppHandle, workspace_id: Option<&str>, root_path: &str
             working_directory: Some(root_path.to_string()),
             workspace_id: workspace_id.map(str::to_string),
             repo_id: Some(repo_id.to_string()),
+            // Prewarm covers the default Claude account only; other
+            // accounts fill their own cache entries on first `/`.
+            claude_config_dir: None,
         };
         let ws_key = super::slash_commands::workspace_key(
             provider,
             Some(root_path),
             &additional_directories,
+            None,
         );
         tracing::debug!(
             provider,
@@ -1008,15 +1070,12 @@ fn dispatch_prewarm(app: &AppHandle, workspace_id: Option<&str>, root_path: &str
     }
 }
 
-/// Blocking sidecar call for `listSlashCommands`. Used by both the
-/// synchronous cold-miss path and the background refresh thread.
-fn fetch_from_sidecar(
-    sidecar: &crate::sidecar::ManagedSidecar,
+/// Wire params for the sidecar's `listSlashCommands`. `claudeConfigDir` is
+/// sent only for Claude with a non-default account.
+fn build_list_slash_commands_params(
     request: &ListSlashCommandsRequest,
     additional_directories: &[String],
-) -> CmdResult<Vec<SlashCommandEntry>> {
-    let request_id = Uuid::new_v4().to_string();
-
+) -> Value {
     let mut params = serde_json::Map::new();
     params.insert("provider".into(), Value::String(request.provider.clone()));
     if let Some(cwd) = request.working_directory.as_ref() {
@@ -1034,11 +1093,32 @@ fn fetch_from_sidecar(
             ),
         );
     }
+    if request.provider == "claude" {
+        if let Some(dir) = request
+            .claude_config_dir
+            .as_deref()
+            .map(str::trim)
+            .filter(|dir| !dir.is_empty())
+        {
+            params.insert("claudeConfigDir".into(), Value::String(dir.to_string()));
+        }
+    }
+    Value::Object(params)
+}
+
+/// Blocking sidecar call for `listSlashCommands`. Used by both the
+/// synchronous cold-miss path and the background refresh thread.
+fn fetch_from_sidecar(
+    sidecar: &crate::sidecar::ManagedSidecar,
+    request: &ListSlashCommandsRequest,
+    additional_directories: &[String],
+) -> CmdResult<Vec<SlashCommandEntry>> {
+    let request_id = Uuid::new_v4().to_string();
 
     let sidecar_req = crate::sidecar::SidecarRequest {
         id: request_id.clone(),
         method: "listSlashCommands".to_string(),
-        params: Value::Object(params),
+        params: build_list_slash_commands_params(request, additional_directories),
     };
 
     let rx = sidecar.subscribe(&request_id);
@@ -1500,6 +1580,13 @@ pub fn fetch_live_context_usage(
     if let Some(agent_proxy) = super::streaming::load_agent_proxy_setting() {
         params.insert("agentProxy".into(), agent_proxy);
     }
+    // Resuming the session's transcript requires the account it ran under.
+    // (The ring is only offered for subscription models, so no custom-env check.)
+    if let Some(config_dir) =
+        crate::claude_accounts::session::lookup_session_config_dir(Some(&request.session_id))
+    {
+        params.insert("claudeConfigDir".into(), Value::String(config_dir));
+    }
 
     let sidecar_req = crate::sidecar::SidecarRequest {
         id: request_id.clone(),
@@ -1565,7 +1652,48 @@ mod tests {
             working_directory: cwd.map(str::to_string),
             workspace_id: None,
             repo_id: repo_id.map(str::to_string),
+            claude_config_dir: None,
         }
+    }
+
+    #[test]
+    fn account_normalization_keeps_claude_dir_and_blanks_default() {
+        let mut req = make_request(Some("/repo"), None);
+        req.claude_config_dir = Some("  /Users/me/.claude-work ".to_string());
+        assert_eq!(
+            req.with_normalized_account().claude_config_dir.as_deref(),
+            Some("/Users/me/.claude-work")
+        );
+
+        let mut blank = make_request(Some("/repo"), None);
+        blank.claude_config_dir = Some("   ".to_string());
+        assert_eq!(blank.with_normalized_account().claude_config_dir, None);
+    }
+
+    #[test]
+    fn account_normalization_drops_dir_for_other_providers() {
+        let mut req = make_request(Some("/repo"), None);
+        req.provider = "codex".to_string();
+        req.claude_config_dir = Some("/Users/me/.claude-work".to_string());
+        assert_eq!(req.with_normalized_account().claude_config_dir, None);
+    }
+
+    #[test]
+    fn sidecar_params_carry_claude_config_dir_only_for_claude() {
+        let mut req = make_request(Some("/repo"), None);
+        req.claude_config_dir = Some("/Users/me/.claude-work".to_string());
+        let params = build_list_slash_commands_params(&req, &[]);
+        assert_eq!(params["claudeConfigDir"], "/Users/me/.claude-work");
+        assert_eq!(params["provider"], "claude");
+
+        req.claude_config_dir = None;
+        let params = build_list_slash_commands_params(&req, &[]);
+        assert!(params.get("claudeConfigDir").is_none());
+
+        req.provider = "codex".to_string();
+        req.claude_config_dir = Some("/Users/me/.claude-work".to_string());
+        let params = build_list_slash_commands_params(&req, &[]);
+        assert!(params.get("claudeConfigDir").is_none());
     }
 
     #[test]
@@ -1829,5 +1957,27 @@ mod tests {
         assert_eq!(codex.get("model").unwrap().as_str().unwrap(), "gpt-5.5");
 
         std::env::remove_var("HELMOR_DATA_DIR");
+    }
+
+    #[test]
+    fn claude_account_applies_only_to_subscription_claude_title_attempts() {
+        let mut attempts = vec![
+            serde_json::json!({ "provider": "claude", "model": "m",
+                "claudeEnvironment": { "ANTHROPIC_BASE_URL": "https://x" } }),
+            serde_json::json!({ "provider": "claude" }),
+            serde_json::json!({ "provider": "codex" }),
+        ];
+        apply_claude_account_to_title_attempts(&mut attempts, Some("/Users/me/.claude-personal"));
+        assert!(attempts[0].get("claudeConfigDir").is_none());
+        assert_eq!(
+            attempts[1]["claudeConfigDir"],
+            serde_json::json!("/Users/me/.claude-personal")
+        );
+        assert!(attempts[2].get("claudeConfigDir").is_none());
+
+        let mut untouched = vec![serde_json::json!({ "provider": "claude" })];
+        apply_claude_account_to_title_attempts(&mut untouched, None);
+        apply_claude_account_to_title_attempts(&mut untouched, Some("  "));
+        assert!(untouched[0].get("claudeConfigDir").is_none());
     }
 }

@@ -570,3 +570,59 @@ fn repo_run_actions_stop_command_migration_adds_column_when_missing() {
         repo_run_actions_stop_columns(&connection)
     );
 }
+
+fn sessions_claude_config_dir_columns(
+    connection: &rusqlite::Connection,
+) -> Vec<(String, String, i64, Option<String>)> {
+    let mut statement = connection
+        .prepare(
+            "SELECT name, type, \"notnull\", dflt_value
+             FROM pragma_table_info('sessions')
+             WHERE name = 'claude_config_dir'",
+        )
+        .unwrap();
+    statement
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+}
+
+#[test]
+fn sessions_claude_config_dir_migration_adds_nullable_column_and_keeps_rows() {
+    let connection = rusqlite::Connection::open_in_memory().unwrap();
+    // A sessions table from before multi-account Claude support.
+    connection
+        .execute_batch(
+            r#"
+            CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT,
+                status TEXT DEFAULT 'idle'
+            );
+            INSERT INTO sessions (id, workspace_id) VALUES ('s1', 'w1');
+            "#,
+        )
+        .unwrap();
+
+    schema::ensure_schema(&connection).unwrap();
+    // Idempotent: a second pass must not error on the now-existing column.
+    schema::ensure_schema(&connection).unwrap();
+
+    // Existing sessions ran on the default account -> NULL, never back-filled.
+    let dir: Option<String> = connection
+        .query_row(
+            "SELECT claude_config_dir FROM sessions WHERE id = 's1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(dir.is_none());
+
+    assert_yaml_snapshot!(
+        "sessions_claude_config_dir_migration",
+        sessions_claude_config_dir_columns(&connection)
+    );
+}

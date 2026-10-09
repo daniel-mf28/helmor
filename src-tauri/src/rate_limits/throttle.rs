@@ -10,7 +10,9 @@
 //! back the cached body verbatim.
 
 use chrono::Utc;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Mutex;
 
 pub struct Throttle {
     /// Unix seconds of the last fetch *attempt*. Zero means "never".
@@ -52,9 +54,52 @@ impl Throttle {
     }
 }
 
+/// A [`Throttle`] per key, for fetchers whose upstream is per-account (one
+/// Claude subscription per config dir): account A's cooldown must not block
+/// account B's first fetch.
+pub struct KeyedThrottle {
+    last_attempt: Mutex<BTreeMap<String, i64>>,
+    min_interval_seconds: i64,
+}
+
+impl KeyedThrottle {
+    pub const fn new(min_interval_seconds: i64) -> Self {
+        Self {
+            last_attempt: Mutex::new(BTreeMap::new()),
+            min_interval_seconds,
+        }
+    }
+
+    pub fn should_fetch(&self, key: &str) -> bool {
+        let now = Utc::now().timestamp();
+        let last = self
+            .last_attempt
+            .lock()
+            .ok()
+            .and_then(|map| map.get(key).copied())
+            .unwrap_or(0);
+        now.saturating_sub(last) >= self.min_interval_seconds
+    }
+
+    pub fn record_attempt(&self, key: &str) {
+        if let Ok(mut map) = self.last_attempt.lock() {
+            map.insert(key.to_string(), Utc::now().timestamp());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keyed_throttle_isolates_keys() {
+        let throttle = KeyedThrottle::new(30);
+        assert!(throttle.should_fetch("a"));
+        throttle.record_attempt("a");
+        assert!(!throttle.should_fetch("a"));
+        assert!(throttle.should_fetch("b"));
+    }
 
     #[test]
     fn fresh_throttle_allows_first_fetch() {

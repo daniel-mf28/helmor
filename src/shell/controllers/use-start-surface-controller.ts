@@ -30,6 +30,7 @@ import {
 	prewarmSlashCommandsForRepo,
 	type RepositoryCreateOption,
 	renameSession,
+	setSessionClaudeConfigDir,
 	type ThreadMessageLike,
 	type WorkspaceBranchIntent,
 	type WorkspaceDetail,
@@ -207,6 +208,8 @@ export function useStartSurfaceController(
 		deps.setPendingCreatedWorkspaceSubmit,
 	);
 	const pushToastRef = useLatestRef(deps.pushToast);
+	// Account the start composer's picker shows (null = default account).
+	const claudeConfigDirRef = useLatestRef(appSettings.claudeLastConfigDir);
 
 	// Default repo selection: prefer the persisted `repoId`, fall back to
 	// the first repo. Re-runs when the persisted value resolves or the
@@ -599,6 +602,21 @@ export function useStartSurfaceController(
 					let terminalConverted = false;
 					if (payload.terminalMode) {
 						try {
+							// A Claude terminal runs under the session's account, which
+							// the backend reads when the PTY boots. Pin the composer's
+							// selection onto the (still message-less) session first; a
+							// failure keeps whatever the session was seeded with.
+							if (payload.model.provider === "claude") {
+								await setSessionClaudeConfigDir(
+									sessionId,
+									claudeConfigDirRef.current,
+								).catch((error) => {
+									console.warn(
+										"[start] failed to set terminal account:",
+										error,
+									);
+								});
+							}
 							await convertSessionToTerminal(sessionId, payload.model.provider);
 							// Layer 1 of the two-layer title (same as GUI): show a
 							// provisional title from the prompt immediately; the agent's

@@ -9,6 +9,7 @@ import {
 	OpenCodeIcon,
 } from "@/components/icons";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ClaudeAccountsEditor } from "@/features/claude-accounts/settings-editor";
 import { getAgentLoginStatus, getAgentVersions } from "@/lib/api";
 import { helmorQueryKeys } from "@/lib/query-client";
 import { SettingsGroup } from "../components/settings-row";
@@ -87,6 +88,12 @@ export function ProvidersPanel() {
 					onLoginExit={refetchStatus}
 					collapsible
 				>
+					<ProviderConfigRow
+						label="claudeAccounts"
+						description="claudeAccountsDescription"
+					>
+						<ClaudeAccountsEditor />
+					</ProviderConfigRow>
 					<ProviderConfigSection adapter={CLAUDE_ADAPTER} />
 				</ProviderRow>
 				<ProviderRow

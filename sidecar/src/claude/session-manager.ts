@@ -47,6 +47,7 @@ import {
 	parseTitleAndBranchWithDiagnostics,
 	TITLE_GENERATION_TIMEOUT_MS,
 } from "../title.js";
+import { claudeConfigDirEnv, expandClaudeConfigDir } from "./config-dir.js";
 import { loadProjectMcpServers } from "./project-mcp.js";
 
 /**
@@ -417,6 +418,7 @@ export class ClaudeSessionManager implements SessionManager {
 			fastMode,
 			claudeThinkingDisplay,
 			claudeEnvironment,
+			claudeConfigDir,
 			claudeSettings,
 			agentProxy,
 			images,
@@ -478,11 +480,15 @@ export class ClaudeSessionManager implements SessionManager {
 		const proxyEnv = buildAgentProxyEnv(agentProxy);
 		const queryEnv = mergeQueryEnv(
 			proxyEnv,
+			claudeConfigDirEnv(claudeConfigDir),
 			claudeEnv,
 			additionalDirectoryEnv,
 			MCP_BLOCKING_ENV,
 		);
-		const projectMcpServers = loadProjectMcpServers(sourceRepoPath);
+		const projectMcpServers = loadProjectMcpServers(
+			sourceRepoPath,
+			expandClaudeConfigDir(claudeConfigDir),
+		);
 		if (projectMcpServers) {
 			logger.info(`[${requestId}] claude project MCPs injected`, {
 				sourceRepoPath,
@@ -1159,7 +1165,11 @@ export class ClaudeSessionManager implements SessionManager {
 				? options.claudeEnvironment
 				: undefined;
 		const proxyEnv = buildAgentProxyEnv(options?.agentProxy);
-		const queryEnv = mergeQueryEnv(proxyEnv, claudeEnv);
+		const queryEnv = mergeQueryEnv(
+			proxyEnv,
+			claudeConfigDirEnv(options?.claudeConfigDir),
+			claudeEnv,
+		);
 		const generateBranch = options?.generateBranch ?? true;
 		const q = query({
 			prompt: buildTitlePrompt(userMessage, branchRenamePrompt, generateBranch),
@@ -1254,7 +1264,10 @@ export class ClaudeSessionManager implements SessionManager {
 			additionalDirectories.length > 0
 				? { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" }
 				: undefined;
-		const queryEnv = mergeQueryEnv(additionalDirectoryEnv);
+		const queryEnv = mergeQueryEnv(
+			additionalDirectoryEnv,
+			claudeConfigDirEnv(params.claudeConfigDir),
+		);
 
 		let resolveDone: () => void = () => undefined;
 		const donePromise = new Promise<void>((resolve) => {
@@ -1433,7 +1446,10 @@ export class ClaudeSessionManager implements SessionManager {
 			})();
 
 		const proxyEnv = buildAgentProxyEnv(params.agentProxy);
-		const queryEnv = mergeQueryEnv(proxyEnv);
+		const queryEnv = mergeQueryEnv(
+			proxyEnv,
+			claudeConfigDirEnv(params.claudeConfigDir),
+		);
 		const q = query({
 			prompt: promptIter,
 			options: {

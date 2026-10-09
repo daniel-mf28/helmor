@@ -1,0 +1,8 @@
+---
+source: tests/schema_migrations.rs
+expression: sessions_claude_config_dir_columns(&connection)
+---
+- - claude_config_dir
+  - TEXT
+  - 0
+  - ~

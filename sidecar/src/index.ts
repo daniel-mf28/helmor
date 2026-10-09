@@ -236,6 +236,7 @@ interface TitleAttempt {
 	readonly provider: Provider;
 	readonly model?: string;
 	readonly claudeEnvironment?: Record<string, string>;
+	readonly claudeConfigDir?: string;
 	readonly codexProvider?: CodexProviderConfig;
 }
 
@@ -270,6 +271,10 @@ function parseTitleAttempts(raw: unknown): TitleAttempt[] {
 				provider,
 				model: typeof obj.model === "string" ? obj.model : undefined,
 				claudeEnvironment: asStringRecord(obj.claudeEnvironment),
+				claudeConfigDir:
+					typeof obj.claudeConfigDir === "string"
+						? obj.claudeConfigDir
+						: undefined,
 				codexProvider: parseCodexProvider(obj, "codexProvider"),
 			});
 		}
@@ -319,6 +324,7 @@ async function handleGenerateTitle(
 					{
 						model: attempt.model,
 						claudeEnvironment: attempt.claudeEnvironment,
+						claudeConfigDir: attempt.claudeConfigDir,
 						codexProvider: attempt.codexProvider,
 						agentProxy,
 						generateBranch,

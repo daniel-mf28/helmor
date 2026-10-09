@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod claude_accounts;
 pub mod cli;
 pub(crate) mod codex_config;
 pub(crate) mod commands;
@@ -393,6 +394,9 @@ pub fn run() {
             commands::settings_commands::get_app_settings,
             commands::kimi_provider_commands::get_kimi_provider_config,
             commands::settings_commands::get_claude_rate_limits,
+            commands::claude_account_commands::set_session_claude_config_dir,
+            commands::claude_account_commands::detect_claude_config_dirs,
+            commands::claude_account_commands::normalize_claude_config_dir,
             commands::settings_commands::get_codex_rate_limits,
             commands::local_llm_commands::detect_local_llm_hardware,
             commands::local_llm_commands::get_local_llm_status,

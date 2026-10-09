@@ -455,6 +455,9 @@ export type WorkspaceSessionSummary = {
 	/** "gui" (SDK chat session) or "terminal" (live PTY in the message area).
 	 * Optional for test mocks / optimistic rows; absent is treated as "gui". */
 	sessionKind?: "gui" | "terminal";
+	/** Absolute `CLAUDE_CONFIG_DIR` the session runs under; null/absent = the
+	 *  default Claude account. Fixed once the session has messages. */
+	claudeConfigDir?: string | null;
 	active: boolean;
 };
 
@@ -1472,6 +1475,9 @@ export async function listSlashCommands(input: {
 	workingDirectory?: string | null;
 	repoId?: string | null;
 	workspaceId?: string | null;
+	/** Claude account (absolute `CLAUDE_CONFIG_DIR`) to list commands for;
+	 *  null/absent = default account. Ignored for non-Claude providers. */
+	claudeConfigDir?: string | null;
 }): Promise<SlashCommandsResponse> {
 	try {
 		return await invoke<SlashCommandsResponse>("list_slash_commands", {
@@ -1480,6 +1486,7 @@ export async function listSlashCommands(input: {
 				workingDirectory: input.workingDirectory ?? null,
 				repoId: input.repoId ?? null,
 				workspaceId: input.workspaceId ?? null,
+				claudeConfigDir: input.claudeConfigDir ?? null,
 			},
 		});
 	} catch (error) {
@@ -3658,12 +3665,44 @@ export async function getCodexRateLimits(): Promise<string | null> {
 	return await invoke<string | null>("get_codex_rate_limits");
 }
 
-/** Read the account-global Claude rate-limit snapshot. The string is
- *  the raw Anthropic `/api/oauth/usage` response body — parsed on the
- *  frontend via `parseClaudeRateLimits`. Null when no fetch has ever
- *  succeeded (no cache, latest fetch failed). */
-export async function getClaudeRateLimits(): Promise<string | null> {
-	return await invoke<string | null>("get_claude_rate_limits");
+/** Read the Claude rate-limit snapshot for one account (`claudeConfigDir`; null =
+ *  the default account). The string is the raw Anthropic `/api/oauth/usage`
+ *  response body — parsed on the frontend via `parseClaudeRateLimits`. Null
+ *  when no fetch has ever succeeded (no cache, latest fetch failed). */
+export async function getClaudeRateLimits(
+	claudeConfigDir?: string | null,
+): Promise<string | null> {
+	return await invoke<string | null>("get_claude_rate_limits", {
+		claudeConfigDir: claudeConfigDir ?? null,
+	});
+}
+
+/** An existing `~/.claude-*` config dir offered as a Claude account. */
+export type DetectedClaudeAccount = {
+	configDir: string;
+	label: string;
+};
+
+/** Existing `~/.claude-*` config dirs that look like real Claude logins. */
+export async function detectClaudeConfigDirs(): Promise<
+	DetectedClaudeAccount[]
+> {
+	return await invoke<DetectedClaudeAccount[]>("detect_claude_config_dirs");
+}
+
+/** Expand `~` / trailing slashes into an absolute path. Rejects a relative
+ *  path. */
+export async function normalizeClaudeConfigDir(path: string): Promise<string> {
+	return await invoke<string>("normalize_claude_config_dir", { path });
+}
+
+/** Pick the Claude account for a session (null = default account). The
+ *  backend rejects this once the session has any message. */
+export async function setSessionClaudeConfigDir(
+	sessionId: string,
+	configDir: string | null,
+): Promise<void> {
+	await invoke("set_session_claude_config_dir", { sessionId, configDir });
 }
 
 /** Live Claude-only context-usage fetch for the hover popover. Pure

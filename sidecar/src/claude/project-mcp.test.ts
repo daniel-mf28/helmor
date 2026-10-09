@@ -105,4 +105,27 @@ describe("loadProjectMcpServers", () => {
 			rmSync(altDir, { recursive: true, force: true });
 		}
 	});
+
+	it("prefers the per-request account dir over the process env", () => {
+		const accountDir = mkdtempSync(join(tmpdir(), "claude-mcp-account-"));
+		try {
+			writeFileSync(
+				join(accountDir, ".claude.json"),
+				JSON.stringify({
+					projects: {
+						[REPO]: {
+							mcpServers: { y: { type: "stdio", command: "personal" } },
+						},
+					},
+				}),
+			);
+			// process env points at a dir with different servers; the explicit
+			// account dir must win.
+			expect(loadProjectMcpServers(REPO, accountDir)).toEqual({
+				y: { type: "stdio" as const, command: "personal" },
+			});
+		} finally {
+			rmSync(accountDir, { recursive: true, force: true });
+		}
+	});
 });
