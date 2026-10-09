@@ -108,6 +108,17 @@ export type StartSurfacePreferences = {
 	composerFastModeByContextKey: Record<string, boolean>;
 };
 
+/** One extra Claude subscription account. The built-in default account
+ *  (no `CLAUDE_CONFIG_DIR`) is implicit and never appears in this list. */
+export type ClaudeAccountSetting = {
+	id: string;
+	label: string;
+	/** Absolute `CLAUDE_CONFIG_DIR`. */
+	configDir: string;
+};
+
+export const DEFAULT_CLAUDE_ACCOUNT_LABEL = "Work";
+
 export type AppSettings = {
 	/** Chat message body font size (px). Migrated from the legacy `fontSize`
 	 *  field, which only ever affected chat rendering. */
@@ -188,6 +199,17 @@ export type AppSettings = {
 	codexEnabledModelIds: string[] | null;
 	localLlm: LocalLlmSettings;
 	startSurfacePreferences: StartSurfacePreferences;
+	/** Extra Claude subscription accounts (the built-in default account is
+	 *  not stored here). Each is a `CLAUDE_CONFIG_DIR`. */
+	claudeAccounts: ClaudeAccountSetting[];
+	/** Display name of the built-in default Claude account (`~/.claude`). */
+	claudeDefaultAccountLabel: string;
+	/** True once the first-run scan of `~/.claude-*` dirs has run, so removed
+	 *  accounts aren't re-added on every launch. */
+	claudeAccountsSeeded: boolean;
+	/** Config dir new chats start on (last account the user picked); null =
+	 *  the default account. The backend reads this at session creation. */
+	claudeLastConfigDir: string | null;
 	/** Sidebar grouping mode. Persisted to localStorage (sync read on boot
 	 *  to avoid the sidebar flashing the wrong grouping while SQLite-backed
 	 *  settings load asynchronously). */
@@ -287,6 +309,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
 		contextOverrides: {},
 	},
 	startSurfacePreferences: DEFAULT_START_SURFACE_PREFERENCES,
+	claudeAccounts: [],
+	claudeDefaultAccountLabel: DEFAULT_CLAUDE_ACCOUNT_LABEL,
+	claudeAccountsSeeded: false,
+	claudeLastConfigDir: null,
 	sidebarGrouping: "status",
 	sidebarRepoFilterIds: [],
 	sidebarSort: "custom",
@@ -441,6 +467,11 @@ const SETTINGS_KEY_MAP: Record<
 	codexEnabledModelIds: "app.codex_enabled_model_ids",
 	localLlm: "app.local_llm",
 	startSurfacePreferences: "app.start_surface_preferences",
+	claudeAccounts: "app.claude_accounts",
+	claudeDefaultAccountLabel: "app.claude_default_account_label",
+	claudeAccountsSeeded: "app.claude_accounts_seeded",
+	// Also read by the backend (`claude_accounts::session::LAST_CONFIG_DIR_KEY`).
+	claudeLastConfigDir: "app.claude_last_config_dir",
 };
 
 /** Renamed storage keys. Append-only; never reuse a string as a current key. */
@@ -565,6 +596,30 @@ function parseEnumRecord<V extends string>(
 				key.length > 0 && typeof entry === "string" && allowedSet.has(entry),
 		),
 	) as Record<string, V>;
+}
+
+function parseClaudeAccounts(raw: string | undefined): ClaudeAccountSetting[] {
+	if (!raw) return [];
+	try {
+		const parsed = JSON.parse(raw) as unknown;
+		if (!Array.isArray(parsed)) return [];
+		const seen = new Set<string>();
+		const out: ClaudeAccountSetting[] = [];
+		for (const item of parsed) {
+			if (!item || typeof item !== "object") continue;
+			const o = item as Record<string, unknown>;
+			const configDir =
+				typeof o.configDir === "string" ? o.configDir.trim() : "";
+			const label = typeof o.label === "string" ? o.label.trim() : "";
+			if (!configDir || !label || seen.has(configDir)) continue;
+			seen.add(configDir);
+			const id = typeof o.id === "string" && o.id ? o.id : configDir;
+			out.push({ id, label, configDir });
+		}
+		return out;
+	} catch {
+		return [];
+	}
 }
 
 function parseStartSurfacePreferences(
@@ -895,6 +950,14 @@ export async function loadSettings(): Promise<AppSettings> {
 			startSurfacePreferences: parseStartSurfacePreferences(
 				raw[SETTINGS_KEY_MAP.startSurfacePreferences],
 			),
+			claudeAccounts: parseClaudeAccounts(raw[SETTINGS_KEY_MAP.claudeAccounts]),
+			claudeDefaultAccountLabel:
+				raw[SETTINGS_KEY_MAP.claudeDefaultAccountLabel]?.trim() ||
+				DEFAULT_CLAUDE_ACCOUNT_LABEL,
+			claudeAccountsSeeded:
+				raw[SETTINGS_KEY_MAP.claudeAccountsSeeded] === "true",
+			claudeLastConfigDir:
+				raw[SETTINGS_KEY_MAP.claudeLastConfigDir]?.trim() || null,
 		};
 	} catch {
 		return { ...DEFAULT_SETTINGS };
@@ -936,6 +999,7 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<void> {
 				key === "codexEnabledModelIds" ||
 				key === "localLlm" ||
 				key === "startSurfacePreferences" ||
+				key === "claudeAccounts" ||
 				key === "defaultModel" ||
 				key === "reviewModel" ||
 				key === "prModel";

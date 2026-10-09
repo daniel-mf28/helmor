@@ -922,6 +922,10 @@ fn run_migrations(connection: &Connection) -> Result<()> {
             "session_kind",
             "TEXT NOT NULL DEFAULT 'gui'",
         )?;
+        // Claude subscription account the session runs under: the absolute
+        // `CLAUDE_CONFIG_DIR`. NULL = the default account (no env override),
+        // which is also what every pre-existing session ran with.
+        add_column_if_missing(connection, "sessions", "claude_config_dir", "TEXT")?;
     }
     // Per-session "active plan" projection. Provider plan/todo events
     // (Codex `turn/plan/updated`, Claude `ExitPlanMode`) are normalised
@@ -1194,6 +1198,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     codex_goal_meta TEXT,
     draft_state TEXT,
     session_kind TEXT NOT NULL DEFAULT 'gui',
+    claude_config_dir TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

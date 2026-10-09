@@ -18,7 +18,15 @@ import {
 	SquareTerminal,
 	Zap,
 } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	memo,
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { ModelIcon } from "@/components/model-icon";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
@@ -211,6 +219,13 @@ type WorkspaceComposerProps = {
 	 *  rate-limit / context-usage endpoints just hide the
 	 *  indicators. */
 	agentType?: AgentProvider | null;
+	/** Claude account the chat runs on (`null` = default); keys the usage
+	 *  meter so it follows the session's account. */
+	claudeConfigDir?: string | null;
+	/** Account name shown in the usage popover when several accounts exist. */
+	claudeAccountLabel?: string | null;
+	/** Account switcher rendered beside the model picker (null/absent = hidden). */
+	claudeAccountPicker?: ReactNode;
 	focusShortcut?: string | null;
 	togglePlanShortcut?: string | null;
 	toggleTerminalShortcut?: string | null;
@@ -338,6 +353,9 @@ export const WorkspaceComposer = memo(function WorkspaceComposer({
 	sessionId = null,
 	providerSessionId = null,
 	agentType = null,
+	claudeConfigDir = null,
+	claudeAccountLabel = null,
+	claudeAccountPicker = null,
 	focusShortcut = null,
 	togglePlanShortcut = null,
 	toggleTerminalShortcut = null,
@@ -1107,6 +1125,8 @@ export const WorkspaceComposer = memo(function WorkspaceComposer({
 											</DropdownMenuContent>
 										</DropdownMenu>
 
+										{claudeAccountPicker}
+
 										{onChangeFastMode && supportsFastMode && (
 											<Tooltip>
 												<TooltipTrigger asChild>
@@ -1309,6 +1329,8 @@ export const WorkspaceComposer = memo(function WorkspaceComposer({
 							<div className="flex items-center gap-1">
 								<UsageStatsIndicator
 									agentType={agentType}
+									claudeConfigDir={claudeConfigDir}
+									claudeAccountLabel={claudeAccountLabel}
 									disabled={disabled}
 								/>
 								{sessionId && supportsContextUsage ? (

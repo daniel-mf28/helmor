@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { ClaudeColorIcon, OpenAIIcon } from "@/components/icons";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ClaudeAccountsEditor } from "@/features/claude-accounts/settings-editor";
 import { getAgentLoginStatus, getAgentVersions } from "@/lib/api";
 import { helmorQueryKeys } from "@/lib/query-client";
 import { SettingsGroup } from "../components/settings-row";
 import { CLAUDE_ADAPTER, CODEX_ADAPTER } from "./providers/adapters";
-import { ProviderRow } from "./providers/provider-row";
+import { ProviderConfigRow, ProviderRow } from "./providers/provider-row";
 import { ProviderConfigSection } from "./providers/provider-section";
 
 // SettingsDialog renders outside AppShell's TooltipProvider, so wrap our own.
@@ -43,6 +44,12 @@ export function ProvidersPanel() {
 					onLoginExit={refetchStatus}
 					collapsible
 				>
+					<ProviderConfigRow
+						label="claudeAccounts"
+						description="claudeAccountsDescription"
+					>
+						<ClaudeAccountsEditor />
+					</ProviderConfigRow>
 					<ProviderConfigSection adapter={CLAUDE_ADAPTER} />
 				</ProviderRow>
 				<ProviderRow

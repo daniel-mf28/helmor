@@ -46,7 +46,9 @@ import {
 	parseTitleAndBranchWithDiagnostics,
 	TITLE_GENERATION_TIMEOUT_MS,
 } from "../title.js";
+import { claudeConfigDirEnv, expandClaudeConfigDir } from "./config-dir.js";
 import { loadProjectMcpServers } from "./project-mcp.js";
+import { isStaleResumeNotificationResult } from "./stale-resume-result.js";
 
 /**
  * Hard upper bound on how long `listSlashCommands` will wait for the SDK's
@@ -416,6 +418,7 @@ export class ClaudeSessionManager implements SessionManager {
 			fastMode,
 			claudeThinkingDisplay,
 			claudeEnvironment,
+			claudeConfigDir,
 			claudeSettings,
 			images,
 			sourceRepoPath,
@@ -474,11 +477,15 @@ export class ClaudeSessionManager implements SessionManager {
 				? { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" }
 				: undefined;
 		const queryEnv = mergeQueryEnv(
+			claudeConfigDirEnv(claudeConfigDir),
 			claudeEnv,
 			additionalDirectoryEnv,
 			MCP_BLOCKING_ENV,
 		);
-		const projectMcpServers = loadProjectMcpServers(sourceRepoPath);
+		const projectMcpServers = loadProjectMcpServers(
+			sourceRepoPath,
+			expandClaudeConfigDir(claudeConfigDir),
+		);
 		if (projectMcpServers) {
 			logger.info(`[${requestId}] claude project MCPs injected`, {
 				sourceRepoPath,
@@ -729,6 +736,9 @@ export class ClaudeSessionManager implements SessionManager {
 		let bgDrainSettledByGrace = false;
 		let deferredCompletedResult: SDKMessage | null = null;
 		let turnEnded = false;
+		// Set on the first `result` that belongs to THIS turn (anything but a
+		// stale resume-prelude result — see `isStaleResumeNotificationResult`).
+		let ownResultSeen = false;
 		const clearBgDrainTimer = () => {
 			if (bgDrainTimer === null) return;
 			clearTimeout(bgDrainTimer);
@@ -865,6 +875,26 @@ export class ClaudeSessionManager implements SessionManager {
 					lastRateLimitInfo = (
 						message as { rate_limit_info?: RateLimitOverageInfo }
 					).rate_limit_info;
+				}
+				// Resume after an interrupted turn: claude-code first replays the
+				// dead background tasks as a zero-round-trip notification turn and
+				// writes its `result` BEFORE dequeuing this turn's prompt. That
+				// result is not ours — ending on it would drop the user's prompt
+				// and surface "empty response". Skip it (only before our own first
+				// result) and keep draining the same query for the real turn.
+				if (message.type === "result") {
+					if (
+						resume &&
+						!ownResultSeen &&
+						isStaleResumeNotificationResult(message)
+					) {
+						logger.info(
+							`[${requestId}] skipping stale resume notification result`,
+							{ resume: resume ?? null },
+						);
+						continue;
+					}
+					ownResultSeen = true;
 				}
 				// Surface fast-mode-not-active off the init event (carries
 				// `fast_mode_state` right after send), once — not the terminal
@@ -1154,7 +1184,10 @@ export class ClaudeSessionManager implements SessionManager {
 			Object.keys(options.claudeEnvironment).length > 0
 				? options.claudeEnvironment
 				: undefined;
-		const queryEnv = mergeQueryEnv(claudeEnv);
+		const queryEnv = mergeQueryEnv(
+			claudeConfigDirEnv(options?.claudeConfigDir),
+			claudeEnv,
+		);
 		const generateBranch = options?.generateBranch ?? true;
 		const q = query({
 			prompt: buildTitlePrompt(userMessage, branchRenamePrompt, generateBranch),
@@ -1249,7 +1282,10 @@ export class ClaudeSessionManager implements SessionManager {
 			additionalDirectories.length > 0
 				? { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" }
 				: undefined;
-		const queryEnv = mergeQueryEnv(additionalDirectoryEnv);
+		const queryEnv = mergeQueryEnv(
+			additionalDirectoryEnv,
+			claudeConfigDirEnv(params.claudeConfigDir),
+		);
 
 		let resolveDone: () => void = () => undefined;
 		const donePromise = new Promise<void>((resolve) => {
@@ -1425,7 +1461,7 @@ export class ClaudeSessionManager implements SessionManager {
 				yield* [];
 			})();
 
-		const queryEnv = mergeQueryEnv();
+		const queryEnv = mergeQueryEnv(claudeConfigDirEnv(params.claudeConfigDir));
 		const q = query({
 			prompt: promptIter,
 			options: {

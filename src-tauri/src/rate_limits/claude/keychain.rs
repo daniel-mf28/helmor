@@ -5,13 +5,14 @@
 //! read through the system binary attaches the user's "Always Allow"
 //! grant to a signature that never changes, instead of Helmor's
 //! (which changes on every upgrade and dev rebuild).
+//!
+//! Each Claude account (config dir) has its own keychain service — see
+//! `crate::claude_accounts::keychain_service_name` — so every reader here
+//! takes the account's `config_dir` (`None` = the default account).
 
 use anyhow::{anyhow, Result};
 
 use super::credentials::{now_ms, parse_credentials, sort_credentials, ClaudeOAuthCredentials};
-
-#[cfg(target_os = "macos")]
-pub(super) const CLAUDE_KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
 
 #[cfg(target_os = "macos")]
 const SECURITY_BINARY_PATH: &str = "/usr/bin/security";
@@ -39,8 +40,8 @@ const SECURITY_CLI_POLL_INTERVAL: std::time::Duration = std::time::Duration::fro
 
 /// Pick the best credential entry available across all matching
 /// keychain items.
-pub(super) fn load_best_credentials() -> Result<ClaudeOAuthCredentials> {
-    let mut credentials = load_keychain_credentials()?;
+pub(super) fn load_best_credentials(config_dir: Option<&str>) -> Result<ClaudeOAuthCredentials> {
+    let mut credentials = load_keychain_credentials(config_dir)?;
     let now = now_ms();
     sort_credentials(&mut credentials, now);
     credentials
@@ -51,10 +52,11 @@ pub(super) fn load_best_credentials() -> Result<ClaudeOAuthCredentials> {
 }
 
 #[cfg(target_os = "macos")]
-fn load_keychain_credentials() -> Result<Vec<ClaudeOAuthCredentials>> {
+fn load_keychain_credentials(config_dir: Option<&str>) -> Result<Vec<ClaudeOAuthCredentials>> {
+    let service = crate::claude_accounts::keychain_service_name(config_dir);
     let mut credentials = Vec::new();
-    for account in keychain_account_candidates().into_iter().take(3) {
-        let Some(data) = read_via_security_cli(CLAUDE_KEYCHAIN_SERVICE, Some(&account)) else {
+    for account in keychain_account_candidates(&service).into_iter().take(3) {
+        let Some(data) = read_via_security_cli(&service, Some(&account)) else {
             continue;
         };
         if let Some(credential) = parse_credentials(&data) {
@@ -65,20 +67,28 @@ fn load_keychain_credentials() -> Result<Vec<ClaudeOAuthCredentials>> {
 }
 
 /// Non-macOS: Claude Code persists OAuth credentials as a plaintext JSON file
-/// (`~/.claude/.credentials.json`) rather than an OS keychain, so we read and
-/// parse that directly. Returns an empty vec when the file is absent (the user
-/// hasn't run `claude login` yet) — identical "no credentials" semantics to the
-/// macOS keychain-miss path.
+/// (`<config dir>/.credentials.json`, `~/.claude` for the default account)
+/// rather than an OS keychain, so we read and parse that directly. Returns an
+/// empty vec when the file is absent (the user hasn't run `claude login` yet)
+/// — identical "no credentials" semantics to the macOS keychain-miss path.
 #[cfg(not(target_os = "macos"))]
-fn load_keychain_credentials() -> Result<Vec<ClaudeOAuthCredentials>> {
-    let Some(home) = claude_home_dir() else {
+fn load_keychain_credentials(config_dir: Option<&str>) -> Result<Vec<ClaudeOAuthCredentials>> {
+    let Some(path) = credentials_file_path(config_dir) else {
         return Ok(Vec::new());
     };
-    let path = home.join(".claude").join(".credentials.json");
     let Ok(raw) = std::fs::read(&path) else {
         return Ok(Vec::new());
     };
     Ok(parse_credentials(&raw).into_iter().collect())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn credentials_file_path(config_dir: Option<&str>) -> Option<std::path::PathBuf> {
+    if let Some(dir) = config_dir.and_then(crate::claude_accounts::expand_config_dir) {
+        return Some(dir.join(".credentials.json"));
+    }
+    let home = claude_home_dir()?;
+    Some(home.join(".claude").join(".credentials.json"))
 }
 
 /// User home directory for locating `~/.claude/.credentials.json`.
@@ -92,12 +102,12 @@ fn claude_home_dir() -> Option<std::path::PathBuf> {
 }
 
 #[cfg(target_os = "macos")]
-fn keychain_account_candidates() -> Vec<String> {
+fn keychain_account_candidates(service: &str) -> Vec<String> {
     // The metadata probe lists every account name actually present in
     // the keychain for our service — when it succeeds we know exactly
     // which accounts to try and don't need the env-var guesses or the
     // "Claude Code" fallback.
-    let probed = keychain_accounts_without_prompt();
+    let probed = keychain_accounts_without_prompt(service);
     if !probed.is_empty() {
         return probed;
     }
@@ -113,7 +123,7 @@ fn keychain_account_candidates() -> Vec<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn keychain_accounts_without_prompt() -> Vec<String> {
+fn keychain_accounts_without_prompt(service: &str) -> Vec<String> {
     use core_foundation::base::{CFTypeRef, TCFType};
     use core_foundation::string::CFString;
     use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
@@ -121,7 +131,7 @@ fn keychain_accounts_without_prompt() -> Vec<String> {
 
     let results = match ItemSearchOptions::new()
         .class(ItemClass::generic_password())
-        .service(CLAUDE_KEYCHAIN_SERVICE)
+        .service(service)
         .load_attributes(true)
         .skip_authenticated_items(true)
         .limit(Limit::All)

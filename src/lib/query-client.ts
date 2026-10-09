@@ -82,7 +82,11 @@ export const helmorQueryKeys = {
 	sessionPlanState: (sessionId: string) =>
 		["sessionPlanState", sessionId] as const,
 	codexRateLimits: ["codexRateLimits"] as const,
+	/** Prefix for every account's usage query — use it to invalidate all. */
 	claudeRateLimits: ["claudeRateLimits"] as const,
+	/** One account's usage (`null` = the default account). */
+	claudeRateLimitsFor: (claudeConfigDir: string | null = null) =>
+		["claudeRateLimits", claudeConfigDir ?? "default"] as const,
 	claudeRichContextUsage: (
 		sessionId: string,
 		providerSessionId: string | null,
@@ -122,6 +126,9 @@ export const helmorQueryKeys = {
 		workingDirectory: string | null,
 		workspaceId: string | null,
 		repoId: string | null,
+		// Claude account; keeps accounts from sharing a cached list. Kept
+		// last so index 3 stays the workspace id (see invalidation predicate).
+		claudeConfigDir: string | null = null,
 	) =>
 		[
 			"slashCommands",
@@ -129,6 +136,7 @@ export const helmorQueryKeys = {
 			workingDirectory ?? "",
 			workspaceId ?? "",
 			repoId ?? "",
+			claudeConfigDir ?? "",
 		] as const,
 	workspaceLinkedDirectories: (workspaceId: string) =>
 		["workspaceLinkedDirectories", workspaceId] as const,
@@ -560,10 +568,13 @@ export function codexRateLimitsQueryOptions(enabled: boolean) {
 		enabled,
 	});
 }
-export function claudeRateLimitsQueryOptions(enabled: boolean) {
+export function claudeRateLimitsQueryOptions(
+	enabled: boolean,
+	claudeConfigDir: string | null = null,
+) {
 	return queryOptions({
-		queryKey: helmorQueryKeys.claudeRateLimits,
-		queryFn: getClaudeRateLimits,
+		queryKey: helmorQueryKeys.claudeRateLimitsFor(claudeConfigDir),
+		queryFn: () => getClaudeRateLimits(claudeConfigDir),
 		staleTime: RATE_LIMITS_STALE_TIME,
 		refetchInterval: enabled ? RATE_LIMITS_STALE_TIME : false,
 		refetchOnWindowFocus: true,
@@ -758,6 +769,7 @@ export function slashCommandsQueryOptions(
 	workingDirectory: string | null,
 	repoId: string | null,
 	workspaceId: string | null,
+	claudeConfigDir: string | null = null,
 ) {
 	return queryOptions({
 		queryKey: helmorQueryKeys.slashCommands(
@@ -765,6 +777,7 @@ export function slashCommandsQueryOptions(
 			workingDirectory,
 			workspaceId,
 			repoId,
+			claudeConfigDir,
 		),
 		queryFn: () =>
 			listSlashCommands({
@@ -772,6 +785,7 @@ export function slashCommandsQueryOptions(
 				workingDirectory,
 				repoId,
 				workspaceId,
+				claudeConfigDir,
 			}),
 		// The backend owns slash-command caching and background refresh. Keep
 		// the frontend layer as a thin request shell only.

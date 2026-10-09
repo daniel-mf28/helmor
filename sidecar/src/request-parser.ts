@@ -104,6 +104,7 @@ export function parseSendMessageParams(
 			params.claudeThinkingDisplay,
 		),
 		claudeEnvironment: parseOptionalStringRecord(params, "claudeEnvironment"),
+		claudeConfigDir: optionalString(params, "claudeConfigDir"),
 		claudeSettings: parseOptionalStringRecord(params, "claudeSettings"),
 		codexProvider: parseCodexProvider(params, "codexProvider"),
 		additionalDirectories: parseOptionalStringArray(
@@ -187,6 +188,7 @@ export function parseListSlashCommandsParams(
 			params,
 			"additionalDirectories",
 		),
+		claudeConfigDir: optionalString(params, "claudeConfigDir"),
 	};
 }
 
@@ -198,6 +200,7 @@ export function parseGetContextUsageParams(
 		providerSessionId: optionalString(params, "providerSessionId") ?? null,
 		model: requireString(params, "model"),
 		cwd: optionalString(params, "cwd"),
+		claudeConfigDir: optionalString(params, "claudeConfigDir"),
 	};
 }
 

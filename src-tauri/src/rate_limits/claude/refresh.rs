@@ -4,8 +4,9 @@
 //! refresh it ourselves. Instead we spawn `claude auth status --json`
 //! and let the Claude CLI process do the refresh:
 //!
-//! - Claude CLI owns the keychain ACL for `Claude Code-credentials`,
-//!   so it can read and write that item without prompting.
+//! - Claude CLI owns the keychain ACL for its `Claude Code-credentials*`
+//!   item (one per account / `CLAUDE_CONFIG_DIR`), so it can read and write
+//!   that item without prompting.
 //! - Claude CLI talks to Anthropic with its own refresh_token, then
 //!   writes the new credentials back to the same keychain item.
 //! - Helmor then re-reads the keychain via `/usr/bin/security` (fast,
@@ -39,13 +40,17 @@ const DELEGATED_REFRESH_TIMEOUT: Duration = Duration::from_secs(8);
 /// Spawn `claude auth status --json` and let the CLI process refresh
 /// its own credentials. Returns Ok(()) on a clean exit, Err otherwise.
 /// The caller is expected to re-read the keychain after a successful
-/// return to pick up whatever the CLI wrote.
-pub(super) fn run_claude_auth_status() -> Result<()> {
+/// return to pick up whatever the CLI wrote. `config_dir` selects the
+/// account (`None` = default): it becomes `CLAUDE_CONFIG_DIR` for the child.
+pub(super) fn run_claude_auth_status(config_dir: Option<&str>) -> Result<()> {
     // `--json` keeps stdout machine-shaped even though we discard it;
     // any future CLI version that adds an interactive confirmation in
     // the human-readable mode would still produce parseable JSON here.
     let mut cmd = Command::new("claude");
     cmd.args(["auth", "status", "--json"]);
+    if let Some(dir) = config_dir.and_then(crate::claude_accounts::expand_config_dir) {
+        cmd.env("CLAUDE_CONFIG_DIR", dir);
+    }
     crate::platform::process::configure_background_cli(&mut cmd);
 
     let status = wait_with_timeout(&mut cmd, DELEGATED_REFRESH_TIMEOUT)

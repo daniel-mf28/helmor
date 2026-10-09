@@ -98,6 +98,43 @@ const EXAMPLES_SESSION_GET_MESSAGES: &str =
     # Truncate long messages to 300 chars from the end
     helmor session get-messages <session-id> --body-limit 300 --body-position end";
 
+const EXAMPLES_SESSION_NEW: &str =
+    "EXAMPLES (substitute `helmor` with the binary name in the Usage line above if it differs):
+    # New session on the account new chats start on (the last one picked)
+    helmor session new --workspace dohooo/hello/feature-x
+
+    # New session pinned to a Claude subscription account, by label
+    helmor session new --workspace <ws-ref> --claude-account Personal
+
+    # ...or by config folder path, or back to the default account
+    helmor session new --workspace <ws-ref> --claude-account ~/.claude-personal
+    helmor session new --workspace <ws-ref> --claude-account default
+
+    # See which labels are valid
+    helmor claude-accounts list";
+
+const EXAMPLES_SESSION_UPDATE_SETTINGS: &str =
+    "EXAMPLES (substitute `helmor` with the binary name in the Usage line above if it differs):
+    # Change model / effort / permission mode
+    helmor session update-settings --workspace <ws-ref> <session-id> --model opus --effort high
+
+    # Switch a chat to another Claude account (only while it has no messages)
+    helmor session update-settings --workspace <ws-ref> <session-id> --claude-account Personal
+
+    # A chat that already has messages keeps its account; start a new session instead
+    helmor session new --workspace <ws-ref> --claude-account Personal";
+
+const EXAMPLES_CLAUDE_ACCOUNTS_LIST: &str =
+    "EXAMPLES (substitute `helmor` with the binary name in the Usage line above if it differs):
+    # Default account plus the extra ones configured in Settings -> Providers
+    helmor claude-accounts list
+
+    # Machine-readable (label, configDir = null for the default account, lastUsed)
+    helmor claude-accounts list --json
+
+    # Use a label from the list when creating or sending
+    helmor session new --workspace <ws-ref> --claude-account Personal";
+
 const EXAMPLES_SEND: &str =
     "EXAMPLES (substitute `helmor` with the binary name in the Usage line above if it differs):
     # Send a prompt to a workspace's active session (sends immediately)
@@ -110,7 +147,13 @@ const EXAMPLES_SEND: &str =
     helmor send --workspace <ws-ref> --plan 'Sketch the refactor before changing anything.'
 
     # Read the prompt body from stdin (useful for long / piped prompts)
-    cat prompt.md | helmor send --workspace <ws-ref> -";
+    cat prompt.md | helmor send --workspace <ws-ref> -
+
+    # Run a (new or still-empty) session on a specific Claude account.
+    # Labels come from `helmor claude-accounts list`; a chat that already has
+    # messages keeps its account and the command fails if you ask for another.
+    helmor send --workspace <ws-ref> --claude-account Personal 'Review the diff.'
+    helmor send --workspace <ws-ref> --session <session-id> --claude-account ~/.claude-personal 'Hi.'";
 
 #[derive(Parser)]
 #[command(
@@ -172,6 +215,11 @@ pub enum Commands {
     },
     /// Send a prompt to an AI agent.
     Send(SendArgs),
+    /// Claude subscription accounts (one per CLAUDE_CONFIG_DIR).
+    ClaudeAccounts {
+        #[command(subcommand)]
+        action: ClaudeAccountsAction,
+    },
     /// List available AI models.
     Models {
         #[command(subcommand)]
@@ -591,6 +639,7 @@ pub enum SessionAction {
         session: String,
     },
     /// Create a new session.
+    #[command(after_help = EXAMPLES_SESSION_NEW)]
     New {
         #[arg(long)]
         workspace: String,
@@ -600,6 +649,11 @@ pub enum SessionAction {
         /// Optional action kind (create-pr, commit-and-push, etc.).
         #[arg(long)]
         action_kind: Option<String>,
+        /// Claude account for this session: a label from `claude-accounts
+        /// list` (case-insensitive), a config folder path, or `default`.
+        /// Omitted: the account new chats start on (the last one picked).
+        #[arg(long, value_name = "LABEL|PATH|default")]
+        claude_account: Option<String>,
     },
     /// Rename a session.
     Rename {
@@ -634,7 +688,8 @@ pub enum SessionAction {
         state: ReadState,
         session: String,
     },
-    /// Update per-session settings (model, effort, permission mode).
+    /// Update per-session settings (model, effort, permission mode, Claude account).
+    #[command(after_help = EXAMPLES_SESSION_UPDATE_SETTINGS)]
     UpdateSettings {
         #[arg(long)]
         workspace: String,
@@ -645,6 +700,11 @@ pub enum SessionAction {
         effort: Option<String>,
         #[arg(long)]
         permission_mode: Option<String>,
+        /// Claude account: a label from `claude-accounts list`
+        /// (case-insensitive), a config folder path, or `default`. Fails once
+        /// the session has messages (unless it already uses that account).
+        #[arg(long, value_name = "LABEL|PATH|default")]
+        claude_account: Option<String>,
     },
     /// Search sessions across all workspaces by title / message content.
     ///
@@ -787,8 +847,21 @@ pub struct SendArgs {
     /// Add a `/add-dir`-style linked directory (repeatable).
     #[arg(long = "linked-dir", value_name = "DIR")]
     pub linked_dirs: Vec<String>,
+    /// Claude account: a label from `claude-accounts list` (case-insensitive),
+    /// a config folder path, or `default`. Applies only when the target
+    /// session is new or has no messages yet; a session that already has
+    /// messages on a different account makes the command fail.
+    #[arg(long, value_name = "LABEL|PATH|default")]
+    pub claude_account: Option<String>,
     /// Prompt text. Use `-` to read from stdin.
     pub prompt: String,
+}
+
+#[derive(Subcommand)]
+pub enum ClaudeAccountsAction {
+    /// List the default Claude account plus the configured extra accounts.
+    #[command(after_help = EXAMPLES_CLAUDE_ACCOUNTS_LIST)]
+    List,
 }
 
 #[derive(Subcommand)]

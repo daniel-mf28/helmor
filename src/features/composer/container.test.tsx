@@ -922,6 +922,7 @@ describe("WorkspaceComposerContainer", () => {
 				workingDirectory: "/tmp/helmor",
 				repoId: "repo-1",
 				workspaceId: "workspace-1",
+				claudeConfigDir: null,
 			}),
 		);
 	});

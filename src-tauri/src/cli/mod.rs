@@ -8,10 +8,11 @@
 //!
 //! Each command domain gets its own sub-module (`repo`, `workspace`,
 //! `session`, `files`, `send`, `github`, `settings`, `scripts`, `system`,
-//! `data`). Shared helpers live in `output` (JSON
+//! `data`, `claude_accounts`). Shared helpers live in `output` (JSON
 //! / human formatting) and `refs` (UUID / name disambiguation).
 
 pub mod args;
+mod claude_accounts;
 mod data;
 mod files;
 mod github;
@@ -154,6 +155,7 @@ fn dispatch(cli: &Cli) -> Result<()> {
         C::Session { action } => session::dispatch(action, cli),
         C::Files { action } => files::dispatch(action, cli),
         C::Send(opts) => send::send(opts, cli),
+        C::ClaudeAccounts { action } => claude_accounts::dispatch(action, cli),
         C::Models { action } => send::dispatch_models(action, cli),
         C::Github { action } => github::dispatch(action, cli),
         C::Scripts { action } => scripts::dispatch(action, cli),

@@ -1,6 +1,11 @@
 use anyhow::Context;
 
-use crate::{agents::ActionKind, db, rate_limits::throttle::Throttle, settings};
+use crate::{
+    agents::ActionKind,
+    db,
+    rate_limits::throttle::{KeyedThrottle, Throttle},
+    settings,
+};
 
 use super::common::{run_blocking, CmdResult};
 
@@ -11,7 +16,9 @@ use super::common::{run_blocking, CmdResult};
 /// most once per provider per 30 s. Within the cooldown window the
 /// caller gets the cached body verbatim.
 const RATE_LIMITS_THROTTLE_SECONDS: i64 = 30;
-static CLAUDE_RATE_LIMITS_THROTTLE: Throttle = Throttle::new(RATE_LIMITS_THROTTLE_SECONDS);
+// Per account: each Claude subscription has its own upstream usage endpoint.
+static CLAUDE_RATE_LIMITS_THROTTLE: KeyedThrottle =
+    KeyedThrottle::new(RATE_LIMITS_THROTTLE_SECONDS);
 static CODEX_RATE_LIMITS_THROTTLE: Throttle = Throttle::new(RATE_LIMITS_THROTTLE_SECONDS);
 
 #[tauri::command]
@@ -91,24 +98,32 @@ pub async fn get_codex_rate_limits() -> CmdResult<Option<String>> {
     .await
 }
 
-/// Read the account-global Claude rate-limit snapshot. Each call
-/// attempts a live fetch and falls back to the cached body on failure.
-/// `app.claude_rate_limits` stores the raw Anthropic response — no
-/// shape mapping — so downstream parsing lives entirely in the frontend.
+/// Read the Claude rate-limit snapshot for one account (`config_dir`;
+/// `None` = the default account). Each call attempts a live fetch and falls
+/// back to that account's cached body on failure. The cache row stores the
+/// raw Anthropic response — no shape mapping — so downstream parsing lives
+/// entirely in the frontend.
 ///
 /// See `get_codex_rate_limits` for why this command does not publish a
 /// `*RateLimitsChanged` UI-sync event.
 #[tauri::command]
-pub async fn get_claude_rate_limits() -> CmdResult<Option<String>> {
-    run_blocking(|| {
-        let cached = settings::load_setting_value(settings::CLAUDE_RATE_LIMITS_KEY)?;
-        if !CLAUDE_RATE_LIMITS_THROTTLE.should_fetch() {
+pub async fn get_claude_rate_limits(
+    claude_config_dir: Option<String>,
+) -> CmdResult<Option<String>> {
+    run_blocking(move || {
+        let config_dir = claude_config_dir
+            .as_deref()
+            .filter(|dir| !dir.trim().is_empty());
+        let cache_key = crate::claude_accounts::rate_limits_setting_key(config_dir);
+        let cached = settings::load_setting_value(&cache_key)?;
+        // Throttle on the same per-account key as the cache row.
+        if !CLAUDE_RATE_LIMITS_THROTTLE.should_fetch(&cache_key) {
             return Ok(cached);
         }
-        CLAUDE_RATE_LIMITS_THROTTLE.record_attempt();
-        match crate::rate_limits::claude::fetch_claude_rate_limits() {
+        CLAUDE_RATE_LIMITS_THROTTLE.record_attempt(&cache_key);
+        match crate::rate_limits::claude::fetch_claude_rate_limits(config_dir) {
             Ok(body) => {
-                settings::upsert_setting_value(settings::CLAUDE_RATE_LIMITS_KEY, &body)?;
+                settings::upsert_setting_value(&cache_key, &body)?;
                 Ok(Some(body))
             }
             Err(error) => {

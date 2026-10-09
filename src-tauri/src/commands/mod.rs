@@ -1,3 +1,4 @@
+pub(crate) mod claude_account_commands;
 mod common;
 pub(crate) mod editor_commands;
 pub(crate) mod editors;

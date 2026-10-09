@@ -8,15 +8,22 @@ import type {
 } from "./api";
 import {
 	changeRequestRefetchInterval,
+	claudeRateLimitsQueryOptions,
 	createHelmorQueryClient,
 	forgeActionStatusRefetchInterval,
+	helmorQueryKeys,
 	PERSIST_META,
 	sessionThreadMessagesQueryOptions,
+	slashCommandsQueryOptions,
 	workspaceForgeRefetchInterval,
 } from "./query-client";
 
 const apiMocks = vi.hoisted(() => ({
 	loadSessionThreadMessages: vi.fn(async () => []),
+	listSlashCommands: vi.fn(async (_input: unknown) => ({ commands: [] })),
+	getClaudeRateLimits: vi.fn(
+		async (_claudeConfigDir?: string | null): Promise<string | null> => null,
+	),
 }));
 
 vi.mock("./api", async () => {
@@ -24,6 +31,8 @@ vi.mock("./api", async () => {
 	return {
 		...actual,
 		loadSessionThreadMessages: apiMocks.loadSessionThreadMessages,
+		listSlashCommands: apiMocks.listSlashCommands,
+		getClaudeRateLimits: apiMocks.getClaudeRateLimits,
 	};
 });
 
@@ -276,6 +285,60 @@ describe("sessionThreadMessagesQueryOptions — warm revisit stays IPC-free", ()
 	});
 });
 
+describe("claudeRateLimitsQueryOptions — one cache per Claude account", () => {
+	const PERSONAL = "/Users/daniel/.claude-personal";
+
+	afterEach(() => {
+		apiMocks.getClaudeRateLimits.mockClear();
+	});
+
+	it("keys the query by config dir, defaulting to the default account", () => {
+		expect(claudeRateLimitsQueryOptions(true).queryKey).toEqual(
+			helmorQueryKeys.claudeRateLimitsFor(null),
+		);
+		expect(claudeRateLimitsQueryOptions(true, null).queryKey).toEqual(
+			claudeRateLimitsQueryOptions(true).queryKey,
+		);
+		const personal = claudeRateLimitsQueryOptions(true, PERSONAL).queryKey;
+		expect(personal).toContain(PERSONAL);
+		expect(personal).not.toEqual(claudeRateLimitsQueryOptions(true).queryKey);
+	});
+
+	it("keeps every account under the shared invalidation prefix", () => {
+		const prefix = helmorQueryKeys.claudeRateLimits;
+		expect(helmorQueryKeys.claudeRateLimitsFor(null).slice(0, 1)).toEqual(
+			prefix,
+		);
+		expect(helmorQueryKeys.claudeRateLimitsFor(PERSONAL).slice(0, 1)).toEqual(
+			prefix,
+		);
+	});
+
+	it("fetches and caches each account separately", async () => {
+		apiMocks.getClaudeRateLimits.mockImplementation(async (dir) =>
+			dir ? "personal" : "work",
+		);
+		const client = createHelmorQueryClient();
+
+		expect(await client.fetchQuery(claudeRateLimitsQueryOptions(true))).toBe(
+			"work",
+		);
+		expect(
+			await client.fetchQuery(claudeRateLimitsQueryOptions(true, PERSONAL)),
+		).toBe("personal");
+		expect(apiMocks.getClaudeRateLimits).toHaveBeenNthCalledWith(1, null);
+		expect(apiMocks.getClaudeRateLimits).toHaveBeenNthCalledWith(2, PERSONAL);
+		expect(client.getQueryData(helmorQueryKeys.claudeRateLimitsFor(null))).toBe(
+			"work",
+		);
+		expect(
+			client.getQueryData(helmorQueryKeys.claudeRateLimitsFor(PERSONAL)),
+		).toBe("personal");
+
+		client.clear();
+	});
+});
+
 describe("createHelmorQueryClient dehydrate filter", () => {
 	it("only persists queries that opt in via meta.persist", () => {
 		const client = createHelmorQueryClient();
@@ -334,5 +397,58 @@ describe("createHelmorQueryClient dehydrate filter", () => {
 
 		const dumped = dehydrate(client);
 		expect(dumped.queries).toHaveLength(0);
+	});
+});
+
+describe("slash command query keys", () => {
+	it("gives each Claude account its own key", () => {
+		const args = ["claude", "/repo", "repo-1", "ws-1"] as const;
+		const defaultKey = slashCommandsQueryOptions(...args).queryKey;
+		const workKey = slashCommandsQueryOptions(
+			...args,
+			"/Users/me/.claude-work",
+		).queryKey;
+		const personalKey = slashCommandsQueryOptions(
+			...args,
+			"/Users/me/.claude-personal",
+		).queryKey;
+		expect(workKey).not.toEqual(defaultKey);
+		expect(workKey).not.toEqual(personalKey);
+		// Omitted and null both mean the default account.
+		expect(slashCommandsQueryOptions(...args, null).queryKey).toEqual(
+			defaultKey,
+		);
+	});
+
+	it("keeps the workspace id at index 3 for invalidation", () => {
+		const key = helmorQueryKeys.slashCommands(
+			"claude",
+			"/repo",
+			"ws-1",
+			"repo-1",
+			"/Users/me/.claude-work",
+		);
+		expect(key[0]).toBe("slashCommands");
+		expect(key[3]).toBe("ws-1");
+	});
+
+	it("sends the account to the backend", async () => {
+		apiMocks.listSlashCommands.mockClear();
+		const options = slashCommandsQueryOptions(
+			"claude",
+			"/repo",
+			"repo-1",
+			"ws-1",
+			"/Users/me/.claude-work",
+		);
+		const queryFn = options.queryFn as () => Promise<unknown>;
+		await queryFn();
+		expect(apiMocks.listSlashCommands).toHaveBeenCalledWith({
+			provider: "claude",
+			workingDirectory: "/repo",
+			repoId: "repo-1",
+			workspaceId: "ws-1",
+			claudeConfigDir: "/Users/me/.claude-work",
+		});
 	});
 });

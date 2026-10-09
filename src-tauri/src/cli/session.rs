@@ -5,14 +5,16 @@ use rusqlite::params;
 use serde_json::Value;
 
 use crate::agents::ActionKind;
+use crate::claude_accounts::accounts::{build_accounts, label_for_config_dir, load_accounts};
+use crate::claude_accounts::session::assign_on_write_conn;
 use crate::pipeline::MessagePipeline;
 use crate::service;
 use crate::sessions;
 use crate::ui_sync::UiMutationEvent;
 
 use super::args::{Cli, ReadState, SessionAction, SessionBodyPosition, SessionWindowPosition};
-use super::output;
 use super::refs;
+use super::{claude_accounts, output};
 use super::{notify_ui_event, notify_ui_events};
 
 pub fn dispatch(action: &SessionAction, cli: &Cli) -> Result<()> {
@@ -24,7 +26,14 @@ pub fn dispatch(action: &SessionAction, cli: &Cli) -> Result<()> {
             workspace,
             plan,
             action_kind,
-        } => new(workspace, *plan, action_kind.as_deref(), cli),
+            claude_account,
+        } => new(
+            workspace,
+            *plan,
+            action_kind.as_deref(),
+            claude_account.as_deref(),
+            cli,
+        ),
         SessionAction::Rename {
             workspace,
             session,
@@ -44,12 +53,16 @@ pub fn dispatch(action: &SessionAction, cli: &Cli) -> Result<()> {
             model,
             effort,
             permission_mode,
+            claude_account,
         } => update_settings(
             workspace,
             session,
-            model.as_deref(),
-            effort.as_deref(),
-            permission_mode.as_deref(),
+            UpdateSettingsArgs {
+                model: model.as_deref(),
+                effort: effort.as_deref(),
+                permission_mode: permission_mode.as_deref(),
+                claude_account: claude_account.as_deref(),
+            },
             cli,
         ),
         SessionAction::Search {
@@ -79,15 +92,49 @@ pub fn dispatch(action: &SessionAction, cli: &Cli) -> Result<()> {
 fn list(workspace_ref: &str, cli: &Cli) -> Result<()> {
     let workspace_id = service::resolve_workspace_ref(workspace_ref)?;
     let sessions = service::list_workspace_sessions(&workspace_id)?;
-    output::print(cli, &sessions, |items| {
+    let accounts = load_accounts().unwrap_or_else(|_| build_accounts(None, None));
+    // The account column is only informative once there is a choice (extra
+    // accounts configured) or a session is pinned off the default.
+    let show_account = accounts.len() > 1 || sessions.iter().any(|s| s.claude_config_dir.is_some());
+    // JSON keeps every existing field and adds `claudeAccount` (the label)
+    // next to the raw `claudeConfigDir`.
+    let items = sessions
+        .iter()
+        .map(|s| {
+            let label = label_for_config_dir(&accounts, s.claude_config_dir.as_deref());
+            let mut value = serde_json::to_value(s)?;
+            if let Some(object) = value.as_object_mut() {
+                object.insert("claudeAccount".to_string(), Value::String(label));
+            }
+            Ok(value)
+        })
+        .collect::<Result<Vec<Value>>>()?;
+    output::print(cli, &items, |items| {
         if items.is_empty() {
             "No sessions.".to_string()
         } else {
             items
                 .iter()
                 .map(|s| {
-                    let active = if s.active { " *" } else { "" };
-                    format!("{}\t{}\t{}{}", s.id, s.status, s.title, active)
+                    let field = |key: &str| s.get(key).and_then(Value::as_str).unwrap_or("");
+                    let active = if s.get("active").and_then(Value::as_bool).unwrap_or(false) {
+                        " *"
+                    } else {
+                        ""
+                    };
+                    let account = if show_account {
+                        format!("\t[{}]", field("claudeAccount"))
+                    } else {
+                        String::new()
+                    };
+                    format!(
+                        "{}\t{}\t{}{}{}",
+                        field("id"),
+                        field("status"),
+                        field("title"),
+                        active,
+                        account
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -172,7 +219,15 @@ fn compact_json(value: &Value) -> String {
     serde_json::to_string(value).unwrap_or_default()
 }
 
-fn new(workspace_ref: &str, plan: bool, action_kind: Option<&str>, cli: &Cli) -> Result<()> {
+fn new(
+    workspace_ref: &str,
+    plan: bool,
+    action_kind: Option<&str>,
+    claude_account: Option<&str>,
+    cli: &Cli,
+) -> Result<()> {
+    // Resolve the account first so an unknown label creates nothing.
+    let claude_config_dir = claude_accounts::resolve_flag(claude_account)?;
     let workspace_id = service::resolve_workspace_ref(workspace_ref)?;
     let kind = match action_kind {
         Some(raw) => Some(parse_action_kind(raw)?),
@@ -185,6 +240,11 @@ fn new(workspace_ref: &str, plan: bool, action_kind: Option<&str>, cli: &Cli) ->
         permission_mode,
         crate::models::sessions::CreateSessionOverrides::default(),
     )?;
+    if let Some(desired) = claude_config_dir {
+        // The session was just created (no messages), so this cannot be
+        // refused. The app's last-used account is left alone on purpose.
+        assign_on_write_conn(&response.session_id, desired.as_deref())?;
+    }
     notify_ui_event(UiMutationEvent::SessionListChanged {
         workspace_id: workspace_id.clone(),
     });
@@ -250,27 +310,38 @@ fn mark(workspace_ref: &str, state: ReadState, session: &str, cli: &Cli) -> Resu
     Ok(())
 }
 
+struct UpdateSettingsArgs<'a> {
+    model: Option<&'a str>,
+    effort: Option<&'a str>,
+    permission_mode: Option<&'a str>,
+    claude_account: Option<&'a str>,
+}
+
 fn update_settings(
     workspace_ref: &str,
     session: &str,
-    model: Option<&str>,
-    effort: Option<&str>,
-    permission_mode: Option<&str>,
+    args: UpdateSettingsArgs<'_>,
     cli: &Cli,
 ) -> Result<()> {
     let workspace_id = service::resolve_workspace_ref(workspace_ref)?;
     let session_id = refs::resolve_session_ref(&workspace_id, session)?;
-    let conn = crate::models::db::write_conn()?;
-    conn.execute(
-        r#"
-        UPDATE sessions SET
-          model = COALESCE(?2, model),
-          effort_level = COALESCE(?3, effort_level),
-          permission_mode = COALESCE(?4, permission_mode)
-        WHERE id = ?1
-        "#,
-        params![session_id, model, effort, permission_mode],
-    )?;
+    // Account first: if it is refused (locked chat) nothing else is changed.
+    if let Some(desired) = claude_accounts::resolve_flag(args.claude_account)? {
+        assign_on_write_conn(&session_id, desired.as_deref())?;
+    }
+    {
+        let conn = crate::models::db::write_conn()?;
+        conn.execute(
+            r#"
+            UPDATE sessions SET
+              model = COALESCE(?2, model),
+              effort_level = COALESCE(?3, effort_level),
+              permission_mode = COALESCE(?4, permission_mode)
+            WHERE id = ?1
+            "#,
+            params![session_id, args.model, args.effort, args.permission_mode],
+        )?;
+    }
     notify_ui_event(UiMutationEvent::SessionListChanged { workspace_id });
     output::print_ok(cli, "Session settings updated");
     Ok(())

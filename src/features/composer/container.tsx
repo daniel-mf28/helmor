@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { ActionRow, ActionRowButton } from "@/components/action-row";
 import { ShimmerText } from "@/components/ui/shimmer-text";
 import { ShineBorder } from "@/components/ui/shine-border";
+import { ClaudeAccountPicker } from "@/features/claude-accounts/account-picker";
+import { useComposerClaudeAccount } from "@/features/claude-accounts/use-composer-claude-account";
 import type { PendingPermission } from "@/features/conversation/hooks/use-streaming";
 import type { PendingUserInput } from "@/features/conversation/pending-user-input";
 import {
@@ -584,6 +586,10 @@ export const WorkspaceComposerContainer = memo(
 			effectiveModel?.id ?? selectedRef?.modelId ?? null;
 		const provider =
 			effectiveModel?.provider ?? currentSession?.agentType ?? "claude";
+		const claudeAccount = useComposerClaudeAccount({
+			session: currentSession,
+			model: effectiveModel,
+		});
 		// "User-configured" = the session row carries an explicit model. Fresh
 		// sessions get `model = NULL` *unless* an inspector helper (Create
 		// PR/MR, Review) pinned one at create time — in which case
@@ -774,6 +780,9 @@ export const WorkspaceComposerContainer = memo(
 				workingDirectory,
 				effectiveRepoId,
 				displayedWorkspaceId,
+				// The chat's account (the composer's pick on the start page);
+				// only Claude subscription turns use one.
+				slashProvider === "claude" ? claudeAccount.usageConfigDir : null,
 			),
 			enabled: Boolean(workingDirectory) || Boolean(effectiveRepoId),
 		});
@@ -1317,6 +1326,19 @@ export const WorkspaceComposerContainer = memo(
 						placeholder={placeholder}
 						providerSessionId={currentSession?.providerSessionId ?? null}
 						agentType={effectiveModel?.provider ?? "claude"}
+						claudeConfigDir={claudeAccount.usageConfigDir}
+						claudeAccountLabel={claudeAccount.usageLabel}
+						claudeAccountPicker={
+							claudeAccount.showPicker ? (
+								<ClaudeAccountPicker
+									accounts={claudeAccount.accounts}
+									selectedConfigDir={claudeAccount.selectedConfigDir}
+									locked={claudeAccount.locked}
+									disabled={composerUnavailable}
+									onSelect={claudeAccount.selectAccount}
+								/>
+							) : null
+						}
 						focusShortcut={focusShortcut}
 						togglePlanShortcut={togglePlanShortcut}
 						toggleTerminalShortcut={toggleTerminalShortcut}

@@ -11,6 +11,7 @@ import {
 } from "react";
 import { QuitConfirmDialog } from "@/components/quit-confirm-dialog";
 import { SplashScreen } from "@/components/splash-screen";
+import { ClaudeAccountsSeeder } from "@/features/claude-accounts/seeder";
 import type { SettingsSection } from "@/features/settings";
 import {
 	loadSettingsModule,
@@ -102,6 +103,7 @@ export function AppProviders({
 	);
 	return (
 		<SettingsContext.Provider value={settingsContextValue}>
+			<ClaudeAccountsSeeder />
 			<PersistQueryClientProvider
 				client={queryClient}
 				persistOptions={{
