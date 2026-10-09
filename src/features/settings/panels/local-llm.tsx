@@ -55,6 +55,7 @@ import {
 	subscribeLocalLlmDownloads,
 } from "@/lib/api";
 import { I18nText, useI18n, useLocalizedNode } from "@/lib/i18n";
+import { helmorQueryKeys } from "@/lib/query-client";
 import type { AppSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import { SettingsReleaseBadge } from "../components/release-marker";
@@ -142,6 +143,19 @@ export function LocalLlmPanel({
 	const invalidateStatus = () =>
 		queryClient.invalidateQueries({ queryKey: LOCAL_LLM_STATUS_KEY });
 
+	// The model picker's "On this Mac" section exists only while Local LLM
+	// is on with a model selected, so refresh the picker whenever either
+	// changes instead of waiting for a restart.
+	const localLlmEnabled = settings.localLlm.enabled;
+	const localLlmModel = settings.localLlm.model;
+	useEffect(() => {
+		void localLlmEnabled;
+		void localLlmModel;
+		void queryClient.invalidateQueries({
+			queryKey: helmorQueryKeys.agentModelSections,
+		});
+	}, [queryClient, localLlmEnabled, localLlmModel]);
+
 	// `hasModel` is the precondition for "toggling on actually does
 	// something". A non-empty model setting means either a curated
 	// entry was activated, or the user typed something into the
@@ -173,7 +187,13 @@ export function LocalLlmPanel({
 				invalidateStatus();
 			});
 		},
-		onSettled: invalidateStatus,
+		onSettled: () => {
+			invalidateStatus();
+			// The toggle is saved by now; refresh the picker's local section.
+			void queryClient.invalidateQueries({
+				queryKey: helmorQueryKeys.agentModelSections,
+			});
+		},
 	});
 
 	const pending = toggleMutation.isPending;

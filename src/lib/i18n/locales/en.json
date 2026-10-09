@@ -1019,7 +1019,7 @@
 	"plusBatchPerformanceFixesAcrossApp": "Plus a batch of performance fixes across the app.",
 	"point": "Point this at a",
 	"powerUpHelmor": "Power up Helmor",
-	"powersSessionTitleBranchNameGeneration": "Powers session title / branch name generation — runs entirely on your device.",
+	"powersSessionTitleBranchNameGeneration": "Runs your chosen model entirely on your device: pick it under \"On this Mac\" in the model picker to chat and code offline. Also names sessions and branches.",
 	"prCreated": "PR Created",
 	"preferences": "Preferences",
 	"prefixAddedBranchNamesWhenCreating": "Prefix added to branch names when creating new workspaces in this repo.",
