@@ -1,5 +1,5 @@
 // Thin, key-based i18n API backed by react-i18next.
-// Call sites pass catalog KEYS (see locales/en.json, zh-CN.json), never raw English.
+// Call sites pass catalog KEYS (see locales/en.json), never raw English.
 import { type ReactNode, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n, setAppLanguage } from "./runtime";

@@ -15,7 +15,6 @@ import { useI18n } from "@/lib/i18n";
 import { describeUnknownError } from "@/lib/workspace-helpers";
 import { buildAgentLoginItems } from "./agent-login-state";
 import { IntroPreview } from "./components/intro-preview";
-import { OnboardingLanguageMenu } from "./components/language-menu";
 import { AgentLoginStep } from "./steps/agent-login-step";
 import { RepoImportStep } from "./steps/repo-import-step";
 import { RepositoryCliStep } from "./steps/repository-cli-step";
@@ -232,9 +231,6 @@ export function AppOnboarding({ onComplete }: AppOnboardingProps) {
 			>
 				<TrafficLightSpacer side="left" width={94} />
 				<div data-tauri-drag-region className="h-full flex-1" />
-				<div className="flex h-full items-center pr-3">
-					<OnboardingLanguageMenu />
-				</div>
 				<TrafficLightSpacer side="right" width={140} />
 			</div>
 

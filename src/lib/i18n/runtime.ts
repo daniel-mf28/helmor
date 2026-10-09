@@ -1,6 +1,5 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
-import { getPreloadedLanguage } from "@/lib/settings";
 import { defaultNS, resources } from "./resources";
 import type { AppLanguage } from "./types";
 
@@ -8,7 +7,7 @@ if (!i18n.isInitialized) {
 	void i18n.use(initReactI18next).init({
 		resources,
 		defaultNS,
-		lng: getPreloadedLanguage(),
+		lng: "en",
 		fallbackLng: "en",
 		// Flat keys: ":" / "." appear inside keys/values, not as separators.
 		nsSeparator: false,

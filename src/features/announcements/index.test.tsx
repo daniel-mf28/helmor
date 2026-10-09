@@ -16,8 +16,7 @@ describe("ReleaseAnnouncementToastHost", () => {
 		setAppLanguage("en");
 	});
 
-	it("renders the Chinese release title with the version in sentence order", async () => {
-		setAppLanguage("zh-CN");
+	it("renders the release title with the version", async () => {
 		window.localStorage.setItem(
 			LAST_SEEN_INSTALL_VERSION_STORAGE_KEY,
 			"0.40.0",
@@ -32,7 +31,7 @@ describe("ReleaseAnnouncementToastHost", () => {
 		);
 
 		expect(
-			await screen.findByText(`v${packageJson.version}版本新增`),
+			await screen.findByText(`New in v${packageJson.version}`),
 		).toBeInTheDocument();
 	});
 });
