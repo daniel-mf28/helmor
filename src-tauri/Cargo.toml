@@ -20,19 +20,15 @@ dotenvy = "0.15"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-aes = "0.8"
 anyhow = "1"
 # Canonicalize without Windows `\\?\` verbatim prefixes so repo identity /
 # dedup keys stay consistent between store and lookup. On Unix this is a thin
 # wrapper around `std::fs::canonicalize`, so output is unchanged there.
 dunce = "1"
 base64 = "0.22.1"
-cbc = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
-hmac = "0.12"
-pbkdf2 = { version = "0.12", default-features = false }
 rand = "0.10.0"
 reqwest = { version = "0.12", default-features = false, features = [
     "blocking",
@@ -40,17 +36,6 @@ reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "stream",
 ] }
-rusty-leveldb = "3"
-sha1 = "0.10"
-# `wreq` (and the `wreq-util` companion) is a hard fork of `reqwest`
-# with built-in browser TLS / HTTP-2 fingerprint emulation. We use it
-# only for Slack: stock reqwest's rustls ClientHello bytes do not
-# match any real browser, and Slack's Cloudflare-fronted edge
-# classifies them as "spoofed_user_agent" / "unexpected_scraping" and
-# replies `invalid_auth` BEFORE inspecting the token. See
-# `korotovsky/slack-mcp-server#86`.
-wreq = { version = "5", default-features = false, features = ["json"] }
-wreq-util = "2"
 rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 r2d2 = "0.8"
 r2d2_sqlite = "0.24"
@@ -159,15 +144,6 @@ incremental = false          # required for sccache compatibility
 debug = false       # deps don't need debug info at all
 opt-level = 0
 codegen-units = 256
-
-# boring-sys2 vendors and compiles BoringSSL (C/C++) via cmake. cmake-rs picks
-# the CMake build type from OPT_LEVEL: at 0 it builds Debug, which on MSVC uses
-# the debug CRT (/MDd) and pulls iterator-debug symbols like `__imp__CrtDbgReport`.
-# Rust's *-windows-msvc target always links the release CRT (msvcrt), so a debug
-# BoringSSL fails to link (LNK2019). Bumping opt-level off 0 makes cmake build a
-# Release-type BoringSSL (/MD), matching Rust's CRT. Only affects the C/C++ glue.
-[profile.dev.package.boring-sys2]
-opt-level = 1
 
 [profile.dev.build-override]
 debug = false       # build scripts & proc-macros: fastest possible

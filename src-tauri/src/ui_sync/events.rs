@@ -106,16 +106,6 @@ pub enum UiMutationEvent {
         workspace_id: String,
         prompt: String,
     },
-    /// Connected-Slack-workspace set changed (Connect / Disconnect).
-    /// Frontends invalidate the workspace list query and the inbox
-    /// queries for any affected team.
-    SlackWorkspacesChanged,
-    /// A Slack workspace's stored credentials no longer authenticate
-    /// (xoxc rotation, account logout, admin revoke). The frontend
-    /// surfaces a "Reconnect" affordance for this workspace.
-    SlackTokenInvalidated {
-        team_id: String,
-    },
     /// Fast mode was requested but didn't engage; the composer flips its
     /// fast-mode toggle off for this session.
     FastModeUnavailable {
@@ -224,9 +214,6 @@ mod tests {
                 session_id: "s".into(),
                 workspace_id: "w".into(),
                 prompt: "hi".into(),
-            },
-            UiMutationEvent::SlackTokenInvalidated {
-                team_id: "T1".into(),
             },
             UiMutationEvent::FastModeUnavailable {
                 session_id: "s".into(),

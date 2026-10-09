@@ -12,7 +12,6 @@ import {
 	type ForgeAccount,
 	type ForgeActionStatus,
 	type ForgeDetection,
-	type ForgeProvider,
 	fetchSessionThreadMessagesPage,
 	getClaudeRateLimits,
 	getCodexRateLimits,
@@ -24,8 +23,6 @@ import {
 	getWorkspaceForge,
 	listActiveStreams,
 	listForgeAccounts,
-	listForgeLabels,
-	listInboxKindLabels,
 	listRepositories,
 	listSlashCommands,
 	listWorkspaceCandidateDirectories,
@@ -113,19 +110,6 @@ export const helmorQueryKeys = {
 	forgeAccountsAll: ["forgeAccounts"] as const,
 	workspaceAccountProfile: (workspaceId: string) =>
 		["workspaceAccountProfile", workspaceId] as const,
-	inboxItemDetail: (
-		provider: string,
-		login: string,
-		source: string,
-		externalId: string,
-	) => ["inboxItemDetail", provider, login, source, externalId] as const,
-	forgeLabels: (
-		provider: string,
-		host: string,
-		login: string,
-		repos: string[],
-	) => ["forgeLabels", provider, host, login, ...repos] as const,
-	inboxKindLabels: (provider: string) => ["inboxKindLabels", provider] as const,
 	workspaceGitActionStatus: (workspaceId: string) =>
 		["workspaceGitActionStatus", workspaceId] as const,
 	workspaceForgeActionStatus: (workspaceId: string) =>
@@ -154,13 +138,6 @@ export const helmorQueryKeys = {
 	workspaceCandidateDirectories: (excludeWorkspaceId: string | null) =>
 		["workspaceCandidateDirectories", excludeWorkspaceId ?? ""] as const,
 	activeStreams: ["activeStreams"] as const,
-	slackWorkspaces: ["slackWorkspaces"] as const,
-	slackInbox: (teamId: string) => ["slackInbox", teamId] as const,
-	slackSearch: (teamId: string, query: string, sort: string) =>
-		["slackSearch", teamId, query, sort] as const,
-	slackThread: (teamId: string, channelId: string, anchorTs: string) =>
-		["slackThread", teamId, channelId, anchorTs] as const,
-	slackEmojiMap: (teamId: string) => ["slackEmojiMap", teamId] as const,
 };
 
 /** Persistence is opt-in per `queryOptions` via `meta: { persist: true }`.
@@ -358,52 +335,6 @@ export function activeStreamsQueryOptions() {
 		initialData: [],
 		initialDataUpdatedAt: 0,
 		staleTime: 0,
-	});
-}
-
-/** Repo labels for the Settings → Context multi-select. Forge-aware:
- *  GitHub hits `gh api /repos/.../labels`; GitLab hits `glab api
- *  projects/.../labels`. Cached for 10 min — labels rarely churn. */
-export function forgeLabelsQueryOptions(args: {
-	provider: ForgeProvider;
-	login: string;
-	host: string | null;
-	repos: string[];
-}) {
-	const sortedRepos = [...args.repos].sort();
-	const host = args.host ?? "";
-	return queryOptions({
-		queryKey: helmorQueryKeys.forgeLabels(
-			args.provider,
-			host,
-			args.login,
-			sortedRepos,
-		),
-		queryFn: () =>
-			listForgeLabels({
-				provider: args.provider,
-				login: args.login,
-				host: args.host,
-				repos: sortedRepos,
-			}),
-		initialData: [],
-		initialDataUpdatedAt: 0,
-		staleTime: 10 * 60_000,
-		gcTime: 24 * 60 * 60_000,
-	});
-}
-
-/// Inbox kind labels are static per provider (a given build's GitHub
-/// labels never change at runtime), so the cache is effectively
-/// permanent. We still go through the backend so frontend code is the
-/// pure consumer — every "PR" / "MR" / "Pull requests" / "Merge
-/// requests" string is owned by the Forge layer.
-export function inboxKindLabelsQueryOptions(provider: ForgeProvider) {
-	return queryOptions({
-		queryKey: helmorQueryKeys.inboxKindLabels(provider),
-		queryFn: () => listInboxKindLabels(provider),
-		staleTime: Number.POSITIVE_INFINITY,
-		gcTime: Number.POSITIVE_INFINITY,
 	});
 }
 

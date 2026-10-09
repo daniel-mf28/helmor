@@ -23,7 +23,6 @@ a text box; it does considerably more.
 | **Plan mode** (⇧Tab) | Agent proposes a plan instead of editing files; approve to implement |
 | **Fast mode** | Faster, lighter turns on supported models |
 | **Terminal mode** (⌘⇧T) | Send the prompt to the agent's own TUI in a built-in terminal |
-| **Context panel** (⌘⌥C) | Browse issues, PRs, and notifications from connected sources and drop them into the prompt |
 | **Context usage ring** | How full the model's context window is; hover for details |
 
 ## Sending

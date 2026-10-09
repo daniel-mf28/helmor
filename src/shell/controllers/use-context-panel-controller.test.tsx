@@ -1,58 +1,32 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { type AppSettings, DEFAULT_SETTINGS } from "@/lib/settings";
+import { act, renderHook } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { useContextPanelController } from "./use-context-panel-controller";
 import type { ShellViewMode } from "./use-selection-controller";
 
-function renderController(
-	overrides: {
-		appSettings?: Partial<AppSettings>;
-		viewMode?: ShellViewMode;
-		updateSettings?: (patch: Partial<AppSettings>) => void;
-	} = {},
-) {
-	const updateSettings = overrides.updateSettings ?? vi.fn();
-	const viewMode = overrides.viewMode ?? "conversation";
-	return {
-		updateSettings,
-		...renderHook(() =>
-			useContextPanelController({
-				appSettings: {
-					...DEFAULT_SETTINGS,
-					...overrides.appSettings,
-				},
-				areSettingsLoaded: true,
-				updateSettings,
-				getViewMode: () => viewMode,
-			}),
-		),
-	};
+function renderController(viewMode: ShellViewMode = "conversation") {
+	return renderHook(() =>
+		useContextPanelController({
+			getViewMode: () => viewMode,
+		}),
+	);
 }
 
 describe("useContextPanelController", () => {
-	it("keeps a manually collapsed workspace context sidebar collapsed on workspace sync", async () => {
-		const { result } = renderController({
-			appSettings: {
-				lastSurface: "workspace",
-				workspaceRightSidebarMode: "context",
-			},
-		});
+	it("starts with the inspector expanded and toggles collapse", () => {
+		const { result } = renderController();
 
-		await waitFor(() => {
-			expect(result.current.state.contextPanelOpen).toBe(true);
-		});
+		expect(result.current.state.inspectorCollapsed).toBe(false);
+		expect(result.current.state.rightSidebarAvailable).toBe(true);
 
 		act(() => {
 			result.current.actions.setInspectorCollapsed(true);
 		});
-		expect(result.current.state.contextPanelOpen).toBe(false);
-
-		act(() => {
-			result.current.actions.syncToWorkspaceMode();
-		});
-
-		expect(result.current.state.rightSidebarMode).toBe("context");
 		expect(result.current.state.inspectorCollapsed).toBe(true);
-		expect(result.current.state.contextPanelOpen).toBe(false);
+	});
+
+	it("hides the right sidebar on the start page", () => {
+		const { result } = renderController("start");
+
+		expect(result.current.state.rightSidebarAvailable).toBe(false);
 	});
 });

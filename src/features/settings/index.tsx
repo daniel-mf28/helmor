@@ -69,7 +69,6 @@ import { AppearancePanel } from "./panels/appearance";
 import { ArchiveCleanupPanel } from "./panels/archive-cleanup";
 import { ComponentsPanel } from "./panels/components";
 import { DevToolsPanel } from "./panels/dev-tools";
-import { InboxSettingsPanel } from "./panels/inbox";
 import { LocalLlmPanel } from "./panels/local-llm";
 import { ProvidersPanel } from "./panels/providers";
 import { RepositorySettingsPanel } from "./panels/repository-settings";
@@ -81,9 +80,9 @@ const NOTIFICATION_SOUND_OPTIONS = VALID_NOTIFICATION_SOUNDS.map((value) => ({
 	label: NOTIFICATION_SOUND_LABELS[value],
 })) satisfies readonly { value: NotificationSound; label: string }[];
 
-export type { ContextProviderTab, SettingsSection } from "./types";
+export type { SettingsSection } from "./types";
 
-import type { ContextProviderTab, SettingsSection } from "./types";
+import type { SettingsSection } from "./types";
 
 /// Display labels for settings sections in the sidebar / dialog title.
 /// Most match the section key with a leading capital, but a few names
@@ -91,7 +90,6 @@ import type { ContextProviderTab, SettingsSection } from "./types";
 const SECTION_LABEL_OVERRIDES: Partial<Record<SettingsSection, string>> = {
 	model: "models",
 	account: "accounts",
-	inbox: "contexts",
 };
 
 /// Optional muted-caption next to the title in the dialog header.
@@ -99,7 +97,6 @@ const SECTION_LABEL_OVERRIDES: Partial<Record<SettingsSection, string>> = {
 /// row (which otherwise duplicates the section name).
 const SECTION_TITLE_CAPTIONS: Partial<Record<SettingsSection, string>> = {
 	account: "syncedLocalGhGlabCli",
-	inbox: "pickWhichItemsEachConnectedAccount",
 };
 
 function sidebarSectionLabel(
@@ -129,14 +126,12 @@ export const SettingsDialog = memo(function SettingsDialog({
 	workspaceId,
 	workspaceRepoId,
 	initialSection,
-	initialInboxProvider,
 	onClose,
 }: {
 	open: boolean;
 	workspaceId: string | null;
 	workspaceRepoId: string | null;
 	initialSection?: SettingsSection;
-	initialInboxProvider?: ContextProviderTab;
 	onClose: () => void;
 }) {
 	const { settings, updateSettings } = useSettings();
@@ -181,7 +176,6 @@ export const SettingsDialog = memo(function SettingsDialog({
 		"providers",
 		"shortcuts",
 		"account",
-		"inbox",
 		"experimental",
 		// Developer is intentionally last in the fixed group — it sits
 		// directly above the dynamic repository entries in the sidebar
@@ -630,13 +624,6 @@ export const SettingsDialog = memo(function SettingsDialog({
 							{activeSection === "developer" && <DevToolsPanel />}
 
 							{activeSection === "account" && <AccountPanel />}
-
-							{activeSection === "inbox" && (
-								<InboxSettingsPanel
-									repositories={repositories}
-									initialProvider={initialInboxProvider}
-								/>
-							)}
 
 							{activeRepo && (
 								<RepositorySettingsPanel

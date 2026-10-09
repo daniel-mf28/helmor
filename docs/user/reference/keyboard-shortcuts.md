@@ -34,7 +34,6 @@ Defaults on macOS. On Windows, ⌘ maps to Ctrl. Every binding can be changed in
 | ⇧Tab | Toggle plan mode |
 | ⌘⇧T | Toggle terminal mode |
 | ⌥P | Open the model picker |
-| ⌘⌥C | Toggle the context panel |
 | ↑ / ↓ | Recall previous prompts / return to draft |
 
 ## Ship actions

@@ -24,7 +24,6 @@ import {
 } from "@/lib/query-client";
 import { type ModelRef, useSettings } from "@/lib/settings";
 import { requestSidebarReconcile } from "@/lib/sidebar-mutation-gate";
-import type { ContextCard } from "@/lib/sources/types";
 import { resolveSessionDisplayProvider } from "@/lib/workspace-helpers";
 import {
 	WORKSPACE_SCRIPT_PROMPTS,
@@ -69,10 +68,6 @@ type WorkspacePanelContainerProps = {
 		permissionMode?: string | null;
 	}) => void;
 	onRequestCloseSession?: (request: SessionCloseRequest) => void;
-	contextPreviewCard?: ContextCard | null;
-	contextPreviewActive?: boolean;
-	onSelectContextPreview?: () => void;
-	onCloseContextPreview?: () => void;
 	headerActions?: React.ReactNode;
 	headerLeading?: React.ReactNode;
 	/** Optimistic user bubble for a workspace that's mid-finalize — rendered
@@ -97,10 +92,6 @@ export const WorkspacePanelContainer = memo(function WorkspacePanelContainer({
 	onResolveDisplayedSession,
 	onQueuePendingPromptForSession,
 	onRequestCloseSession,
-	contextPreviewCard = null,
-	contextPreviewActive = false,
-	onSelectContextPreview,
-	onCloseContextPreview,
 	headerActions,
 	headerLeading,
 	optimisticPendingSubmit = null,
@@ -665,12 +656,8 @@ export const WorkspacePanelContainer = memo(function WorkspacePanelContainer({
 			sending={sending}
 			busySessionIds={busySessionIds}
 			interactionRequiredSessionIds={interactionRequiredSessionIds}
-			contextPreviewCard={contextPreviewCard}
-			contextPreviewActive={contextPreviewActive}
 			onSelectSession={handleSelectSession}
 			onSelectWorkspace={handleSelectWorkspace}
-			onSelectContextPreview={onSelectContextPreview}
-			onCloseContextPreview={onCloseContextPreview}
 			onPrefetchSession={handlePrefetchSession}
 			onSessionsChanged={handleSessionsChanged}
 			onSessionRenamed={handleSessionRenamed}

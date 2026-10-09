@@ -15,8 +15,6 @@ import type { ChangeRequestInfo, RepositoryCreateOption } from "@/lib/api";
 import type { EditorSessionState } from "@/lib/editor-session";
 import { useI18n } from "@/lib/i18n";
 import type { AppSettings } from "@/lib/settings";
-import type { ContextCard } from "@/lib/sources/types";
-import type { ContextPanelActions } from "@/shell/controllers/use-context-panel-controller";
 import type { EditorSessionActions } from "@/shell/controllers/use-editor-session-controller";
 import type { PendingQueueActions } from "@/shell/controllers/use-pending-queue-controller";
 import type { ReadStateActions } from "@/shell/controllers/use-read-state-controller";
@@ -36,8 +34,6 @@ type Props = {
 	editorSession: EditorSessionState | null;
 	workspaceRootPath: string | null;
 	appShortcuts: AppSettings["shortcuts"];
-	sidebarCollapsed: boolean;
-	contextPanelOpen: boolean;
 	// Editor surface
 	handleEditorSessionChange: (session: EditorSessionState) => void;
 	editorSessionActions: EditorSessionActions;
@@ -46,7 +42,6 @@ type Props = {
 	selectionActions: SelectionActions;
 	readStateActions: ReadStateActions;
 	pendingQueueActions: PendingQueueActions;
-	contextPanelActions: ContextPanelActions;
 	startSurfaceActions: StartSurfaceActions;
 	activeStreams: ConversationProps["activeStreams"];
 	effectiveBusySessionIds: Set<string>;
@@ -64,8 +59,6 @@ type Props = {
 	startBranchesLoading: boolean;
 	startMode: StartPageProps["mode"];
 	startBranchIntent: StartPageProps["branchIntent"];
-	startPreviewCard: ContextCard | null;
-	startComposerInsertTarget: { contextKey: string };
 	startComposerContextKey: string;
 	startCreateContext: ComposerCreateContext | null;
 	startLinkedDirectoriesController: ConversationProps["composerLinkedDirectoriesController"];
@@ -79,8 +72,6 @@ type Props = {
 	pendingPromptForSession: ConversationProps["pendingPromptForSession"];
 	pendingCreatedWorkspaceSubmit: ConversationProps["pendingCreatedWorkspaceSubmit"];
 	handlePendingCreatedWorkspaceSubmitConsumed: (id: string) => void;
-	contextPreviewCard: ConversationProps["contextPreviewCard"];
-	contextPreviewActive: boolean;
 	headerLeadingNode: React.ReactNode;
 	headerActionsNode: React.ReactNode;
 };
@@ -90,15 +81,12 @@ export function WorkspacePaneSurface({
 	editorSession,
 	workspaceRootPath,
 	appShortcuts,
-	sidebarCollapsed,
-	contextPanelOpen,
 	handleEditorSessionChange,
 	editorSessionActions,
 	repositories,
 	selectionActions,
 	readStateActions,
 	pendingQueueActions,
-	contextPanelActions,
 	startSurfaceActions,
 	activeStreams,
 	effectiveBusySessionIds,
@@ -115,8 +103,6 @@ export function WorkspacePaneSurface({
 	startBranchesLoading,
 	startMode,
 	startBranchIntent,
-	startPreviewCard,
-	startComposerInsertTarget,
 	startComposerContextKey,
 	startCreateContext,
 	startLinkedDirectoriesController,
@@ -128,8 +114,6 @@ export function WorkspacePaneSurface({
 	pendingPromptForSession,
 	pendingCreatedWorkspaceSubmit,
 	handlePendingCreatedWorkspaceSubmitConsumed,
-	contextPreviewCard,
-	contextPreviewActive,
 	headerLeadingNode,
 	headerActionsNode,
 }: Props) {
@@ -183,22 +167,17 @@ export function WorkspacePaneSurface({
 							startBranchesLoading={startBranchesLoading}
 							startMode={startMode}
 							startBranchIntent={startBranchIntent}
-							startPreviewCard={startPreviewCard}
-							startComposerInsertTarget={startComposerInsertTarget}
 							startComposerContextKey={startComposerContextKey}
 							startCreateContext={startCreateContext}
 							startLinkedDirectoriesController={
 								startLinkedDirectoriesController
 							}
 							startComposerSettingsController={startComposerSettingsController}
-							sidebarCollapsed={sidebarCollapsed}
-							contextPanelOpen={contextPanelOpen}
 							startSurfaceActions={startSurfaceActions}
 							selectionActions={selectionActions}
 							readStateActions={readStateActions}
 							editorSessionActions={editorSessionActions}
 							pendingQueueActions={pendingQueueActions}
-							contextPanelActions={contextPanelActions}
 							activeStreams={activeStreams}
 							effectiveBusySessionIds={effectiveBusySessionIds}
 							effectiveStoppableSessionIds={effectiveStoppableSessionIds}
@@ -244,16 +223,6 @@ export function WorkspacePaneSurface({
 							onRequestCloseSession={onRequestCloseSession}
 							workspaceRootPath={workspaceRootPath}
 							onOpenFileReference={editorSessionActions.openFileReference}
-							contextPanelOpen={contextPanelOpen}
-							onToggleContextPanel={contextPanelActions.toggleContextPanel}
-							contextPreviewCard={contextPreviewCard}
-							contextPreviewActive={contextPreviewActive}
-							onSelectContextPreview={
-								contextPanelActions.selectWorkspaceContextPreview
-							}
-							onCloseContextPreview={
-								contextPanelActions.closeWorkspaceContextPreview
-							}
 							headerLeading={headerLeadingNode}
 							headerActions={headerActionsNode}
 						/>

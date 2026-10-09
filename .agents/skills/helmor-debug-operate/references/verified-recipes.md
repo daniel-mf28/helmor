@@ -253,46 +253,6 @@ Verify menu text: `Effortlowmediumhigh✓Extra Highmax`.
 
 Observed 3x pass.
 
-### Add Context
-
-In a repo-backed workspace, this toggles the right inspector between the normal Git inspector and the Contexts inspector. It does not open a dialog/popper.
-
-1. Click `Add context`.
-2. Verify the right inspector text starts with `Contexts` and source tabs `GitHub`, `Slack`, `Linear`, and `Mobile` exist.
-3. Click `Add context` again.
-4. Verify the right inspector text starts with `Git` and Git controls such as `Create PR options` return.
-
-Verification:
-
-```json
-webview_execute_js {
-  "windowId": "main",
-  "script": "(() => { const text = String(document.querySelector('[aria-label=\"Inspector sidebar\"], [data-shell-pane=\"inspector\"]')?.textContent || '').replace(/\\s+/g, ' ').trim(); return { context: text.startsWith('Contexts'), git: text.startsWith('Git'), hasSourceTabs: Array.from(document.querySelectorAll('button')).some((b) => ['GitHub', 'Slack', 'Linear', 'Mobile'].includes(b.getAttribute('aria-label') || '')) }; })()"
-}
-```
-
-Observed 3 open/restore cycles passed. Focus + Enter on the button surfaced only tooltip text `Add context⌘⇧C`; `Cmd+Shift+C` with either the button focused or the composer focused did not open a picker in the observed build.
-
-### Contexts Source Tabs
-
-Use only read-only tab switching unless the user asks to add context. Do not click `Add to context`.
-
-1. Open the Contexts inspector with `Add context`.
-2. Click a source tab such as `Slack`.
-3. Verify the clicked tab no longer has `text-muted-foreground` while the other tabs do.
-4. Click `GitHub` to restore the default source.
-
-Verification:
-
-```json
-webview_execute_js {
-  "windowId": "main",
-  "script": "(() => Array.from(document.querySelectorAll('button')).map((b) => { const r = b.getBoundingClientRect(); const aria = b.getAttribute('aria-label'); const cls = String(b.className || ''); return { aria, selected: !cls.includes('text-muted-foreground'), x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) }; }).filter((x) => x.width > 0 && x.height > 0 && ['GitHub', 'Slack', 'Linear', 'Mobile'].includes(x.aria)))()"
-}
-```
-
-Observed 3 GitHub/Slack cycles passed, restored GitHub, then restored the Git inspector by clicking `Add context` again.
-
 ### Context Usage
 
 Not yet stable. Click and long-press did not open a visible dialog/popper in the observed states. The current Tauri MCP toolset lacks a hover action, so treat this as unverified unless a hover-capable tool is available.
@@ -674,7 +634,6 @@ One read-only mapping pass observed:
 - `Shortcuts`: shortcut search/input, shortcut key buttons, and reset-to-default controls. Clicking a shortcut button starts keybinding edit flow.
 - `Accounts`: local forge account list. Do not copy account details into skill output.
 - `Team`: invite link, Team mode, Worker URL, Access token, Test connection. Inputs are sensitive configuration.
-- `Contexts`: GitHub/GitLab/Slack/Linear/Mobile tabs, repo selector, issue/PR switches, filters, and `Remove All`. Switches and remove actions mutate configuration.
 - `Experimental`: Local LLM, Smart triage, triage sources. Treat connect/delete/run/revoke/model actions as high-impact.
 - `Developer`: Reset Onboarding and Reset All Dev Data. Do not execute in ordinary verification.
 - Repository settings entries: Remote, base branch, branch prefix, setup/run/archive scripts, built-in prompt preferences, and Delete Repository. Do not record script contents or change textareas.

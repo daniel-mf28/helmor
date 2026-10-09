@@ -51,7 +51,7 @@ in one window. Everything lives locally under `~/helmor/`.
 - **Scriptable** — `helmor` CLI and MCP server; your terminal or another agent can drive Helmor.
 - **Skills** — install from onboarding or **Settings → Helmor Components**; browse with `/` in the composer.
 
-*More on the way — Slack & GitHub context, plan mode, and agent-driven orchestration.*
+*More on the way — plan mode and agent-driven orchestration.*
 
 ## How it works
 

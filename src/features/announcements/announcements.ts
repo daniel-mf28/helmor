@@ -1,12 +1,14 @@
 import type { SettingsSection } from "@/features/settings";
-import type { WorkspaceRightSidebarMode } from "@/lib/settings";
 
 export const GITHUB_RELEASES_URL = "https://github.com/dohooo/helmor/releases";
 
 export type ReleaseAnnouncementAction =
+	// Legacy: older catalog entries pointed at the removed Contexts sidebar.
+	// Kept so the historical catalog still type-checks; the toast hides
+	// these actions instead of rendering a dead button.
 	| {
 			type: "setRightSidebarMode";
-			mode: WorkspaceRightSidebarMode;
+			mode: string;
 	  }
 	| {
 			type: "openSettings";

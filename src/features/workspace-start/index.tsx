@@ -8,9 +8,8 @@ import {
 	MessageCircle,
 	Plus,
 	Split,
-	X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
 	BranchPickerPopover,
 	resolveBranchSource,
@@ -43,28 +42,21 @@ import {
 } from "@/components/ui/tooltip";
 import { WorkspaceAvatar } from "@/features/navigation/avatar";
 import { getShortcut } from "@/features/shortcuts/registry";
-import {
-	InlineShortcutDisplay,
-	ShortcutDisplay,
-} from "@/features/shortcuts/shortcut-display";
+import { InlineShortcutDisplay } from "@/features/shortcuts/shortcut-display";
 import { useAppShortcuts } from "@/features/shortcuts/use-app-shortcuts";
-import { SourceDetailView } from "@/features/source-detail";
 import type {
 	BranchPickerEntry,
 	RepositoryCreateOption,
 	WorkspaceBranchIntent,
 	WorkspaceMode,
 } from "@/lib/api";
-import type { ComposerInsertTarget } from "@/lib/composer-insert";
 import { I18nText, useI18n } from "@/lib/i18n";
 import { useSettings } from "@/lib/settings";
-import type { ContextCard } from "@/lib/sources/types";
 import { cn } from "@/lib/utils";
 import { publishShellEvent } from "@/shell/event-bus";
 import { CreateBranchDialog } from "./create-branch-dialog";
 
 const COMPACT_TRAFFIC_LIGHT_SPACER_WIDTH = 60;
-const PREVIEW_TRAFFIC_LIGHT_SPACER_WIDTH = 52;
 
 function defaultBranchPrefix(repo: RepositoryCreateOption | null): string {
 	if (!repo) return "";
@@ -271,11 +263,7 @@ type WorkspaceStartPageProps = {
 	/** Called when the user creates a new branch via the picker footer.
 	 * Caller is responsible for the underlying `git checkout -b`. */
 	onCreateAndCheckoutBranch?: (branch: string) => Promise<void>;
-	previewCard?: ContextCard | null;
-	previewAppendContextTarget?: ComposerInsertTarget;
 	headerLeading?: React.ReactNode;
-	showWindowSafeTop?: boolean;
-	onClosePreview?: () => void;
 	/** Quick panel layout: pin the composer to the bottom edge and center
 	 * the heading in the space above it (instead of centering the whole
 	 * block at mid-height). */
@@ -297,11 +285,7 @@ export function WorkspaceStartPage({
 	branchIntent,
 	onBranchIntentChange,
 	onCreateAndCheckoutBranch,
-	previewCard = null,
-	previewAppendContextTarget,
 	headerLeading,
-	showWindowSafeTop = false,
-	onClosePreview,
 	composerAtBottom = false,
 	children,
 }: WorkspaceStartPageProps) {
@@ -379,23 +363,6 @@ export function WorkspaceStartPage({
 		],
 	});
 
-	useEffect(() => {
-		if (!previewCard || !onClosePreview) {
-			return;
-		}
-
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key !== "Escape" || event.defaultPrevented) {
-				return;
-			}
-			event.preventDefault();
-			onClosePreview();
-		};
-
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [onClosePreview, previewCard]);
-
 	return (
 		<div
 			data-focus-scope="start-composer"
@@ -414,86 +381,18 @@ export function WorkspaceStartPage({
 			<div className="relative h-full min-h-0 w-full max-w-5xl">
 				<div
 					className={cn(
-						"grid w-full min-h-0 transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-						previewCard
-							? "h-[calc(100%-12rem)] grid-rows-[1fr] opacity-100"
-							: "h-0 grid-rows-[0fr] opacity-0",
-					)}
-				>
-					<div className="min-h-0 overflow-hidden">
-						<div className="relative flex h-full min-h-[320px] flex-col overflow-hidden bg-background">
-							<div
-								className="relative z-20 flex h-8 shrink-0 items-center justify-between gap-3 border-border/60 border-b px-3"
-								data-tauri-drag-region
-							>
-								{showWindowSafeTop ? (
-									<TrafficLightSpacer
-										side="left"
-										width={PREVIEW_TRAFFIC_LIGHT_SPACER_WIDTH}
-									/>
-								) : null}
-								{previewCard ? (
-									<h2
-										data-tauri-drag-region
-										className="flex h-full min-w-0 flex-1 translate-y-[2px] items-center text-ui font-medium leading-5 text-foreground"
-									>
-										<span className="min-w-0 truncate">
-											{previewCard.title}
-										</span>
-										<span className="ml-2 shrink-0 font-normal text-muted-foreground">
-											#{sourceCardNumber(previewCard)}
-										</span>
-									</h2>
-								) : (
-									<div data-tauri-drag-region className="min-w-0 flex-1" />
-								)}
-								<Button
-									type="button"
-									variant="ghost"
-									size="sm"
-									onClick={onClosePreview}
-									aria-label="closeSourcePreview"
-									className="gap-1.5 px-2 text-muted-foreground hover:text-foreground"
-								>
-									<ShortcutDisplay hotkey="Escape" />
-									<X className="size-3.5" strokeWidth={1.8} />
-								</Button>
-							</div>
-							<div className="min-h-0 flex-1 px-0 pb-3">
-								{previewCard ? (
-									<SourceDetailView
-										card={previewCard}
-										appendContextTarget={previewAppendContextTarget}
-									/>
-								) : null}
-							</div>
-							<div
-								aria-hidden="true"
-								className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background/55 via-background/24 to-transparent shadow-[inset_0_-10px_18px_color-mix(in_oklch,var(--background)_55%,transparent)]"
-							/>
-						</div>
-					</div>
-				</div>
-
-				<div
-					className={cn(
 						"absolute left-1/2 flex w-full max-w-3xl -translate-x-1/2 flex-col items-center transition-[top,transform,opacity,gap] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
 						composerAtBottom
 							? "inset-y-0 gap-7 pb-3"
-							: previewCard
-								? "top-[calc(100%-11rem)] gap-0"
-								: "top-1/2 gap-7 -translate-y-1/2",
+							: "top-1/2 gap-7 -translate-y-1/2",
 					)}
 				>
 					<div
-						aria-hidden={previewCard ? true : undefined}
 						className={cn(
 							"relative w-full overflow-hidden transition-[height,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
 							composerAtBottom
 								? "min-h-0 flex-1"
-								: previewCard
-									? "pointer-events-none h-0 translate-y-2 opacity-0"
-									: "h-10 translate-y-0 opacity-100",
+								: "h-10 translate-y-0 opacity-100",
 						)}
 					>
 						<div
@@ -507,9 +406,7 @@ export function WorkspaceStartPage({
 								<span
 									className={cn(
 										"inline-block overflow-hidden transition-[max-width,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-										previewCard
-											? "max-w-0 -translate-y-1 opacity-0"
-											: "max-w-[32rem] translate-y-0 opacity-100",
+										"max-w-[32rem] translate-y-0 opacity-100",
 									)}
 								>
 									<I18nText source="whatShouldWeWork" />
@@ -519,9 +416,7 @@ export function WorkspaceStartPage({
 									<span
 										className={cn(
 											"inline-block overflow-hidden transition-[max-width,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-											previewCard
-												? "max-w-0 -translate-y-1 opacity-0"
-												: "max-w-[24rem] translate-y-0 opacity-100",
+											"max-w-[24rem] translate-y-0 opacity-100",
 										)}
 									>
 										{buildHeadingBefore}
@@ -568,9 +463,7 @@ export function WorkspaceStartPage({
 									<span
 										className={cn(
 											"inline-block overflow-hidden transition-[max-width,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-											previewCard
-												? "max-w-0 -translate-y-1 opacity-0"
-												: "max-w-[12rem] translate-y-0 opacity-100",
+											"max-w-[12rem] translate-y-0 opacity-100",
 										)}
 									>
 										{buildHeadingAfter}
@@ -583,121 +476,9 @@ export function WorkspaceStartPage({
 					<div
 						className={cn(
 							"flex w-full items-center gap-2 overflow-hidden px-4 transition-[height,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-							previewCard
-								? "h-10 translate-y-0.5 opacity-100"
-								: "-mt-5 h-7 translate-y-0 opacity-100",
+							"-mt-5 h-7 translate-y-0 opacity-100",
 						)}
 					>
-						{/* Preview-mode repo selector: hidden in chat mode (no repo). */}
-						{previewCard && mode !== "chat" ? (
-							<Popover>
-								<PopoverTrigger asChild>
-									<button
-										type="button"
-										disabled={repositories.length === 0}
-										className="inline-flex h-7 max-w-[13rem] cursor-interactive items-center gap-1 rounded-md px-1.5 text-ui font-medium text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-									>
-										{selectedRepository ? (
-											<>
-												<WorkspaceAvatar
-													repoIconSrc={selectedRepository.repoIconSrc}
-													repoInitials={selectedRepository.repoInitials}
-													repoName={selectedRepository.name}
-													title={selectedRepository.name}
-													className="size-4 rounded-md"
-													fallbackClassName="text-nano"
-												/>
-												<span className="min-w-0 truncate">
-													{selectedRepository.name}
-												</span>
-												<ChevronDown
-													className="size-3 shrink-0 text-muted-foreground"
-													strokeWidth={2}
-												/>
-											</>
-										) : (
-											<span className="truncate">
-												<I18nText source="repository" />
-											</span>
-										)}
-									</button>
-								</PopoverTrigger>
-								<PopoverContent align="start" className="w-96 p-0">
-									<Command
-										onKeyDown={(event: React.KeyboardEvent) => {
-											const key = event.key;
-											if (
-												/^[1-9]$/.test(key) &&
-												!event.metaKey &&
-												!event.ctrlKey
-											) {
-												event.preventDefault();
-												const index = Number.parseInt(key, 10) - 1;
-												if (index < repositories.length) {
-													onSelectRepository(repositories[index]);
-												}
-											}
-										}}
-									>
-										<CommandInput
-											placeholder={t("searchRepositories")}
-											className="h-9"
-										/>
-										<CommandList className="max-h-80">
-											<CommandEmpty>
-												<I18nText source="noRepositoriesFound" />
-											</CommandEmpty>
-											{repositories.map((repository, index) => {
-												const repoName = extractRepoName(repository.remoteUrl);
-												return (
-													<CommandItem
-														key={repository.id}
-														value={`${repository.name} ${repoName || ""}`}
-														onSelect={() => onSelectRepository(repository)}
-														className="gap-2"
-													>
-														{index < 9 ? (
-															<kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
-																{index + 1}
-															</kbd>
-														) : (
-															<span
-																className="inline-flex h-5 w-5 shrink-0"
-																aria-hidden
-															/>
-														)}
-														<WorkspaceAvatar
-															repoIconSrc={repository.repoIconSrc}
-															repoInitials={repository.repoInitials}
-															repoName={repository.name}
-															title={repository.name}
-															className="size-5 rounded-md"
-															fallbackClassName="text-nano"
-														/>
-														<div className="flex min-w-0 flex-1 flex-col">
-															{repoName ? (
-																<>
-																	<span className="truncate text-[13px] font-medium">
-																		{repoName}
-																	</span>
-																	<span className="truncate text-[11px] text-muted-foreground">
-																		{repository.name}
-																	</span>
-																</>
-															) : (
-																<span className="truncate text-[13px]">
-																	{repository.name}
-																</span>
-															)}
-														</div>
-													</CommandItem>
-												);
-											})}
-										</CommandList>
-									</Command>
-								</PopoverContent>
-							</Popover>
-						) : null}
 						{/* Mode picker. Hidden for non-git folders — they only
 						 *  support a single (local) mode, so there's nothing to pick. */}
 						{!selectedRepositoryIsPlainDirectory && (
@@ -995,22 +776,4 @@ export function WorkspaceStartPage({
 			</div>
 		</div>
 	);
-}
-
-function sourceCardNumber(card: ContextCard): string {
-	if (
-		card.meta.type === "github_issue" ||
-		card.meta.type === "github_pr" ||
-		card.meta.type === "github_discussion" ||
-		card.meta.type === "gitlab_issue" ||
-		card.meta.type === "gitlab_mr"
-	) {
-		return String(card.meta.number);
-	}
-
-	// `#` is GitHub / GitLab issues; `!` is GitLab MRs.
-	const hashIdx = card.externalId.lastIndexOf("#");
-	const bangIdx = card.externalId.lastIndexOf("!");
-	const idx = Math.max(hashIdx, bangIdx);
-	return idx === -1 ? "" : card.externalId.slice(idx + 1);
 }

@@ -29,7 +29,6 @@ use super::types::{
 pub(super) mod accounts;
 mod api;
 mod context;
-pub mod inbox;
 mod merge_request;
 mod pipeline;
 mod review;

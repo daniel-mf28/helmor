@@ -31,7 +31,6 @@ import {
 import type { SettingsSection } from "@/features/settings";
 import { toggleQuickPanel } from "@/lib/api";
 import { I18nText, useI18n } from "@/lib/i18n";
-import type { WorkspaceRightSidebarMode } from "@/lib/settings";
 import packageJson from "../../../package.json";
 
 const APP_VERSION = packageJson.version;
@@ -41,14 +40,12 @@ const RELEASE_ANNOUNCEMENT_CATALOG =
 type ReleaseAnnouncementToastHostProps = {
 	onOpenChangelog: () => void;
 	onOpenSettings: (section?: SettingsSection) => void;
-	onSetRightSidebarMode: (mode: WorkspaceRightSidebarMode) => void;
 	onOpenStartPage: () => void;
 };
 
 export function ReleaseAnnouncementToastHost({
 	onOpenChangelog,
 	onOpenSettings,
-	onSetRightSidebarMode,
 	onOpenStartPage,
 }: ReleaseAnnouncementToastHostProps) {
 	const shownVersionsRef = useRef<string | null>(null);
@@ -89,7 +86,7 @@ export function ReleaseAnnouncementToastHost({
 	const runAction = (action: ReleaseAnnouncementAction) => {
 		switch (action.type) {
 			case "setRightSidebarMode":
-				onSetRightSidebarMode(action.mode);
+				// Legacy action for the removed Contexts sidebar; never rendered.
 				break;
 			case "openSettings":
 				onOpenSettings(action.section);
@@ -233,7 +230,10 @@ function ReleaseAnnouncementListItem({
 	onRunAction: (action: ReleaseAnnouncementAction) => void;
 }) {
 	const { t } = useI18n();
-	const action = item.action;
+	// Legacy Contexts-sidebar actions have no target any more — show the text
+	// without a dead button.
+	const action =
+		item.action?.value.type === "setRightSidebarMode" ? undefined : item.action;
 
 	return (
 		<li className="grid grid-cols-[18px_1fr] gap-[2px] text-small leading-relaxed text-muted-foreground">

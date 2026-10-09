@@ -1,6 +1,6 @@
 // Start-surface controller: every piece of state that lives only on the
 // workspace-start page (selected repo, source branch, mode, lazy
-// pending-new-branch / linked-directories, inbox-tab + state filters), plus
+// pending-new-branch / linked-directories), plus
 // the `prepareComposer` orchestration that runs when the user commits the
 // start composer to create a workspace.
 import { type QueryClient, useQuery } from "@tanstack/react-query";
@@ -65,13 +65,9 @@ export type StartSurfaceState = {
 	/** Worktree mode only; backend ignores in local mode. */
 	startBranchIntent: WorkspaceBranchIntent;
 	startPendingNewBranch: string | null;
-	startInboxProviderTab: string;
-	startInboxProviderSourceTab: string;
-	startInboxStateFilterBySource: Record<string, string>;
 	startBranches: BranchPickerEntry[];
 	startBranchesLoading: boolean;
 	startComposerContextKey: string;
-	startComposerInsertTarget: { contextKey: string };
 	startLinkedDirectoriesController: {
 		directories: readonly string[];
 		onChange: (next: readonly string[]) => void;
@@ -88,9 +84,6 @@ export type StartSurfaceActions = {
 	selectBranchIntent(intent: WorkspaceBranchIntent): void;
 	stashPendingNewBranch(branch: string): void;
 	refetchBranches(): void;
-	setInboxProviderTab(tab: string): void;
-	setInboxProviderSourceTab(tab: string): void;
-	setInboxStateFilterBySource(value: Record<string, string>): void;
 	moveLocalToWorktree(workspaceId: string): void;
 	prepareComposer(
 		payload: ComposerSubmitPayload,
@@ -145,12 +138,6 @@ export function useStartSurfaceController(
 	const [startRepositoryId, setStartRepositoryId] = useState<string | null>(
 		null,
 	);
-	const [startInboxProviderTab, setStartInboxProviderTab] =
-		useState<string>("github");
-	const [startInboxProviderSourceTab, setStartInboxProviderSourceTab] =
-		useState<string>("issues");
-	const [startInboxStateFilterBySource, setStartInboxStateFilterBySource] =
-		useState<Record<string, string>>({});
 	const [startPendingNewBranch, setStartPendingNewBranch] = useState<
 		string | null
 	>(null);
@@ -782,10 +769,6 @@ export function useStartSurfaceController(
 			: startRepository
 				? `start:repo:${startRepository.id}`
 				: "start:no-repo";
-	const startComposerInsertTarget = useMemo(
-		() => ({ contextKey: startComposerContextKey }),
-		[startComposerContextKey],
-	);
 	const startLinkedDirectoriesController = useMemo(
 		() => ({
 			directories: startPendingLinkedDirectories,
@@ -873,9 +856,6 @@ export function useStartSurfaceController(
 		selectBranchIntent,
 		stashPendingNewBranch,
 		refetchBranches,
-		setInboxProviderTab: setStartInboxProviderTab,
-		setInboxProviderSourceTab: setStartInboxProviderSourceTab,
-		setInboxStateFilterBySource: setStartInboxStateFilterBySource,
 		moveLocalToWorktree,
 		prepareComposer,
 		addRepositoryNeedsStart,
@@ -890,13 +870,9 @@ export function useStartSurfaceController(
 			startMode,
 			startBranchIntent,
 			startPendingNewBranch,
-			startInboxProviderTab,
-			startInboxProviderSourceTab,
-			startInboxStateFilterBySource,
 			startBranches,
 			startBranchesLoading: startBranchesQuery.isFetching,
 			startComposerContextKey,
-			startComposerInsertTarget,
 			startLinkedDirectoriesController,
 			startComposerSettingsController,
 		}),
@@ -905,11 +881,7 @@ export function useStartSurfaceController(
 			startBranches,
 			startBranchesQuery.isFetching,
 			startComposerContextKey,
-			startComposerInsertTarget,
 			startComposerSettingsController,
-			startInboxProviderSourceTab,
-			startInboxProviderTab,
-			startInboxStateFilterBySource,
 			startLinkedDirectoriesController,
 			startMode,
 			startPendingNewBranch,

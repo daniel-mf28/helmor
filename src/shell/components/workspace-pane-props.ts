@@ -17,21 +17,18 @@ export function buildWorkspacePaneProps({
 	headerLeadingNode: ReactNode;
 	headerActionsNode: ReactNode;
 }): ComponentProps<typeof WorkspacePaneSurface> {
-	const { sel, data, panels } = s;
+	const { sel, data } = s;
 	return {
 		workspaceViewMode: s.workspaceViewMode,
 		editorSession: data.editorSession,
 		workspaceRootPath: data.workspaceRootPath,
 		appShortcuts: s.appSettings.shortcuts,
-		sidebarCollapsed: panels.sidebarCollapsed,
-		contextPanelOpen: sel.contextPanel.contextPanelOpen,
 		handleEditorSessionChange: data.handleEditorSessionChange,
 		editorSessionActions: data.editorSessionActions,
 		repositories: s.repositories,
 		selectionActions: sel.selectionActions,
 		readStateActions: data.readStateActions,
 		pendingQueueActions: data.pendingQueueActions,
-		contextPanelActions: sel.contextPanelActions,
 		startSurfaceActions: sel.startSurfaceActions,
 		activeStreams: data.activeStreams,
 		effectiveBusySessionIds: data.effectiveBusySessionIds,
@@ -48,8 +45,6 @@ export function buildWorkspacePaneProps({
 		startBranchesLoading: sel.startSurface.startBranchesLoading,
 		startMode: sel.startSurface.startMode,
 		startBranchIntent: sel.startSurface.startBranchIntent,
-		startPreviewCard: sel.contextPanel.startPreviewCard,
-		startComposerInsertTarget: sel.startSurface.startComposerInsertTarget,
 		startComposerContextKey: sel.startSurface.startComposerContextKey,
 		startCreateContext: s.startCreateContext,
 		startLinkedDirectoriesController:
@@ -63,8 +58,6 @@ export function buildWorkspacePaneProps({
 		pendingCreatedWorkspaceSubmit: sel.pendingCreatedWorkspaceSubmit,
 		handlePendingCreatedWorkspaceSubmitConsumed:
 			data.handlePendingCreatedWorkspaceSubmitConsumed,
-		contextPreviewCard: sel.contextPanel.workspacePreviewCard,
-		contextPreviewActive: sel.contextPanel.workspacePreviewActive,
 		headerLeadingNode,
 		headerActionsNode,
 	};

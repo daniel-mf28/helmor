@@ -27,7 +27,6 @@ describe("ReleaseAnnouncementToastHost", () => {
 			<ReleaseAnnouncementToastHost
 				onOpenChangelog={() => {}}
 				onOpenSettings={() => {}}
-				onSetRightSidebarMode={() => {}}
 				onOpenStartPage={() => {}}
 			/>,
 		);

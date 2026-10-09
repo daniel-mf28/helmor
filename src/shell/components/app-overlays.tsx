@@ -9,14 +9,13 @@ import type { QuickSwitchControls } from "@/features/quick-switch";
 import { QuickSwitchOverlay } from "@/features/quick-switch";
 import type { SettingsSection } from "@/features/settings";
 import type { WorkspaceRow } from "@/lib/api";
-import type { AppSettings, WorkspaceRightSidebarMode } from "@/lib/settings";
+import type { AppSettings } from "@/lib/settings";
 import { resolveTheme } from "@/lib/settings";
 
 type Props = {
 	theme: AppSettings["theme"];
 	onOpenChangelog: () => void;
 	onOpenAnnouncementSettings: (section?: SettingsSection) => void;
-	onSetRightSidebarMode: (mode: WorkspaceRightSidebarMode) => void;
 	onOpenStartPage: () => void;
 	quickSwitch: QuickSwitchControls;
 	liveWorkspaceRowMap: Map<string, WorkspaceRow>;
@@ -30,7 +29,6 @@ export function AppOverlays({
 	theme,
 	onOpenChangelog,
 	onOpenAnnouncementSettings,
-	onSetRightSidebarMode,
 	onOpenStartPage,
 	quickSwitch,
 	liveWorkspaceRowMap,
@@ -49,7 +47,6 @@ export function AppOverlays({
 			<ReleaseAnnouncementToastHost
 				onOpenChangelog={onOpenChangelog}
 				onOpenSettings={onOpenAnnouncementSettings}
-				onSetRightSidebarMode={onSetRightSidebarMode}
 				onOpenStartPage={onOpenStartPage}
 			/>
 			<QuickSwitchOverlay

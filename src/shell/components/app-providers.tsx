@@ -30,7 +30,6 @@ export function AppProviders({
 	settingsWorkspaceId,
 	settingsWorkspaceRepoId,
 	settingsInitialSection,
-	settingsInitialInboxProvider,
 	queryClient,
 	settingsContextValue,
 	splashVisible,
@@ -97,7 +96,6 @@ export function AppProviders({
 					workspaceId={settingsWorkspaceId}
 					workspaceRepoId={settingsWorkspaceRepoId}
 					initialSection={settingsInitialSection}
-					initialInboxProvider={settingsInitialInboxProvider}
 					onClose={() => {
 						setSettingsOpen(false);
 						void queryClient.invalidateQueries({

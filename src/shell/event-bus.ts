@@ -6,19 +6,13 @@
 // `addEventListener("helmor:foo")` callsites in features/* keep working
 // during the gradual migration.
 import { useEffect, useRef } from "react";
-import type {
-	ContextProviderTab,
-	SettingsSection,
-} from "@/features/settings/types";
+import type { SettingsSection } from "@/features/settings/types";
 import type { WorkspaceMode } from "@/lib/api";
 
 export type ShellEvent =
 	| {
 			type: "open-settings";
 			section?: SettingsSection;
-			// Sub-route for `section: "inbox"` — selects a provider tab inside
-			// the Contexts panel. Ignored when section ≠ "inbox".
-			inboxProvider?: ContextProviderTab;
 	  }
 	| { type: "reload-settings" }
 	| { type: "open-model-picker" }
@@ -31,7 +25,6 @@ export type ShellEvent =
 	| { type: "open-sidebar-filter" }
 	| { type: "run-script" }
 	| { type: "focus-composer" }
-	| { type: "toggle-context-panel" }
 	| { type: "focus-active-terminal" }
 	// App-scoped ⌘⇧T — the mounted composer flips its terminalMode.
 	| { type: "toggle-terminal-mode" }
