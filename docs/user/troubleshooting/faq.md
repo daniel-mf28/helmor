@@ -3,7 +3,7 @@
 ### Is Helmor free?
 
 The app is open source (Apache 2.0) and free. You pay your model providers
-directly — Claude/Anthropic, OpenAI, Cursor — through the subscriptions or API
+directly — Claude/Anthropic, OpenAI, Moonshot/Kimi — through the subscriptions or API
 keys you already have.
 
 ### Do I need Claude Code / Codex / gh installed first?

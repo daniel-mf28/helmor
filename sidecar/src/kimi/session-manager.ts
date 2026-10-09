@@ -2,8 +2,7 @@
  * SessionManager for Kimi Code CLI over ACP (`kimi acp`).
  *
  * One shared `kimi acp` child hosts every Helmor session (ACP multiplexes
- * sessions over a single connection — same shape as `OpencodeSessionManager`'s
- * shared server). Each `session/update` notification is demuxed by `sessionId`
+ * sessions over a single connection). Each `session/update` notification is demuxed by `sessionId`
  * and forwarded verbatim (namespaced `kimi/*`) for the Rust accumulator; the
  * `session/prompt` response is the turn-end signal. Permission + fs requests
  * arrive as agent→client JSON-RPC and are answered here.
@@ -650,7 +649,7 @@ export class KimiSessionManager implements SessionManager {
 		this.turns.end(sessionId, requestId);
 	}
 
-	// Title generation flows through claude/codex/cursor (see index.ts title
+	// Title generation flows through claude/codex (see index.ts title
 	// order) — this is only a defensive fallback if ever invoked directly.
 	async generateTitle(
 		requestId: string,
@@ -669,7 +668,7 @@ export class KimiSessionManager implements SessionManager {
 		const timeout = timeoutMs ?? TITLE_GENERATION_TIMEOUT_MS;
 
 		// Run a throwaway ACP turn so the title comes from the same model the
-		// user configured — consistent with claude/codex/opencode.
+		// user configured — consistent with claude/codex.
 		let text = "";
 		let acpSessionId: string | null = null;
 		try {

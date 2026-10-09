@@ -445,125 +445,6 @@ fn res_large_tokens() {
     assert_yaml_snapshot!(run_normalized(msgs));
 }
 
-// opencode reload: an assistant turn (opencode_message) followed by the
-// synthesized turn/completed footer round-trips to assistant text + the
-// "Ns" duration row, matching claude/codex.
-#[test]
-fn opencode_turn_renders_text_and_duration_footer() {
-    let assistant = json!({
-        "type": "opencode_message",
-        "session_id": "ses_1",
-        "role": "assistant",
-        "model": "anthropic/claude-sonnet-4-6",
-        "parts": [{ "type": "text", "text": "Hello world" }],
-    });
-    let msgs = vec![
-        make_record(
-            "om1",
-            "assistant",
-            &serde_json::to_string(&assistant).unwrap(),
-        ),
-        make_record(
-            "tc1",
-            "assistant",
-            r#"{"type":"turn/completed","duration_ms":125000}"#,
-        ),
-    ];
-    assert_yaml_snapshot!(run_normalized(msgs));
-}
-
-// opencode reasoning on reload: a closed reasoning block's `time` round-trips
-// to a "Thought for Ns" duration on the reasoning part.
-#[test]
-fn opencode_reasoning_carries_thought_duration() {
-    let assistant = json!({
-        "type": "opencode_message",
-        "session_id": "ses_1",
-        "role": "assistant",
-        "parts": [
-            { "type": "reasoning", "text": "let me think",
-              "time": { "start": 1_000_000u64, "end": 1_004_000u64 } },
-            { "type": "text", "text": "Answer" },
-        ],
-    });
-    let msgs = vec![make_record(
-        "om1",
-        "assistant",
-        &serde_json::to_string(&assistant).unwrap(),
-    )];
-    assert_yaml_snapshot!(run_normalized(msgs));
-}
-
-#[test]
-fn opencode_session_error_notice_round_trips() {
-    let assistant = json!({
-        "type": "opencode_message",
-        "session_id": "ses_1",
-        "role": "assistant",
-        "parts": [{
-            "type": "system-notice",
-            "severity": "error",
-            "label": "OpenCode error",
-            "body": "Quota exceeded. Try again in 5 hours.",
-        }],
-    });
-    let msgs = vec![make_record(
-        "om1",
-        "assistant",
-        &serde_json::to_string(&assistant).unwrap(),
-    )];
-    assert_yaml_snapshot!(run_normalized(msgs));
-}
-
-// opencode write/edit/apply_patch carry opencode's per-file unified diff
-// (`fileDiffs`), which the adapter reshapes into the shared apply_patch
-// `changes:[{path,diff}]` view so a colored diff renders on reload too.
-#[test]
-fn opencode_write_tool_renders_unified_diff() {
-    let assistant = json!({
-        "type": "opencode_message",
-        "session_id": "ses_1",
-        "role": "assistant",
-        "parts": [{
-            "type": "tool", "callID": "c1", "tool": "write", "status": "completed",
-            "input": { "filePath": "/tmp/a.txt", "content": "hi" },
-            "output": "Wrote file successfully.",
-            "fileDiffs": [
-                { "path": "a.txt", "diff": "--- a.txt\n+++ a.txt\n@@ -0,0 +1 @@\n+hi\n" },
-            ],
-        }],
-    });
-    let msgs = vec![make_record(
-        "om1",
-        "assistant",
-        &serde_json::to_string(&assistant).unwrap(),
-    )];
-    assert_yaml_snapshot!(run_normalized(msgs));
-}
-
-// opencode bash output can arrive while the tool is still running under
-// `state.metadata.output`; the live accumulator maps that to `output` so
-// streaming renders don't wait for `status=completed`.
-#[test]
-fn opencode_running_tool_renders_output() {
-    let assistant = json!({
-        "type": "opencode_message",
-        "session_id": "ses_1",
-        "role": "assistant",
-        "parts": [{
-            "type": "tool", "callID": "c1", "tool": "bash", "status": "running",
-            "input": { "command": "printf hi" },
-            "output": "hi",
-        }],
-    });
-    let msgs = vec![make_record(
-        "om1",
-        "assistant",
-        &serde_json::to_string(&assistant).unwrap(),
-    )];
-    assert_yaml_snapshot!(run_normalized(msgs));
-}
-
 // kimi reload: two turns each carrying a plan snapshot. The collapse pass
 // folds the repeated todo lists into one widget — anchored at the first
 // occurrence, showing the LATEST entries' statuses.
@@ -2627,7 +2508,7 @@ fn auq_claude_open_question_stays_pending() {
 #[test]
 fn user_question_row_renders_answered_card() {
     // Persisted `user_question` row written by the accumulator when a
-    // Codex/OpenCode question resolves (questions already canonical).
+    // Codex question resolves (questions already canonical).
     let parsed = json!({
         "type": "user_question",
         "userInputId": "codex-input-1",
@@ -2683,27 +2564,6 @@ fn stream_codex_user_question_event_persists_card() {
     ];
 
     let fingerprint = replay_stream_events("codex", &events);
-    assert_yaml_snapshot!(normalize_stream_fingerprint(&fingerprint));
-}
-
-#[test]
-fn stream_opencode_user_question_declined() {
-    // OpenCode question rejected — the card persists with `declined`
-    // status and no answers. Raw opencode shape uses `multiple`.
-    let events = vec![json!({
-        "type": "user_question",
-        "userInputId": "oc-q-1",
-        "source": "OpenCode",
-        "questions": [{
-            "question": "Which files?",
-            "header": "Files",
-            "multiple": true,
-            "options": [{"label": "a.rs", "description": ""}]
-        }],
-        "action": "decline",
-    })];
-
-    let fingerprint = replay_stream_events("opencode", &events);
     assert_yaml_snapshot!(normalize_stream_fingerprint(&fingerprint));
 }
 

@@ -7,11 +7,12 @@ All paths are relative to the repo root. Line numbers drift — grep the named c
 
 - [Claude (claude-agent-sdk + claude-code)](#claude) — class A+B, **lockstep**
 - [Codex (@openai/codex)](#codex) — class B, layout descriptor
-- [Cursor (@cursor/sdk)](#cursor) — class A, Node worker + phantom dep
-- [OpenCode (@opencode-ai/sdk + opencode-ai)](#opencode) — class A+B, SDK/CLI lockstep
 - [Kimi](#kimi) — class C, GitHub release, ACP protocol
 - [Pi (@earendil-works/pi-*)](#pi) — class A, **dead code → prefer delete**
-- [gh / glab / llama.cpp / node](#supporting-tools) — class C, supporting binaries
+- [gh / glab / llama.cpp](#supporting-tools) — class C, supporting binaries
+
+OpenCode, Cursor (`@cursor/sdk` + Node worker), and the bundled Node runtime were removed from
+this fork; they have no pins left to bump.
 
 ---
 
@@ -53,51 +54,6 @@ is no `@openai/codex-sdk` dependency despite older doc wording). Code in `sideca
   bumps past 1 or new top-level keys appear, review `stageCodexFromVendorRoot` in `stage-vendor.ts`.
 - Rust pipeline consumes `item/`, `turn/`, `thread/` slash-form methods (see `pipeline/accumulator/codex.rs`
   `normalize_item_type`). New item types or renamed methods require Rust changes — the cargo gate catches drift.
-
----
-
-## Cursor
-
-**Integration:** `@cursor/sdk` runs in a separate **Node worker** (`sidecar/src/cursor/worker/`), NOT
-Bun (its HTTP/2 client drops tool traffic under Bun). Class A — npm SDK, **no SHA256 table**.
-
-**Pins:**
-- `sidecar/package.json`: `@cursor/sdk` = `X`.
-- The cursor-worker bundle version is read **dynamically** by `stageCursorWorkerDeps` in `stage-vendor.ts`
-  (`readCursorSdkVersion()`), which runs a live `npm install` for the bundle target — **no version literal
-  or SHA table to edit** in `vendor-platform.ts`.
-
-**Gotchas:**
-- **Node engines floor.** `@cursor/sdk` requires Node `>=22.13`. The bundled `NODE_VERSION` (see node
-  section) must satisfy it. If a cursor bump raises the floor, bump Node too.
-- **Phantom `@connectrpc/connect-node`.** Pre-1.0.21 the SDK imported it at runtime without declaring
-  it, so Helmor injected an explicit pin (in `package.json` AND in `stageCursorWorkerDeps`). 1.0.21+
-  declares it as a real dependency, so those explicit pins were removed. **After any cursor bump,
-  verify it still resolves:** `ls sidecar/node_modules/@connectrpc/connect-node` and, after a build,
-  `ls sidecar/dist/vendor/cursor-worker/node_modules/@connectrpc/`. If absent, re-add the pin.
-- `sidecar/src/session-manager.ts` mirrors `ModelParameterDefinition` from the SDK by hand — if that
-  shape changes, the mirror drifts silently. Spot-check it.
-- Cursor ships **no per-patch SDK changelog** → smoke-test the worker after bumping (Agent.create/
-  resume/prompt, `Cursor.models.list`, raw event names `status`/`tool_call`/`assistant`/`thinking`
-  which `pipeline/accumulator/cursor.rs` namespaces).
-
----
-
-## OpenCode
-
-**Integration:** SDK client (`@opencode-ai/sdk/v2`, `createOpencodeClient`) in
-`sidecar/src/opencode-protocol/`; the `opencode-ai` native binary is staged and spawned as a server.
-
-**Pins (SDK + CLI release in LOCKSTEP — same version):**
-- `sidecar/package.json`: `@opencode-ai/sdk` = `X` and `opencode-ai` = `X`.
-- SHA256 table: `OPENCODE_SHA256["X"] = { arm64, x64 }` in `vendor-platform.ts`.
-- Compute: `scripts/npm_vendor_sha.sh opencode X` (downloads `registry.npmjs.org/opencode-darwin-{arm64,x64}/-/opencode-darwin-{arm64,x64}-X.tgz`).
-
-**Gotchas:**
-- The registry is flooded with `0.0.0-*` snapshot tags — ignore them; the real channel is `latest`.
-- `opencode-ai`'s postinstall is blocked (not a trusted dep); harmless — Helmor stages the platform
-  sub-package (`node_modules/opencode-darwin-<arch>/bin/opencode`) directly, not via that postinstall.
-- Rust pipeline consumes `message.updated` / `message.part.*` shapes (`pipeline/accumulator/opencode.rs`).
 
 ---
 
@@ -164,8 +120,3 @@ GitLab `gitlab-org/cli`. SHA from `checksums.txt` at the release — the
 Repo `ggml-org/llama.cpp`, version is a build tag (e.g. `b9763`). Asset
 `llama-<ver>-bin-macos-{arm64,x64}.tar.gz`. SHA is soft-verified (the table may hold `""` for dev);
 compute with `curl … | shasum -a 256` to pin for release.
-
-### node (`NODE_VERSION` + `NODE_SHA256{darwin:{arm64,x64}, windows:{arm64,x64}}`)
-The runtime that runs the cursor worker. SHA from `https://nodejs.org/dist/v<ver>/SHASUMS256.txt`
-(rows `node-v<ver>-darwin-{arm64,x64}.tar.gz`, `node-v<ver>-win-{arm64,x64}.zip`). **Pin to the Node
-24 line** to satisfy `@cursor/sdk`'s `>=22.13` engines floor and match the bundled worker runtime.

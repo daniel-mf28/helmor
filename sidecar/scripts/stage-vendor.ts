@@ -1,4 +1,4 @@
-// Stage claude-code + codex + opencode + gh + glab into
+// Stage claude-code + codex + kimi + gh + glab + llama.cpp into
 // `sidecar/dist/vendor/` for Tauri to ship as bundle resources. macOS host only.
 //
 // Cross-arch staging: in CI the host is always Apple Silicon (macos-26
@@ -27,21 +27,17 @@ import {
 	readSync,
 	rmSync,
 	statSync,
-	writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	claudeCodeArchivePlan,
 	codexArchivePlan,
-	type DarwinArch,
 	ghArchivePlan,
 	glabArchivePlan,
 	KIMI_VERSION,
 	kimiArchivePlan,
 	llamaArchivePlan,
-	nodeArchivePlan,
-	opencodeArchivePlan,
 	resolveVendorTarget,
 	type TargetInfo,
 } from "./vendor-platform.ts";
@@ -73,7 +69,7 @@ const BUNDLE_CACHE = join(SIDECAR_ROOT, ".bundle-cache");
 
 // Downloaded archives are the network-expensive part and SHA256-verified, so we
 // share one cache across all worktrees of this repo: a new worktree reuses
-// already-fetched gh/glab/llama-cpp/node archives instead of
+// already-fetched gh/glab/llama-cpp archives instead of
 // re-downloading them. This is a dev-only optimization, so the cache lives
 // inside the PROJECT (the main worktree's `sidecar/.bundle-cache`) rather than a
 // global user dir — found via git's common dir, which every linked worktree
@@ -116,8 +112,6 @@ function mainWorktreeRoot(): string | null {
 //                registry.npmjs.org/@openai/codex/-/codex-$VER-darwin-{arm64,x64}.tgz
 //   claude-code: shasum -a 256 of the npm tarballs at
 //                registry.npmjs.org/@anthropic-ai/claude-code-darwin-{arm64,x64}/-/claude-code-darwin-{arm64,x64}-$VER.tgz
-//   opencode:    shasum -a 256 of the npm tarball at
-//                registry.npmjs.org/opencode-darwin-{arm64,x64}/-/opencode-darwin-{arm64,x64}-$VER.tgz
 
 // Version pins, SHA256 tables, target mapping, and archive URL rules live in
 // `vendor-platform.ts` so platform-specific build support can grow there
@@ -498,6 +492,29 @@ function stageCodexFromVendorRoot(archRoot: string): void {
 	}
 }
 
+function isMachO(path: string): boolean {
+	let fd: number | undefined;
+	try {
+		fd = openSync(path, "r");
+		const buf = Buffer.alloc(4);
+		if (readSync(fd, buf, 0, 4, 0) < 4) return false;
+		const magic = buf.toString("hex");
+		// thin Mach-O (LE 64/32, BE 64/32) + fat/universal.
+		return (
+			magic === "cffaedfe" ||
+			magic === "cefaedfe" ||
+			magic === "feedfacf" ||
+			magic === "feedface" ||
+			magic === "cafebabe" ||
+			magic === "bebafeca"
+		);
+	} catch {
+		return false;
+	} finally {
+		if (fd !== undefined) closeSync(fd);
+	}
+}
+
 // Walk `codex-resources/` recursively: make every file executable and re-sign
 // each Mach-O with our Developer ID + hardened runtime. The tree can nest
 // binaries (e.g. `zsh/bin/zsh`), so a flat top-level pass misses them and
@@ -561,65 +578,6 @@ function stageCodexBinary(target: TargetInfo): void {
 		target.codexTriple,
 	);
 	stageCodexFromVendorRoot(extractedRoot);
-}
-
-// ---------------------------------------------------------------------------
-// opencode — stage the NATIVE binary `opencode-darwin-<arch>/bin/opencode`,
-// NOT the `opencode-ai` Node shim. codesign needs JIT entitlements (true flag).
-// ---------------------------------------------------------------------------
-
-function readOpencodeVersion(): string {
-	const pkgJsonPath = join(NODE_MODULES, "opencode-ai", "package.json");
-	ensureExists(pkgJsonPath, "opencode-ai package.json");
-	const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as {
-		version?: string;
-	};
-	if (!pkg.version) {
-		throw new Error(`[stage-vendor] opencode-ai has no version field`);
-	}
-	return pkg.version;
-}
-
-function copyOpencodeBin(src: string): string {
-	const dest = join(DIST_VENDOR, "opencode", `opencode${EXE}`);
-	copyFile(src, dest);
-	chmodSync(dest, 0o755);
-	maybeSignMacBinary(dest, true);
-	return dest;
-}
-
-function stageOpencodeBinary(target: TargetInfo): string {
-	const installed = join(
-		NODE_MODULES,
-		target.opencodePkg,
-		"bin",
-		`opencode${EXE}`,
-	);
-	if (existsSync(installed)) {
-		return copyOpencodeBin(installed);
-	}
-
-	// Cross-arch: download the platform tarball from npm.
-	const version = readOpencodeVersion();
-	const plan = opencodeArchivePlan(target, version);
-	ensureCacheDir();
-	const archive = join(ARCHIVE_CACHE, plan.archiveName);
-	downloadAndVerify(plan.url, archive, plan.sha256);
-
-	const extractDir = join(BUNDLE_CACHE, plan.slug);
-	freshExtractDir(extractDir);
-	execFileSync(TAR_BIN, ["-xzf", archive, "-C", extractDir], {
-		stdio: "inherit",
-	});
-
-	// npm tarballs nest everything under `package/`.
-	const binSrc = join(extractDir, "package", "bin", `opencode${EXE}`);
-	if (!existsSync(binSrc)) {
-		throw new Error(
-			`[stage-vendor] opencode binary missing after extract: ${binSrc}`,
-		);
-	}
-	return copyOpencodeBin(binSrc);
 }
 
 // ---------------------------------------------------------------------------
@@ -852,186 +810,6 @@ function stageLlamaCppBinaries(target: TargetInfo): string {
 }
 
 // ---------------------------------------------------------------------------
-// Cursor worker — Node runtime + a self-contained @cursor/sdk node_modules.
-// Cursor's SDK can't run on Bun (its HTTP/2 client drops tool traffic in git
-// repos with NGHTTP2_FRAME_SIZE_ERROR), so it runs in a Node child process.
-// The built `cursor-worker.mjs` is copied in by `build.ts`; here we stage the
-// dependency tree it loads at runtime (@cursor/sdk + the bundled
-// rg/cursorsandbox in @cursor/sdk-<triple>; the SQLite store now uses Node's
-// built-in `node:sqlite`).
-// ---------------------------------------------------------------------------
-
-// Stage the Node runtime that runs the cursor worker. Release-launched apps
-// have no `node` on PATH, so it must ride along in the bundle. Only the single
-// `node` binary is copied (not the npm/dist tree).
-function stageNodeRuntime(target: TargetInfo): string {
-	const plan = nodeArchivePlan(target);
-	const dest = join(DIST_VENDOR, "node", `node${EXE}`);
-	ensureCacheDir();
-	const archive = join(ARCHIVE_CACHE, plan.archiveName);
-	downloadAndVerify(plan.url, archive, plan.sha256);
-	const extractDir = join(BUNDLE_CACHE, `${plan.slug}-extract`);
-	freshExtractDir(extractDir);
-	extractArchive(archive, extractDir);
-	// Unix tarball → `<slug>/bin/node`; Windows zip → `<slug>/node.exe`.
-	const binSrc =
-		target.os === "windows"
-			? join(extractDir, plan.slug, `node${EXE}`)
-			: join(extractDir, plan.slug, "bin", "node");
-	ensureExists(binSrc, "extracted node binary");
-	copyFile(binSrc, dest);
-	chmodSync(dest, 0o755);
-	// V8's JIT needs the same allow-jit / allow-unsigned-executable-memory
-	// entitlements as the Bun binaries under hardened runtime.
-	maybeSignMacBinary(dest, true);
-	return dest;
-}
-
-function readCursorSdkVersion(): string {
-	const pkgJsonPath = join(NODE_MODULES, "@cursor", "sdk", "package.json");
-	ensureExists(pkgJsonPath, "@cursor/sdk package.json");
-	const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as {
-		version?: string;
-	};
-	if (!pkg.version) {
-		throw new Error(`[stage-vendor] @cursor/sdk has no version`);
-	}
-	return pkg.version;
-}
-
-function stageCursorWorkerDeps(target: TargetInfo): string {
-	const version = readCursorSdkVersion();
-	const dest = join(DIST_VENDOR, "cursor-worker");
-	rmSync(dest, { recursive: true, force: true });
-	mkdirSync(dest, { recursive: true });
-	writeFileSync(
-		join(dest, "package.json"),
-		`${JSON.stringify(
-			{
-				name: "helmor-cursor-worker",
-				private: true,
-				dependencies: {
-					"@cursor/sdk": version,
-				},
-			},
-			null,
-			2,
-		)}\n`,
-	);
-
-	// Install for the BUNDLE target, not the build host. The macos-26 runner is
-	// arm64 and cross-builds the x86_64 bundle, so a plain `bun install` would
-	// drop the arm64 @cursor/sdk-darwin-arm64 (rg/cursorsandbox) into the x64
-	// Node bundle and crash Cursor on Intel. `--cpu/--os` (and the npm_config_*
-	// mirrors) select the right platform optional-dep for the bundle target.
-	const npmOs = target.os === "windows" ? "win32" : "darwin";
-	const npmArch = target.arch; // "x64" | "arm64"
-	console.log(
-		`[stage-vendor] installing @cursor/sdk@${version} for ${npmOs}-${npmArch} (cursor worker)`,
-	);
-	const installCommand = IS_WINDOWS ? "npm.cmd" : process.execPath;
-	execFileSync(
-		installCommand,
-		["install", `--cpu=${npmArch}`, `--os=${npmOs}`],
-		{
-			cwd: dest,
-			stdio: "inherit",
-			env: {
-				...process.env,
-				npm_config_target_arch: npmArch,
-				npm_config_target_platform: npmOs,
-				npm_config_arch: npmArch,
-				npm_config_platform: npmOs,
-			},
-		},
-	);
-
-	verifyCursorWorkerArch(dest, npmOs, npmArch);
-	signCursorWorkerMachOs(dest);
-	return dest;
-}
-
-/// The staged node_modules ships native Mach-O (rg, cursorsandbox) that arrive
-/// ad-hoc/linker-signed. Tauri's signing doesn't reach nested Resources, so
-/// re-sign each with our Developer ID + hardened runtime (no entitlements —
-/// none of them JIT) or notarization rejects the bundle. No-op when not signing
-/// (dev) and skips non-Mach-O (e.g. Windows PE).
-function signCursorWorkerMachOs(dest: string): void {
-	if (!process.env.APPLE_SIGNING_IDENTITY?.trim()) return;
-	const root = join(dest, "node_modules");
-	if (!existsSync(root)) return;
-	let signed = 0;
-	const stack = [root];
-	while (stack.length > 0) {
-		const cur = stack.pop();
-		if (!cur) break;
-		for (const entry of readdirSync(cur)) {
-			const p = join(cur, entry);
-			const st = lstatSync(p);
-			if (st.isSymbolicLink()) continue; // .bin/* point inside the tree
-			if (st.isDirectory()) {
-				stack.push(p);
-			} else if (st.isFile() && isMachO(p)) {
-				maybeSignMacBinary(p, false);
-				signed += 1;
-			}
-		}
-	}
-	console.log(`[stage-vendor] cursor worker: signed ${signed} Mach-O file(s)`);
-}
-
-function isMachO(path: string): boolean {
-	let fd: number | undefined;
-	try {
-		fd = openSync(path, "r");
-		const buf = Buffer.alloc(4);
-		if (readSync(fd, buf, 0, 4, 0) < 4) return false;
-		const magic = buf.toString("hex");
-		// thin Mach-O (LE 64/32, BE 64/32) + fat/universal.
-		return (
-			magic === "cffaedfe" ||
-			magic === "cefaedfe" ||
-			magic === "feedfacf" ||
-			magic === "feedface" ||
-			magic === "cafebabe" ||
-			magic === "bebafeca"
-		);
-	} catch {
-		return false;
-	} finally {
-		if (fd !== undefined) closeSync(fd);
-	}
-}
-
-/// Fail the build if the staged cursor-worker deps aren't the bundle target's
-/// architecture — guards against the cross-arch footgun above.
-function verifyCursorWorkerArch(
-	dest: string,
-	npmOs: string,
-	npmArch: DarwinArch,
-): void {
-	const cursorScope = join(dest, "node_modules", "@cursor");
-	const wantPkg = `sdk-${npmOs}-${npmArch}`;
-	if (!existsSync(join(cursorScope, wantPkg))) {
-		throw new Error(
-			`[stage-vendor] cursor worker: platform package @cursor/${wantPkg} not installed — cross-arch resolution failed`,
-		);
-	}
-	// A stray wrong-arch sibling would also get bundled and crash at runtime.
-	const stray = readdirSync(cursorScope).filter(
-		(n) => /^sdk-(darwin|win32|linux)-/.test(n) && n !== wantPkg,
-	);
-	if (stray.length > 0) {
-		throw new Error(
-			`[stage-vendor] cursor worker: unexpected wrong-arch platform package(s): ${stray.join(", ")}`,
-		);
-	}
-	console.log(
-		`[stage-vendor] cursor worker deps verified (${npmOs}-${npmArch})`,
-	);
-}
-
-// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -1068,9 +846,6 @@ stageClaudeCodeBinary(target);
 // ----- Codex -----
 stageCodexBinary(target);
 
-// ----- opencode -----
-stageOptional("opencode", () => stageOpencodeBinary(target));
-
 // ----- kimi (Kimi Code CLI, ACP provider) -----
 stageOptional("kimi", () => stageKimiBinary(target));
 
@@ -1083,26 +858,11 @@ stageOptional("glab", () => stageGlabBinary(target));
 // ----- llama.cpp (local LLM server for auto-rename / Local AI) -----
 stageOptional("llama-cpp", () => stageLlamaCppBinaries(target));
 
-// ----- Cursor worker deps — release builds only (set by the `build` script).
-// Dev resolves @cursor/sdk from sidecar/node_modules, so `dev:prepare` skips
-// this ~minute-long install. Node runtime is staged separately (see CI). -----
-if (process.env.HELMOR_STAGE_CURSOR_WORKER === "1") {
-	stageNodeRuntime(target);
-	stageCursorWorkerDeps(target);
-}
-
 // ----- Summary -----
 console.log(`[stage-vendor] ✓ staged → ${DIST_VENDOR}`);
 console.log(`  claude-code ${humanSize(join(DIST_VENDOR, "claude-code"))}`);
 console.log(`  codex       ${humanSize(join(DIST_VENDOR, "codex"))}`);
-console.log(`  opencode    ${humanSize(join(DIST_VENDOR, "opencode"))}`);
 console.log(`  kimi        ${humanSize(join(DIST_VENDOR, "kimi"))}`);
 console.log(`  gh          ${humanSize(join(DIST_VENDOR, "gh"))}`);
 console.log(`  glab        ${humanSize(join(DIST_VENDOR, "glab"))}`);
 console.log(`  llama-cpp   ${humanSize(join(DIST_VENDOR, "llama-cpp"))}`);
-if (process.env.HELMOR_STAGE_CURSOR_WORKER === "1") {
-	console.log(`  node        ${humanSize(join(DIST_VENDOR, "node"))}`);
-	console.log(
-		`  cursor-worker ${humanSize(join(DIST_VENDOR, "cursor-worker"))}`,
-	);
-}

@@ -37,8 +37,9 @@ import type {
 
 type FetchState = { loading: boolean; error: string | null };
 
-// Default wire-protocol options (OpenCode). Adapters override via
-// `styleOptions` — e.g. Kimi supplies openai/anthropic/… .
+// Fallback wire-protocol options (OpenAI-style Chat/Responses) for an adapter
+// that enables the selector without supplying `styleOptions`. Every shipped
+// selectable adapter (Claude, Kimi) supplies its own list.
 const DEFAULT_STYLE_OPTIONS: StyleOption[] = [
 	{
 		value: "chat",

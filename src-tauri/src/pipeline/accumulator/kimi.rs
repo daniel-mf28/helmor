@@ -223,7 +223,7 @@ fn finalize(acc: &mut StreamAccumulator, duration_ms: Option<f64>) -> PushOutcom
     }
 
     // Synthesize a turn-result row so the adapter renders the duration footer,
-    // matching Claude/Codex/OpenCode. ACP supplies no timing, so the sidecar
+    // matching Claude/Codex. ACP supplies no timing, so the sidecar
     // measures the turn and passes `duration_ms` on `kimi/turn_complete`; gating
     // on it keeps timing-free fixtures (and aborts) byte-identical.
     if let Some(duration) = duration_ms {

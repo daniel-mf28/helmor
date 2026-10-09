@@ -358,8 +358,6 @@ pub fn run() {
             commands::provider_commands::stop_keychain_store_terminal,
             commands::provider_commands::write_keychain_store_terminal_stdin,
             commands::provider_commands::resize_keychain_store_terminal,
-            agents::list_cursor_models,
-            agents::list_opencode_models,
             agents::list_provider_capabilities,
             agents::send_agent_message_stream,
             agents::subscribe_session_stream,

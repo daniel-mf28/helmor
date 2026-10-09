@@ -80,14 +80,8 @@ struct SidecarProcess {
 pub struct BundledAgentPaths {
     pub claude_bin: Option<PathBuf>,
     pub codex_bin: Option<PathBuf>,
-    pub opencode_bin: Option<PathBuf>,
     /// Kimi Code CLI binary, spawned by the sidecar as `kimi acp`.
     pub kimi_bin: Option<PathBuf>,
-    /// Node runtime that runs the cursor worker (Cursor's `@cursor/sdk` can't
-    /// run on Bun — its HTTP/2 hits `NGHTTP2_FRAME_SIZE_ERROR` in git repos).
-    pub node_bin: Option<PathBuf>,
-    /// Built `cursor-worker.mjs` entry, run by `node_bin`.
-    pub cursor_worker: Option<PathBuf>,
 }
 
 /// Resolve the bundled Claude/Codex CLI binaries shipped inside the
@@ -104,16 +98,6 @@ pub fn resolve_bundled_agent_paths() -> BundledAgentPaths {
         .ok()
         .and_then(|exe| resolve_bundled_agent_paths_for_exe(&exe))
         .unwrap_or_default()
-}
-
-/// Read Cursor API key from `app.cursor_provider`. None on missing/empty.
-pub fn load_cursor_api_key() -> Option<String> {
-    let raw = crate::models::settings::load_setting_value("app.cursor_provider")
-        .ok()
-        .flatten()?;
-    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let key = parsed.get("apiKey")?.as_str()?.trim();
-    (!key.is_empty()).then(|| key.to_string())
 }
 
 fn resolve_bundled_agent_paths_for_exe(exe: &std::path::Path) -> Option<BundledAgentPaths> {
@@ -133,13 +117,7 @@ fn resolve_bundled_agent_paths_for_exe(exe: &std::path::Path) -> Option<BundledA
         "claude"
     };
     let codex_bin_name = if cfg!(windows) { "codex.exe" } else { "codex" };
-    let opencode_bin_name = if cfg!(windows) {
-        "opencode.exe"
-    } else {
-        "opencode"
-    };
     let kimi_bin_name = if cfg!(windows) { "kimi.exe" } else { "kimi" };
-    let node_bin_name = if cfg!(windows) { "node.exe" } else { "node" };
 
     let find = |relative: String| {
         resource_roots
@@ -151,10 +129,7 @@ fn resolve_bundled_agent_paths_for_exe(exe: &std::path::Path) -> Option<BundledA
     Some(BundledAgentPaths {
         claude_bin: find(format!("vendor/claude-code/{claude_bin_name}")),
         codex_bin: find(format!("vendor/codex/{codex_bin_name}")),
-        opencode_bin: find(format!("vendor/opencode/{opencode_bin_name}")),
         kimi_bin: find(format!("vendor/kimi/{kimi_bin_name}")),
-        node_bin: find(format!("vendor/node/{node_bin_name}")),
-        cursor_worker: find("vendor/cursor-worker/cursor-worker.mjs".to_string()),
     })
 }
 
@@ -172,10 +147,9 @@ impl SidecarProcess {
         let mut cmd = if is_dev {
             let mut c = Command::new(crate::platform::executable::resolve_for_spawn("bun"));
             c.arg("run").arg(&sidecar_path);
-            // Anchor cwd to sidecar/ so the cursor proxy resolves the worker at
-            // `dist/cursor-worker.mjs` and Node finds @cursor/sdk in
-            // `sidecar/node_modules`. Without this the sidecar inherits Tauri's
-            // cwd and the dev worker can't be located.
+            // Anchor cwd to sidecar/ so relative dev paths (e.g. the staged
+            // `dist/vendor` tree) resolve from the sidecar root rather than
+            // Tauri's cwd.
             if let Some(sidecar_root) = sidecar_path.parent().and_then(|p| p.parent()) {
                 c.current_dir(sidecar_root);
             }
@@ -189,7 +163,7 @@ impl SidecarProcess {
             .stderr(Stdio::inherit());
 
         // Put the sidecar in its own process tree so termination reaches
-        // Claude/Codex/OpenCode children instead of only hitting Bun.
+        // Claude/Codex/Kimi children instead of only hitting Bun.
         crate::platform::process::configure_tree_root(&mut cmd);
 
         // Pass log config to the sidecar process
@@ -209,10 +183,7 @@ impl SidecarProcess {
                 exe = ?exe,
                 claude_bin = ?bundled_paths.claude_bin,
                 codex_bin = ?bundled_paths.codex_bin,
-                opencode_bin = ?bundled_paths.opencode_bin,
                 kimi_bin = ?bundled_paths.kimi_bin,
-                node_bin = ?bundled_paths.node_bin,
-                cursor_worker = ?bundled_paths.cursor_worker,
                 "Resolved bundled agent paths"
             );
             if let Some(path) = bundled_paths.claude_bin {
@@ -221,25 +192,10 @@ impl SidecarProcess {
             if let Some(path) = bundled_paths.codex_bin {
                 cmd.env("HELMOR_CODEX_BIN_PATH", &path);
             }
-            if let Some(path) = bundled_paths.opencode_bin {
-                cmd.env("HELMOR_OPENCODE_BIN_PATH", &path);
-            }
             if let Some(path) = bundled_paths.kimi_bin {
                 cmd.env("HELMOR_KIMI_BIN_PATH", &path);
             }
-            // Cursor runs in a Node child process spawned by the sidecar; point
-            // it at the bundled Node + worker entry. Dev resolves both itself
-            // (node on PATH, sidecar/dist/cursor-worker.mjs).
-            if let Some(path) = bundled_paths.node_bin {
-                cmd.env("HELMOR_NODE_BIN_PATH", &path);
-            }
-            if let Some(path) = bundled_paths.cursor_worker {
-                cmd.env("HELMOR_CURSOR_WORKER_PATH", &path);
-            }
         }
-        // Cursor key is NOT env-passed — pushed via `updateConfig` RPC
-        // (see `push_cursor_api_key`) so key changes don't restart the
-        // shared sidecar and interrupt other providers' turns.
 
         tracing::debug!(
             cmd = if is_dev {
@@ -445,50 +401,9 @@ impl ManagedSidecar {
                 }
                 return Err(error);
             }
-
-            // Push saved key so the first cursor request finds it set.
-            // Best-effort: failures fall through to the "not configured" error.
-            if let Some(key) = load_cursor_api_key() {
-                let init = SidecarRequest {
-                    id: Uuid::new_v4().to_string(),
-                    method: "updateConfig".to_string(),
-                    params: serde_json::json!({ "cursorApiKey": key }),
-                };
-                if let Err(error) = guard.as_ref().unwrap().send(&init) {
-                    tracing::warn!("Initial Cursor key push failed: {error}");
-                }
-            }
         }
 
         guard.as_ref().unwrap().send(request)
-    }
-
-    /// Hot-push Cursor API key (or null) via `updateConfig`. Best-effort;
-    /// no-op when sidecar isn't running — next spawn will pick it up.
-    pub fn push_cursor_api_key(&self, key: Option<String>) {
-        let mut guard = match self.process.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                tracing::error!("Sidecar lock poisoned during config push: {e}");
-                e.into_inner()
-            }
-        };
-        let Some(process) = guard.as_mut() else {
-            return;
-        };
-        if !process.is_alive() {
-            return;
-        }
-        let request = SidecarRequest {
-            id: Uuid::new_v4().to_string(),
-            method: "updateConfig".to_string(),
-            params: serde_json::json!({
-                "cursorApiKey": key,
-            }),
-        };
-        if let Err(error) = process.send(&request) {
-            tracing::warn!("Failed to push Cursor API key to sidecar: {error}");
-        }
     }
 
     /// Cooperative shutdown of the sidecar process. Three-step ladder:
@@ -925,21 +840,14 @@ mod tests {
             "claude"
         };
         let codex = if cfg!(windows) { "codex.exe" } else { "codex" };
-        let opencode = if cfg!(windows) {
-            "opencode.exe"
-        } else {
-            "opencode"
-        };
 
         let root = tempfile::tempdir().unwrap();
         let exe = root.path().join("Helmor.app/Contents/MacOS/Helmor");
         let resources = root.path().join("Helmor.app/Contents/Resources/vendor");
         std::fs::create_dir_all(resources.join("claude-code")).unwrap();
         std::fs::create_dir_all(resources.join("codex")).unwrap();
-        std::fs::create_dir_all(resources.join("opencode")).unwrap();
         std::fs::write(resources.join("claude-code").join(claude), "").unwrap();
         std::fs::write(resources.join("codex").join(codex), "").unwrap();
-        std::fs::write(resources.join("opencode").join(opencode), "").unwrap();
 
         let paths = resolve_bundled_agent_paths_for_exe(&exe).unwrap();
 
@@ -950,10 +858,6 @@ mod tests {
         assert_eq!(
             paths.codex_bin.unwrap(),
             resources.join("codex").join(codex)
-        );
-        assert_eq!(
-            paths.opencode_bin.unwrap(),
-            resources.join("opencode").join(opencode)
         );
     }
 }

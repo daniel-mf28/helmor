@@ -26,7 +26,7 @@ Only traffic you initiate, with your own credentials:
 
 - **Agent API calls** — your prompts, and the file contents the agent chooses
   to read, go to the provider of the model you selected (Anthropic, OpenAI,
-  Cursor, or your OpenCode/custom provider endpoints). Helmor does not proxy
+  Moonshot/Kimi, or your custom provider endpoints). Helmor does not proxy
   or inspect this traffic; the agent CLIs talk to their providers directly,
   authenticated by your login or API key.
 - **Git operations** — fetch, push, clone, against your repository's remotes.
@@ -44,7 +44,7 @@ reuses the standard ones:
 
 - Claude Code and Codex logins live where those CLIs keep them.
 - `gh` / `glab` tokens live in those CLIs' own config/keychain.
-- Keys you enter in Helmor settings (e.g. a Cursor API key, custom provider
+- Keys you enter in Helmor settings (e.g. custom provider
   keys) are stored locally in your settings database.
 
 ## Local models

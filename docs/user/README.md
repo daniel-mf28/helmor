@@ -21,7 +21,7 @@ follow [Your first workspace](get-started/your-first-workspace.md).
 | Page | What it covers |
 | --- | --- |
 | [Workspaces](concepts/workspaces.md) | Git worktrees, workspace modes, lifecycle, archive and restore |
-| [Agents & models](concepts/agents-and-models.md) | Claude Code, Codex, Cursor, OpenCode — auth, models, effort, modes |
+| [Agents & models](concepts/agents-and-models.md) | Claude Code, Codex, Kimi — auth, models, effort, modes |
 | [Sessions](concepts/sessions.md) | Session tabs, streaming, steering, queueing, context usage |
 | [Parallel agents](concepts/parallel-agents.md) | Running many workspaces at once without losing the thread |
 | [Stacked PRs](concepts/stacked-prs.md) | Building dependent changes as a stack of workspaces |

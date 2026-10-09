@@ -11,8 +11,7 @@ own servers.
 | --- | --- | --- |
 | **Claude Code** | Your existing Claude Code login (Claude subscription) or an Anthropic API key | The default provider. Supports skills, MCP servers, extended thinking |
 | **OpenAI Codex** | Your existing Codex login (ChatGPT) or an OpenAI API key | Supports goal tracking and skills |
-| **Cursor** | Cursor API key (Settings → Models) | Cursor's agent models; the section appears once a key is set |
-| **OpenCode** | Providers from your `~/.config/opencode/opencode.jsonc` | Bring any OpenCode-compatible provider/model |
+| **Kimi Code** | Your Kimi login (`kimi login`, from Settings → Models) | Models from your `~/.kimi-code` config, plus custom providers |
 
 If you are already signed in to Claude Code or Codex on this machine, Helmor
 picks the login up automatically. Otherwise, onboarding (or Settings) walks
@@ -57,9 +56,8 @@ Type `/` in the composer to browse what the current agent can do:
 
 - **Claude Code** exposes its built-in commands and any skills installed in
   your project or user scope.
-- **Codex and Cursor** discover skills from `.agents/skills`,
-  `.claude/skills`, `.cursor/skills`, and `.codex/skills` directories (project
-  and user scope).
+- **Codex** discovers skills from `.agents/skills`, `.claude/skills`, and
+  `.codex/skills` directories (project and user scope).
 
 ## MCP servers
 

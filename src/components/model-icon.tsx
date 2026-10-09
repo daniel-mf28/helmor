@@ -1,28 +1,15 @@
 import { Box } from "lucide-react";
 import {
 	ClaudeColorIcon,
-	CursorIcon,
 	DeepSeekIcon,
 	KimiIcon,
 	MinimaxIcon,
 	OpenAIColorIcon,
-	OpenCodeIcon,
-	ProviderBrandIcon,
-	type ProviderBrandIconKey,
 	QwenIcon,
 	XiaomiMiMoIcon,
 	ZhipuIcon,
 } from "@/components/icons";
 import { type AgentModelOption, isCodexProvider } from "@/lib/api";
-import catalog from "@/shared/provider-catalog.json";
-
-/// opencode-protocol slug `<providerID>/<modelID>`: map providerID via the
-/// shared catalog (same as Settings).
-const OPENCODE_ICON_BY_ID = new Map(
-	(catalog.opencode as Array<{ key: string; icon: ProviderBrandIconKey }>).map(
-		(p) => [p.key, p.icon],
-	),
-);
 
 export function ModelIcon({
 	model,
@@ -31,22 +18,9 @@ export function ModelIcon({
 	model?: AgentModelOption | null;
 	className?: string;
 }) {
-	if (model?.provider === "cursor") return <CursorIcon className={className} />;
 	if (isCodexProvider(model?.provider))
 		return <OpenAIColorIcon className={className} />;
 	if (model?.provider === "kimi") return <KimiIcon className={className} />;
-	if (model?.provider === "opencode") {
-		const providerId = model.cliModel.split("/")[0] ?? "";
-		if (providerId === "anthropic")
-			return <ClaudeColorIcon className={className} />;
-		if (providerId === "openai")
-			return <OpenAIColorIcon className={className} />;
-		if (providerId === "opencode")
-			return <OpenCodeIcon className={className} />;
-		const icon = OPENCODE_ICON_BY_ID.get(providerId);
-		if (icon) return <ProviderBrandIcon icon={icon} className={className} />;
-		return <Box className={className} strokeWidth={1.8} />;
-	}
 	if (model?.providerKey === "custom")
 		return <Box className={className} strokeWidth={1.8} />;
 	if (model?.providerKey === "minimax" || model?.providerKey === "minimax-cn")

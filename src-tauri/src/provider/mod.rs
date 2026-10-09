@@ -7,8 +7,6 @@ pub mod codex;
 // config.toml` (catalog/registry/raw-endpoint modes), so it does NOT implement
 // the unified `CustomProviderBackend` trait — it lives here for co-location only.
 pub mod kimi;
-pub mod opencode;
-pub mod opencode_config;
 pub mod types;
 
 pub use types::{is_enabled, CustomProvider, CustomProviderModel, ProviderFamily};
@@ -31,7 +29,6 @@ pub fn backend_for(family: ProviderFamily) -> Option<Box<dyn CustomProviderBacke
     match family {
         ProviderFamily::Claude => Some(Box::new(claude::ClaudeBackend)),
         ProviderFamily::Codex => Some(Box::new(codex::CodexBackend)),
-        ProviderFamily::Opencode => Some(Box::new(opencode::OpencodeBackend)),
         ProviderFamily::Kimi => Some(Box::new(kimi::KimiBackend)),
     }
 }
@@ -46,7 +43,6 @@ pub async fn fetch_models(
     match family {
         ProviderFamily::Claude => claude::fetch_models(base_url, api_key).await,
         ProviderFamily::Codex => codex::fetch_models(base_url, api_key).await,
-        ProviderFamily::Opencode => opencode::fetch_models(base_url, api_key).await,
         ProviderFamily::Kimi => kimi::fetch_models(base_url, api_key, api_style).await,
     }
 }

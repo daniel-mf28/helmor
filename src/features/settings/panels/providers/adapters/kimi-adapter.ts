@@ -1,5 +1,5 @@
-// Kimi provider-config adapter. File-backed (`~/.kimi-code/config.toml`) like
-// OpenCode, but Kimi resolves models through its own runtime, so v1 exposes
+// Kimi provider-config adapter. File-backed (`~/.kimi-code/config.toml`); Kimi
+// resolves models through its own runtime, so v1 exposes
 // manual OpenAI-compatible endpoints only — no built-in presets or api-style
 // switch (the registry-import path was intentionally dropped).
 

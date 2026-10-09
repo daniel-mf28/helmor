@@ -184,7 +184,7 @@ fn expand_models(providers: &[CustomProvider]) -> Vec<ClaudeProviderModel> {
         // Custom models are merged into the official Claude section (composer
         // and Settings alike), so each label is prefixed with its provider
         // name (`Name · model`) — otherwise a custom `claude-opus-4-8` is
-        // indistinguishable from the official one. Mirrors Codex/OpenCode.
+        // indistinguishable from the official one. Mirrors Codex.
         let prefix = match provider.name.trim() {
             "" => provider.id.trim(),
             name => name,

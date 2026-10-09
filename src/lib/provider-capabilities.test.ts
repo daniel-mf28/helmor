@@ -28,24 +28,24 @@ const codexCaps: ProviderCapabilities = {
 	requiresApiKey: false,
 };
 
-const cursorCaps: ProviderCapabilities = {
-	provider: "cursor",
-	displayName: "Cursor",
-	supportsPlanMode: true,
+const kimiCaps: ProviderCapabilities = {
+	provider: "kimi",
+	displayName: "Kimi",
+	supportsPlanMode: false,
 	supportsActiveGoal: false,
 	supportsContextUsage: false,
 	supportsSteer: false,
 	supportsSlashCommands: true,
-	requiresApiKey: true,
+	requiresApiKey: false,
 };
 
-const table: ProviderCapabilities[] = [claudeCaps, codexCaps, cursorCaps];
+const table: ProviderCapabilities[] = [claudeCaps, codexCaps, kimiCaps];
 
 describe("findProviderCapabilities", () => {
 	it.each([
 		["claude", claudeCaps],
 		["codex", codexCaps],
-		["cursor", cursorCaps],
+		["kimi", kimiCaps],
 	])("returns the row for %s", (provider, expected) => {
 		expect(findProviderCapabilities(table, provider)).toBe(expected);
 	});
@@ -65,7 +65,7 @@ describe("findProviderCapabilities", () => {
 		expect(findProviderCapabilities([], "claude")).toBeNull();
 	});
 
-	it("distinguishes Codex active-goal support from Claude / Cursor", () => {
+	it("distinguishes Codex active-goal support from Claude / Kimi", () => {
 		// Regression gate for the composer's `/goal` interception
 		// switching from `provider === "codex"` to a capability check.
 		// If a future provider ever needs `supportsActiveGoal`, the
@@ -76,24 +76,14 @@ describe("findProviderCapabilities", () => {
 		expect(findProviderCapabilities(table, "claude")?.supportsActiveGoal).toBe(
 			false,
 		);
-		expect(findProviderCapabilities(table, "cursor")?.supportsActiveGoal).toBe(
+		expect(findProviderCapabilities(table, "kimi")?.supportsActiveGoal).toBe(
 			false,
 		);
 	});
 
-	it("surfaces Cursor's requires-api-key flag", () => {
-		// Regression gate: a future refactor of the onboarding/login
-		// step would lose the in-app API-key path if this flag flipped
-		// silently. Keep the assertion explicit per-provider.
-		expect(findProviderCapabilities(table, "cursor")?.requiresApiKey).toBe(
-			true,
-		);
-		expect(findProviderCapabilities(table, "claude")?.requiresApiKey).toBe(
-			false,
-		);
-		expect(findProviderCapabilities(table, "codex")?.requiresApiKey).toBe(
-			false,
-		);
+	it("returns null for removed providers (cursor / opencode)", () => {
+		expect(findProviderCapabilities(table, "cursor")).toBeNull();
+		expect(findProviderCapabilities(table, "opencode")).toBeNull();
 	});
 });
 
@@ -111,8 +101,6 @@ describe("DEFAULT_PROVIDER_CAPABILITIES (cold-start initialData)", () => {
 		expect(DEFAULT_PROVIDER_CAPABILITIES.map((caps) => caps.provider)).toEqual([
 			"claude",
 			"codex",
-			"cursor",
-			"opencode",
 			"kimi",
 		]);
 	});
@@ -127,7 +115,7 @@ describe("DEFAULT_PROVIDER_CAPABILITIES (cold-start initialData)", () => {
 				?.supportsActiveGoal,
 		).toBe(false);
 		expect(
-			findProviderCapabilities(DEFAULT_PROVIDER_CAPABILITIES, "cursor")
+			findProviderCapabilities(DEFAULT_PROVIDER_CAPABILITIES, "kimi")
 				?.supportsActiveGoal,
 		).toBe(false);
 	});
@@ -138,21 +126,6 @@ describe("DEFAULT_PROVIDER_CAPABILITIES (cold-start initialData)", () => {
 			"codex",
 		);
 		expect(codex?.displayName).toBe("Codex");
-		const cursor = findProviderCapabilities(
-			DEFAULT_PROVIDER_CAPABILITIES,
-			"cursor",
-		);
-		expect(cursor?.displayName).toBe("Cursor");
-		expect(cursor?.requiresApiKey).toBe(true);
-		// OpenCode must resolve to itself, not fall back to "Claude".
-		const opencode = findProviderCapabilities(
-			DEFAULT_PROVIDER_CAPABILITIES,
-			"opencode",
-		);
-		expect(opencode?.displayName).toBe("OpenCode");
-		expect(opencode?.supportsContextUsage).toBe(true);
-		expect(opencode?.supportsActiveGoal).toBe(false);
-		expect(opencode?.requiresApiKey).toBe(false);
 		// Kimi (ACP) must resolve to itself, not fall back to "Claude".
 		const kimi = findProviderCapabilities(
 			DEFAULT_PROVIDER_CAPABILITIES,

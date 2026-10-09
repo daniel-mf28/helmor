@@ -16,7 +16,7 @@ import { useKimiModelSync } from "./use-kimi-model-sync";
 
 /** Pick which of the user's configured Kimi models appear in the composer
  *  picker. `kimi provider list` is read-only, so syncing never interrupts a
- *  running turn — no confirm dialog (unlike OpenCode's server restart). */
+ *  running turn — no confirm dialog. */
 export function KimiModels() {
 	const queryClient = useQueryClient();
 	const { settings, updateSettings } = useSettings();

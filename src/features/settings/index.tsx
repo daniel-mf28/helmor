@@ -436,8 +436,7 @@ export const SettingsDialog = memo(function SettingsDialog({
 												<I18nText source="claudeCodeThinkingDisplay" />
 												{/* SettingsDialog renders outside AppShell's
 												 *  TooltipProvider tree, so panels need their
-												 *  own — same pattern as repository-settings /
-												 *  cursor-provider. */}
+												 *  own — same pattern as repository-settings. */}
 												<TooltipProvider>
 													<Tooltip>
 														<TooltipTrigger asChild>

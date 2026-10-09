@@ -17,8 +17,8 @@ import { UserInputCard } from "./shared";
 export type ToolApprovalCardProps = {
 	toolName: string;
 	toolInput: Record<string, unknown>;
-	/** Fallback resource label when `toolInput` is empty (e.g. OpenCode's
-	 *  `patterns` — the file path / command being approved). */
+	/** Fallback resource label when `toolInput` is empty (the file
+	 *  path / command being approved). */
 	description?: string | null;
 	disabled?: boolean;
 	onResponse: (behavior: "allow" | "deny") => void;
@@ -49,8 +49,8 @@ function getCodePreview(
 	) {
 		return { code: command, language: "bash" };
 	}
-	// Some agents (OpenCode read/skill/todo/shell) send an empty input object
-	// and carry the target resource in `description` (its `patterns`). Show
+	// Some agents send an empty input object and carry the target resource
+	// in `description`. Show
 	// that instead of a useless `{}`.
 	if (toolInput == null || Object.keys(toolInput).length === 0) {
 		const fallback = description?.trim();

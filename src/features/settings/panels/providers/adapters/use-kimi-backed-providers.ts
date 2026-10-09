@@ -1,5 +1,5 @@
-// Custom-provider CRUD for Kimi — file-backed (`~/.kimi-code/config.toml`),
-// like OpenCode. After a write, re-sync Kimi's model cache so the composer
+// Custom-provider CRUD for Kimi — file-backed (`~/.kimi-code/config.toml`).
+// After a write, re-sync Kimi's model cache so the composer
 // picker + Settings "Models" row refresh.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";

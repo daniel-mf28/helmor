@@ -41,7 +41,7 @@ export type SectionModelsController = {
 	loading: boolean;
 	/** Undefined → no refresh. */
 	refresh?: () => void;
-	/** Group by sub-provider (OpenCode) vs a flat list. */
+	/** Group by sub-provider vs a flat list. */
 	grouped: boolean;
 };
 
@@ -54,13 +54,13 @@ export type CustomProvidersController = {
 
 export type ProviderCaps = {
 	baseUrlEditable: boolean;
-	/** Show the wire-protocol / API-style selector (OpenCode/Kimi). */
+	/** Show the wire-protocol / API-style selector (Claude/Kimi). */
 	apiStyleSelectable: boolean;
 };
 
 /** One choice in the wire-protocol / API-style selector. `value` is stored
  *  verbatim in `CustomProvider.apiStyle` and interpreted by the family backend
- *  (OpenCode: chat|responses; Kimi: openai|anthropic|…). */
+ *  (Claude: anthropic|vertex; Kimi: openai|anthropic|…). */
 export type StyleOption = { value: string; label: string; hint?: string };
 
 export type ProviderConfigAdapter = {
@@ -70,12 +70,12 @@ export type ProviderConfigAdapter = {
 	caps: ProviderCaps;
 	customProvidersDescription: string;
 	/** Options for the wire-protocol selector (shown when `caps.apiStyleSelectable`).
-	 *  Omitted → OpenCode's default Chat/Responses pair. */
+	 *  Omitted → the card's fallback Chat/Responses pair. */
 	styleOptions?: readonly StyleOption[];
 	/** Selector heading — "API style" (default) vs e.g. "Provider type". */
 	styleLabel?: string;
 	useCustomProviders: () => CustomProvidersController;
 	fetchModels: (provider: CustomProvider) => Promise<CustomProviderModel[]>;
-	/** Omitted by families that render their own Models row (OpenCode). */
+	/** Omitted by families that render their own Models row (Kimi). */
 	useSectionModels?: () => SectionModelsController;
 };

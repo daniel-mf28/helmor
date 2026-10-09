@@ -28,7 +28,6 @@ import { useSelectionControllers } from "@/shell/hooks/use-selection-controllers
 import { useSettledWorkspaceId } from "@/shell/hooks/use-settled-workspace-id";
 import { useShellChromeState } from "@/shell/hooks/use-shell-chrome-state";
 import { useShellStartupEffects } from "@/shell/hooks/use-shell-startup-effects";
-import { useSlugProviderStartupSync } from "@/shell/hooks/use-slug-provider-startup-sync";
 import { useThemeApplication } from "@/shell/hooks/use-theme-application";
 import { useThreadFocusBackstop } from "@/shell/hooks/use-thread-focus-backstop";
 import { useUiSyncBridge } from "@/shell/hooks/use-ui-sync-bridge";
@@ -117,7 +116,6 @@ export function useAppShellState({
 	);
 	useDockUnreadBadge();
 	useEnsureDefaultModel();
-	useSlugProviderStartupSync();
 
 	const chrome = useShellChromeState({
 		queryClient,

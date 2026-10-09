@@ -7,7 +7,7 @@
 
 import type { SidecarEmitter } from "./emitter.js";
 
-export type Provider = "claude" | "codex" | "cursor" | "opencode" | "kimi";
+export type Provider = "claude" | "codex" | "kimi";
 
 /** Custom Codex provider injected per thread; never touches `~/.codex/config.toml`. */
 export interface CodexProviderConfig {
@@ -127,17 +127,6 @@ export type UserInputResolution =
 	  }
 	| { action: "cancel" };
 
-/** Mirrors `ModelParameterDefinition` from @cursor/sdk. Single source of
- *  truth for derived `effortLevels`/`supportsFastMode` + send-time params. */
-export interface CursorModelParameter {
-	readonly id: string;
-	readonly displayName?: string;
-	readonly values: ReadonlyArray<{
-		readonly value: string;
-		readonly displayName?: string;
-	}>;
-}
-
 /** A model entry returned by listModels. Provider is implicit. */
 export interface ProviderModelInfo {
 	readonly id: string;
@@ -145,8 +134,6 @@ export interface ProviderModelInfo {
 	readonly cliModel: string;
 	readonly effortLevels?: readonly string[];
 	readonly supportsFastMode?: boolean;
-	/** Cursor-only — raw `parameters[]` from `ModelListItem`. */
-	readonly cursorParameters?: readonly CursorModelParameter[];
 }
 
 export interface SessionManager {
@@ -201,14 +188,8 @@ export interface SessionManager {
 		params: ListSlashCommandsParams,
 	): Promise<readonly SlashCommandInfo[]>;
 
-	/** List available models. `apiKey` overrides the manager's stored key
-	 *  for one-off probes (e.g. onboarding validation); when omitted the
-	 *  manager uses whatever it has configured. `forceReload` (opencode only)
-	 *  restarts the model server to pick up a just-written config change. */
-	listModels(opts?: {
-		apiKey?: string;
-		forceReload?: boolean;
-	}): Promise<readonly ProviderModelInfo[]>;
+	/** List available models. */
+	listModels(): Promise<readonly ProviderModelInfo[]>;
 
 	/**
 	 * Abort an in-flight session by id. No-op if the session is not active.

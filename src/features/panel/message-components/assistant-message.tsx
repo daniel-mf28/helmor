@@ -22,10 +22,6 @@ import {
 	TodoList,
 	WorkflowCard,
 } from "./content-parts";
-import {
-	CursorSubagentToolCall,
-	isCursorSubagentToolName,
-} from "./cursor-subagent-tool";
 import type { RenderedMessage, StreamdownMode } from "./shared";
 import {
 	isCollapsedGroupPart,
@@ -256,14 +252,6 @@ export function ChatAssistantMessage({
 					return <CollapsedToolGroup key={key} group={part} />;
 				}
 				if (isToolCallPart(part)) {
-					if (isCursorSubagentToolName(part.toolName)) {
-						// Cursor subagent invocation (`task` → `cursor_task`) —
-						// dedicated renderer with model/mode chips + agentId
-						// color identity + expandable prompt/result body.
-						return (
-							<CursorSubagentToolCall key={key} part={part as ToolCallPart} />
-						);
-					}
 					if (isSubagentToolName(part.toolName)) {
 						// Sub-agent collab tools (spawn / wait / send / resume /
 						// close) — multi-line layout in a dedicated component.

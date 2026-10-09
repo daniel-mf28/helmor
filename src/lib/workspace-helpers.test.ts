@@ -810,13 +810,13 @@ describe("findModelOption", () => {
 		// ambiguous; the provider picks the right section.
 		const sections: AgentModelSection[] = [
 			{
-				id: "opencode",
-				label: "OpenCode",
+				id: "codex",
+				label: "Codex",
 				options: [
 					{
 						id: "anthropic/x",
-						provider: "opencode",
-						label: "OC",
+						provider: "codex",
+						label: "Codex",
 						cliModel: "anthropic/x",
 					},
 				],
@@ -837,11 +837,11 @@ describe("findModelOption", () => {
 		expect(findModelOption(sections, "anthropic/x", "kimi")?.provider).toBe(
 			"kimi",
 		);
-		expect(findModelOption(sections, "anthropic/x", "opencode")?.provider).toBe(
-			"opencode",
+		expect(findModelOption(sections, "anthropic/x", "codex")?.provider).toBe(
+			"codex",
 		);
-		// No provider → first section wins (opencode), the pre-fix behavior.
-		expect(findModelOption(sections, "anthropic/x")?.provider).toBe("opencode");
+		// No provider → first section wins (codex), the pre-fix behavior.
+		expect(findModelOption(sections, "anthropic/x")?.provider).toBe("codex");
 	});
 });
 
@@ -1001,12 +1001,12 @@ describe("resolveSessionDisplayProvider", () => {
 		).toBe("codex:hundun");
 	});
 
-	it("keeps the opencode icon regardless of the selected sub-provider model", () => {
+	it("keeps the session agent's icon regardless of the selected model", () => {
 		expect(
 			resolveSessionDisplayProvider({
 				session: {
 					id: "session-2",
-					agentType: "opencode",
+					agentType: "kimi",
 					model: null,
 					lastUserMessageAt: null,
 				},
@@ -1015,7 +1015,7 @@ describe("resolveSessionDisplayProvider", () => {
 				},
 				modelSections: MODEL_SECTIONS,
 			}),
-		).toBe("opencode");
+		).toBe("kimi");
 	});
 
 	it("falls back to the selected model's provider when the session has no agent", () => {

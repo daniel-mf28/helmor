@@ -5,7 +5,7 @@
  * of `codex-app-server.ts`: one long-lived child process, typed
  * request/response plumbing, plus notification/request callbacks for the
  * agent→client direction (`session/update`, `session/request_permission`,
- * `fs/*`). `start()` is memoized + idempotent (mirrors `OpencodeServer`) and
+ * `fs/*`). `start()` is memoized + idempotent and
  * performs the `initialize` handshake exactly once per live child.
  */
 
@@ -58,7 +58,7 @@ const STDERR_TAIL_BYTES = 2_048;
  *   1. `HELMOR_KIMI_BIN_PATH` — set by the Tauri host in release builds.
  *   2. Staged dev binary at `<sidecar>/dist/vendor/kimi/<bin>` — produced by
  *      `stage-vendor` (run via `bun run dev:prepare`). Kimi ships no npm
- *      sub-package, so unlike codex/opencode there is no node_modules fallback;
+ *      sub-package, so unlike codex there is no node_modules fallback;
  *      without this probe `bun run dev` can't find the binary.
  *   3. Bare `"kimi"` from PATH — last resort.
  */

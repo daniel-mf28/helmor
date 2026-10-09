@@ -34,7 +34,7 @@ export type FollowUpBehavior = "steer" | "queue";
 export type ClaudeThinkingDisplay = "summarized" | "omitted";
 export type AppSurface = "workspace" | "workspace-start";
 /** A global model preference (default / review / action). Carries its
- *  provider so a slug-based model (opencode) is never re-derived
+ *  provider so a namespaced model (e.g. kimi) is never re-derived
  *  ambiguously from the bare id. `provider` is null only for legacy rows
  *  not yet re-saved. Persisted as JSON. */
 export type ModelRef = { provider: string | null; modelId: string };
@@ -75,56 +75,6 @@ export const VALID_NOTIFICATION_SOUNDS: readonly NotificationSound[] = [
 ];
 
 export type ShortcutOverrides = Record<string, string | null>;
-
-/** Mirrors SDK `ModelParameterDefinition` shape. */
-export type CursorCachedModelParameterValue = {
-	value: string;
-	displayName?: string;
-};
-
-export type CursorCachedModelParameter = {
-	id: string;
-	displayName?: string;
-	values: CursorCachedModelParameterValue[];
-};
-
-/** `Cursor.models.list` snapshot. `parameters` may be absent on legacy
- *  entries — Rust catalog degrades until next Refresh writes them back. */
-export type CursorCachedModel = {
-	id: string;
-	label: string;
-	parameters?: CursorCachedModelParameter[];
-};
-
-export type CursorProviderSettings = {
-	apiKey: string;
-	/** `null` = first fetch auto-fills defaults; `[]` = user cleared,
-	 *  never auto-fill again. */
-	enabledModelIds: string[] | null;
-	/** Last fetched catalog; lets the Rust picker render synchronously. */
-	cachedModels: CursorCachedModel[] | null;
-};
-
-// `slug` = `<providerID>/<modelID>`.
-export type OpencodeCachedModel = {
-	slug: string;
-	label: string;
-	// Effort tiers (the model's `variants` keys). Empty ⟺ no effort switch.
-	effortLevels?: string[];
-};
-
-// Bump when the cached model schema changes so older caches refetch once.
-export const OPENCODE_CACHE_VERSION = 1;
-
-export type OpencodeProviderSettings = {
-	status: "ready" | "unavailable";
-	connected: string[];
-	cachedModels: OpencodeCachedModel[] | null;
-	// `null` = auto-fill all connected on first fetch; `[]` = user cleared.
-	enabledModelIds: string[] | null;
-	// Older/absent → one-time refetch to backfill new per-model metadata.
-	cacheVersion?: number;
-};
 
 /** One Kimi model discovered via `kimi provider list`. `id` is the bare alias. */
 export type KimiCachedModel = { id: string; label: string };
@@ -252,8 +202,6 @@ export type AppSettings = {
 	/** Codex model ids in the picker. `null` = recommended official models plus
 	 *  all custom models; `[]` = none. */
 	codexEnabledModelIds: string[] | null;
-	cursorProvider: CursorProviderSettings;
-	opencodeProvider: OpencodeProviderSettings;
 	kimiProvider: KimiProviderSettings;
 	localLlm: LocalLlmSettings;
 	startSurfacePreferences: StartSurfacePreferences;
@@ -350,17 +298,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
 	shortcuts: {},
 	claudeEnabledModelIds: null,
 	codexEnabledModelIds: null,
-	cursorProvider: {
-		apiKey: "",
-		enabledModelIds: null,
-		cachedModels: null,
-	},
-	opencodeProvider: {
-		status: "unavailable",
-		connected: [],
-		cachedModels: null,
-		enabledModelIds: null,
-	},
 	kimiProvider: {
 		cachedModels: null,
 		enabledModelIds: null,
@@ -535,8 +472,6 @@ const SETTINGS_KEY_MAP: Record<
 	shortcuts: "app.shortcuts",
 	claudeEnabledModelIds: "app.claude_enabled_model_ids",
 	codexEnabledModelIds: "app.codex_enabled_model_ids",
-	cursorProvider: "app.cursor_provider",
-	opencodeProvider: "app.opencode_provider",
 	kimiProvider: "app.kimi_provider",
 	localLlm: "app.local_llm",
 	startSurfacePreferences: "app.start_surface_preferences",
@@ -752,48 +687,6 @@ function parseStartSurfacePreferences(
 	}
 }
 
-function parseCursorProviderSettings(
-	raw: string | undefined,
-): CursorProviderSettings {
-	if (!raw) return DEFAULT_SETTINGS.cursorProvider;
-	try {
-		const parsed = JSON.parse(raw) as Record<string, unknown>;
-		return {
-			apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : "",
-			enabledModelIds: parseEnabledModelIds(parsed.enabledModelIds),
-			cachedModels: parseCachedModels(parsed.cachedModels),
-		};
-	} catch {
-		return DEFAULT_SETTINGS.cursorProvider;
-	}
-}
-
-// Parses the slug-provider (opencode) persisted shape.
-function parseSlugProviderSettings(
-	raw: string | undefined,
-	fallback: OpencodeProviderSettings,
-): OpencodeProviderSettings {
-	if (!raw) return fallback;
-	try {
-		const parsed = JSON.parse(raw) as Record<string, unknown>;
-		return {
-			status: parsed.status === "ready" ? "ready" : "unavailable",
-			connected: parseStringArray(parsed.connected),
-			cachedModels: parseOpencodeCachedModels(parsed.cachedModels),
-			enabledModelIds: parseEnabledModelIds(parsed.enabledModelIds),
-			cacheVersion:
-				typeof parsed.cacheVersion === "number" ? parsed.cacheVersion : 0,
-		};
-	} catch {
-		return fallback;
-	}
-}
-
-function parseStringArray(value: unknown): string[] {
-	if (!Array.isArray(value)) return [];
-	return value.filter((item): item is string => typeof item === "string");
-}
-
 function parseKimiProviderSettings(
 	raw: string | undefined,
 ): KimiProviderSettings {
@@ -824,83 +717,11 @@ function parseKimiCachedModels(value: unknown): KimiCachedModel[] | null {
 	return models;
 }
 
-function parseOpencodeCachedModels(
-	value: unknown,
-): OpencodeCachedModel[] | null {
-	if (!Array.isArray(value)) return null;
-	const models: OpencodeCachedModel[] = [];
-	for (const entry of value) {
-		if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-		const obj = entry as Record<string, unknown>;
-		if (typeof obj.slug !== "string" || typeof obj.label !== "string") continue;
-		const effortLevels = Array.isArray(obj.effortLevels)
-			? obj.effortLevels.filter((v): v is string => typeof v === "string")
-			: undefined;
-		models.push({
-			slug: obj.slug,
-			label: obj.label,
-			...(effortLevels && effortLevels.length > 0 ? { effortLevels } : {}),
-		});
-	}
-	return models;
-}
-
 function parseEnabledModelIds(value: unknown): string[] | null {
 	if (value === null) return null;
 	if (!Array.isArray(value)) return null;
 	const ids = value.filter((item): item is string => typeof item === "string");
 	return ids;
-}
-
-function parseCachedModels(value: unknown): CursorCachedModel[] | null {
-	if (!Array.isArray(value)) return null;
-	const models: CursorCachedModel[] = [];
-	for (const entry of value) {
-		if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-		const obj = entry as Record<string, unknown>;
-		if (typeof obj.id !== "string" || typeof obj.label !== "string") continue;
-		const parameters = parseCachedModelParameters(obj.parameters);
-		models.push({
-			id: obj.id,
-			label: obj.label,
-			...(parameters ? { parameters } : {}),
-		});
-	}
-	return models;
-}
-
-function parseCachedModelParameters(
-	value: unknown,
-): CursorCachedModelParameter[] | undefined {
-	if (!Array.isArray(value)) return undefined;
-	const out: CursorCachedModelParameter[] = [];
-	for (const entry of value) {
-		if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-		const obj = entry as Record<string, unknown>;
-		if (typeof obj.id !== "string") continue;
-		const values: CursorCachedModelParameterValue[] = [];
-		if (Array.isArray(obj.values)) {
-			for (const v of obj.values) {
-				if (!v || typeof v !== "object" || Array.isArray(v)) continue;
-				const vobj = v as Record<string, unknown>;
-				if (typeof vobj.value !== "string") continue;
-				values.push({
-					value: vobj.value,
-					...(typeof vobj.displayName === "string"
-						? { displayName: vobj.displayName }
-						: {}),
-				});
-			}
-		}
-		out.push({
-			id: obj.id,
-			...(typeof obj.displayName === "string"
-				? { displayName: obj.displayName }
-				: {}),
-			values,
-		});
-	}
-	return out;
 }
 
 // Absent → null (all enabled); JSON array → that subset.
@@ -1135,13 +956,6 @@ export async function loadSettings(): Promise<AppSettings> {
 			codexEnabledModelIds: parseEnabledModelIdsSetting(
 				raw[SETTINGS_KEY_MAP.codexEnabledModelIds],
 			),
-			cursorProvider: parseCursorProviderSettings(
-				raw[SETTINGS_KEY_MAP.cursorProvider],
-			),
-			opencodeProvider: parseSlugProviderSettings(
-				raw[SETTINGS_KEY_MAP.opencodeProvider],
-				DEFAULT_SETTINGS.opencodeProvider,
-			),
 			kimiProvider: parseKimiProviderSettings(
 				raw[SETTINGS_KEY_MAP.kimiProvider],
 			),
@@ -1188,8 +1002,6 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<void> {
 				key === "shortcuts" ||
 				key === "claudeEnabledModelIds" ||
 				key === "codexEnabledModelIds" ||
-				key === "cursorProvider" ||
-				key === "opencodeProvider" ||
 				key === "kimiProvider" ||
 				key === "localLlm" ||
 				key === "startSurfacePreferences" ||

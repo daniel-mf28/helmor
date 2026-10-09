@@ -1380,9 +1380,7 @@ export class ClaudeSessionManager implements SessionManager {
 		}
 	}
 
-	async listModels(_opts?: {
-		apiKey?: string;
-	}): Promise<readonly ProviderModelInfo[]> {
+	async listModels(): Promise<readonly ProviderModelInfo[]> {
 		return listProviderModels("claude");
 	}
 

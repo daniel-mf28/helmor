@@ -79,7 +79,6 @@ fn build_title_attempts() -> Vec<Value> {
     let claude_custom = crate::provider::claude::configured_models()
         .into_iter()
         .next();
-    let opencode_custom = first_opencode_custom_model();
     let kimi_custom = first_kimi_custom_model();
     let mut attempts: Vec<Value> = Vec::new();
     for provider in detect_title_providers() {
@@ -116,14 +115,6 @@ fn build_title_attempts() -> Vec<Value> {
                     }));
                 }
             }
-            "opencode" => {
-                if let Some(slug) = &opencode_custom {
-                    attempts.push(serde_json::json!({
-                        "provider": "opencode",
-                        "model": slug,
-                    }));
-                }
-            }
             "kimi" => {
                 if let Some(model) = &kimi_custom {
                     attempts.push(serde_json::json!({
@@ -141,25 +132,9 @@ fn build_title_attempts() -> Vec<Value> {
     attempts
 }
 
-/// First custom opencode model the user configured in `opencode.jsonc`, as a
-/// `provider/model` slug (e.g. `hundun/deepseek-v4-flash`). `None` when no
-/// custom opencode provider is set up.
-fn first_opencode_custom_model() -> Option<String> {
-    first_slug_custom_model(crate::provider::opencode_config::read_custom_providers().ok()?)
-}
-
-fn first_slug_custom_model(
-    providers: Vec<crate::provider::opencode_config::OpencodeCustomProvider>,
-) -> Option<String> {
-    let provider = providers.into_iter().next()?;
-    let model = provider.models.into_iter().next()?;
-    Some(format!("{}/{}", provider.id, model.id))
-}
-
 /// First custom kimi model the user configured in `config.toml`, as the
 /// `provider/model` key kimi expects (e.g. `a8d84452/gpt-5.5`). `None` when no
-/// custom kimi provider is set up. Mirrors `first_opencode_custom_model` —
-/// custom is tried before the provider's session default.
+/// custom kimi provider is set up. The custom model is tried before the provider's session default.
 fn first_kimi_custom_model() -> Option<String> {
     crate::provider::kimi::read_provider_config()
         .ok()?
@@ -295,7 +270,7 @@ pub async fn generate_session_title(
     // Cascade head: try the bundled local LLM first. On any failure
     // (server not running, timeout, parse mismatch) fall through to
     // the sidecar's cloud cascade (custom-claude → claude → codex →
-    // cursor). `TITLE_TIMEOUT` inside `local_llm::title` caps the
+    // kimi). `TITLE_TIMEOUT` inside `local_llm::title` caps the
     // attempt at ~15s so a stuck cold load can't block this path long.
     let local_result: Option<(String, Option<String>)> = {
         let user_message = request.user_message.clone();
@@ -346,7 +321,7 @@ pub async fn generate_session_title(
         } else {
             let request_id = Uuid::new_v4().to_string();
             // Build the provider/model attempt chain from the user's configured
-            // models (action → review → default, deduped); each claude/opencode
+            // models (action → review → default, deduped); each claude/kimi
             // step tries the custom model then the fast default, other providers
             // contribute their own fast/default pick. The sidecar walks the list
             // and stops at the first attempt that produces a title. Skip the
@@ -1180,280 +1155,6 @@ pub fn fetch_all_agent_model_sections() -> Vec<super::catalog::AgentModelSection
 }
 
 // ---------------------------------------------------------------------------
-// Cursor model list — proxied to the sidecar's `Cursor.models.list`
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CursorModelParameterValue {
-    pub value: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CursorModelParameter {
-    pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-    pub values: Vec<CursorModelParameterValue>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CursorModelEntry {
-    pub id: String,
-    pub label: String,
-    /// Persisted into `cursorProvider.cachedModels` so toolbar UI is
-    /// derived synchronously without a sidecar round-trip per render.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameters: Option<Vec<CursorModelParameter>>,
-}
-
-/// 30s budget for `Cursor.models.list` — SDK cold-start can take a few
-/// seconds while it warms its HTTP/2 pool.
-const LIST_CURSOR_MODELS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
-pub fn fetch_cursor_models(
-    sidecar: &crate::sidecar::ManagedSidecar,
-    api_key_override: Option<String>,
-) -> CmdResult<Vec<CursorModelEntry>> {
-    let request_id = Uuid::new_v4().to_string();
-    let mut params = serde_json::json!({ "provider": "cursor" });
-    if let Some(key) = api_key_override.filter(|k| !k.is_empty()) {
-        if let Some(obj) = params.as_object_mut() {
-            obj.insert("apiKey".to_string(), serde_json::Value::String(key));
-        }
-    }
-    let sidecar_req = crate::sidecar::SidecarRequest {
-        id: request_id.clone(),
-        method: "listModels".to_string(),
-        params,
-    };
-
-    let rx = sidecar.subscribe(&request_id);
-    if let Err(e) = sidecar.send(&sidecar_req) {
-        sidecar.unsubscribe(&request_id);
-        return Err(anyhow::anyhow!("Sidecar send failed: {e}").into());
-    }
-
-    let mut models: Vec<CursorModelEntry> = Vec::new();
-    let mut error: Option<String> = None;
-
-    loop {
-        match rx.recv_timeout(LIST_CURSOR_MODELS_TIMEOUT) {
-            Ok(event) => match event.event_type() {
-                "modelsListed" => {
-                    if let Some(entries) = event.raw.get("models").and_then(Value::as_array) {
-                        for entry in entries {
-                            let Some(id) = entry.get("id").and_then(Value::as_str) else {
-                                continue;
-                            };
-                            let label = entry
-                                .get("label")
-                                .and_then(Value::as_str)
-                                .unwrap_or(id)
-                                .to_string();
-                            let parameters = entry
-                                .get("cursorParameters")
-                                .and_then(Value::as_array)
-                                .map(|values| parse_cursor_parameters(values.as_slice()));
-                            models.push(CursorModelEntry {
-                                id: id.to_string(),
-                                label,
-                                parameters,
-                            });
-                        }
-                    }
-                    break;
-                }
-                "error" => {
-                    error = Some(
-                        event
-                            .raw
-                            .get("message")
-                            .and_then(Value::as_str)
-                            .unwrap_or("Unknown error")
-                            .to_string(),
-                    );
-                    break;
-                }
-                _ => {}
-            },
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                error = Some(format!(
-                    "Cursor model list timed out after {}s",
-                    LIST_CURSOR_MODELS_TIMEOUT.as_secs()
-                ));
-                break;
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                error = Some("Sidecar disconnected during Cursor model list".to_string());
-                break;
-            }
-        }
-    }
-
-    sidecar.unsubscribe(&request_id);
-
-    if let Some(message) = error {
-        return Err(anyhow::anyhow!(message).into());
-    }
-    Ok(models)
-}
-
-/// Parse the sidecar's `cursorParameters` field. Best-effort: drops
-/// malformed entries instead of blanking the whole list.
-fn parse_cursor_parameters(arr: &[Value]) -> Vec<CursorModelParameter> {
-    arr.iter()
-        .filter_map(|entry| {
-            let id = entry.get("id").and_then(Value::as_str)?.to_string();
-            let display_name = entry
-                .get("displayName")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            let values = entry
-                .get("values")
-                .and_then(Value::as_array)
-                .map(|values| {
-                    values
-                        .iter()
-                        .filter_map(|v| {
-                            let value = v.get("value").and_then(Value::as_str)?.to_string();
-                            let display_name = v
-                                .get("displayName")
-                                .and_then(Value::as_str)
-                                .map(str::to_string);
-                            Some(CursorModelParameterValue {
-                                value,
-                                display_name,
-                            })
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            Some(CursorModelParameter {
-                id,
-                display_name,
-                values,
-            })
-        })
-        .collect()
-}
-
-// opencode-protocol model list — proxied to the sidecar's
-// `client.provider.list()`
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OpencodeModelEntry {
-    // `<providerID>/<modelID>` slug — doubles as the cliModel.
-    pub id: String,
-    pub label: String,
-    // opencode `variants` keys; empty ⟺ no effort switch.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub effort_levels: Vec<String>,
-}
-
-const LIST_OPENCODE_MODELS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
-pub fn fetch_opencode_models(
-    sidecar: &crate::sidecar::ManagedSidecar,
-    force_reload: bool,
-) -> CmdResult<Vec<OpencodeModelEntry>> {
-    fetch_slug_models(sidecar, "opencode", force_reload)
-}
-
-fn fetch_slug_models(
-    sidecar: &crate::sidecar::ManagedSidecar,
-    provider: &str,
-    force_reload: bool,
-) -> CmdResult<Vec<OpencodeModelEntry>> {
-    let request_id = Uuid::new_v4().to_string();
-    let sidecar_req = crate::sidecar::SidecarRequest {
-        id: request_id.clone(),
-        method: "listModels".to_string(),
-        params: serde_json::json!({ "provider": provider, "forceReload": force_reload }),
-    };
-
-    let rx = sidecar.subscribe(&request_id);
-    if let Err(e) = sidecar.send(&sidecar_req) {
-        sidecar.unsubscribe(&request_id);
-        return Err(anyhow::anyhow!("Sidecar send failed: {e}").into());
-    }
-
-    let mut models: Vec<OpencodeModelEntry> = Vec::new();
-    let mut error: Option<String> = None;
-
-    loop {
-        match rx.recv_timeout(LIST_OPENCODE_MODELS_TIMEOUT) {
-            Ok(event) => match event.event_type() {
-                "modelsListed" => {
-                    if let Some(entries) = event.raw.get("models").and_then(Value::as_array) {
-                        for entry in entries {
-                            let Some(id) = entry.get("id").and_then(Value::as_str) else {
-                                continue;
-                            };
-                            let label = entry
-                                .get("label")
-                                .and_then(Value::as_str)
-                                .unwrap_or(id)
-                                .to_string();
-                            let effort_levels = entry
-                                .get("effortLevels")
-                                .and_then(Value::as_array)
-                                .map(|arr| {
-                                    arr.iter()
-                                        .filter_map(|v| v.as_str().map(str::to_string))
-                                        .collect()
-                                })
-                                .unwrap_or_default();
-                            models.push(OpencodeModelEntry {
-                                id: id.to_string(),
-                                label,
-                                effort_levels,
-                            });
-                        }
-                    }
-                    break;
-                }
-                "error" => {
-                    error = Some(
-                        event
-                            .raw
-                            .get("message")
-                            .and_then(Value::as_str)
-                            .unwrap_or("Unknown error")
-                            .to_string(),
-                    );
-                    break;
-                }
-                _ => {}
-            },
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                error = Some(format!(
-                    "{provider} model list timed out after {}s",
-                    LIST_OPENCODE_MODELS_TIMEOUT.as_secs()
-                ));
-                break;
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                error = Some(format!("Sidecar disconnected during {provider} model list"));
-                break;
-            }
-        }
-    }
-
-    sidecar.unsubscribe(&request_id);
-
-    if let Some(message) = error {
-        return Err(anyhow::anyhow!(message).into());
-    }
-    Ok(models)
-}
-
-// ---------------------------------------------------------------------------
 // Live context-usage (hover popover, Claude only)
 // ---------------------------------------------------------------------------
 
@@ -1666,15 +1367,14 @@ mod tests {
         assert_eq!(detect_title_providers(), vec!["claude".to_string()]);
 
         // default only → [its provider].
-        crate::settings::upsert_setting_value("app.default_model_id", "cursor-gpt-5.3-codex")
-            .unwrap();
-        assert_eq!(detect_title_providers(), vec!["cursor".to_string()]);
+        crate::settings::upsert_setting_value("app.default_model_id", "kimi-k2-turbo").unwrap();
+        assert_eq!(detect_title_providers(), vec!["kimi".to_string()]);
 
-        // review (codex) leads, default (cursor) follows.
+        // review (codex) leads, default (kimi) follows.
         crate::settings::upsert_setting_value("app.review_model_id", "gpt-5.5").unwrap();
         assert_eq!(
             detect_title_providers(),
-            vec!["codex".to_string(), "cursor".to_string()]
+            vec!["codex".to_string(), "kimi".to_string()]
         );
 
         // action (claude) leads the deduped chain.
@@ -1684,7 +1384,7 @@ mod tests {
             vec![
                 "claude".to_string(),
                 "codex".to_string(),
-                "cursor".to_string()
+                "kimi".to_string()
             ]
         );
 
@@ -1692,7 +1392,7 @@ mod tests {
         crate::settings::upsert_setting_value("app.review_model_id", "haiku").unwrap();
         assert_eq!(
             detect_title_providers(),
-            vec!["claude".to_string(), "cursor".to_string()]
+            vec!["claude".to_string(), "kimi".to_string()]
         );
 
         std::env::remove_var("HELMOR_DATA_DIR");
@@ -1706,7 +1406,7 @@ mod tests {
         setup_test_db(dir.path());
 
         // New JSON form pins the provider → a `/`-slug stored as codex resolves
-        // to codex, NOT opencode (the bare-slug heuristic would have misrouted it).
+        // to codex regardless of the id's shape.
         crate::settings::upsert_setting_value(
             "app.default_model_id",
             r#"{"provider":"codex","modelId":"openai/gpt-5-codex"}"#,
@@ -1714,10 +1414,10 @@ mod tests {
         .unwrap();
         assert_eq!(detect_title_providers(), vec!["codex".to_string()]);
 
-        // Legacy bare slug still falls back to the heuristic (opencode).
+        // Legacy bare slug (former OpenCode shape) falls through to claude.
         crate::settings::upsert_setting_value("app.default_model_id", "anthropic/claude-opus-4-5")
             .unwrap();
-        assert_eq!(detect_title_providers(), vec!["opencode".to_string()]);
+        assert_eq!(detect_title_providers(), vec!["claude".to_string()]);
 
         std::env::remove_var("HELMOR_DATA_DIR");
     }
@@ -1729,20 +1429,26 @@ mod tests {
         std::env::set_var("HELMOR_DATA_DIR", dir.path());
         setup_test_db(dir.path());
 
-        // pr=codex, default=cursor → providers [codex, cursor]; no custom set.
+        // Isolate from the developer's real `~/.kimi-code/config.toml`, which
+        // may define custom kimi models.
+        let kimi_home = dir.path().join("kimi-home");
+        std::fs::create_dir_all(&kimi_home).unwrap();
+        std::env::set_var("KIMI_CODE_HOME", &kimi_home);
+
+        // pr=codex, default=kimi → providers [codex, kimi]; no custom set.
         crate::settings::upsert_setting_value("app.pr_model_id", "gpt-5.5").unwrap();
-        crate::settings::upsert_setting_value("app.default_model_id", "cursor-gpt-5.3-codex")
-            .unwrap();
+        crate::settings::upsert_setting_value("app.default_model_id", "kimi-k2-turbo").unwrap();
 
         let attempts = build_title_attempts();
         let chain: Vec<&str> = attempts
             .iter()
             .map(|a| a.get("provider").unwrap().as_str().unwrap())
             .collect();
-        assert_eq!(chain, vec!["codex", "cursor"]);
+        assert_eq!(chain, vec!["codex", "kimi"]);
         // No custom configured → no attempt carries an explicit model.
         assert!(attempts.iter().all(|a| a.get("model").is_none()));
 
+        std::env::remove_var("KIMI_CODE_HOME");
         std::env::remove_var("HELMOR_DATA_DIR");
     }
 
@@ -1753,8 +1459,8 @@ mod tests {
         std::env::set_var("HELMOR_DATA_DIR", dir.path());
         setup_test_db(dir.path());
 
-        // Custom kimi provider lives in `$KIMI_CODE_HOME/config.toml`, exactly
-        // like opencode reads theirs from their config — NOT from settings.
+        // Custom kimi provider lives in `$KIMI_CODE_HOME/config.toml` — NOT
+        // in settings.
         let kimi_home = dir.path().join("kimi-home");
         std::fs::create_dir_all(&kimi_home).unwrap();
         std::fs::write(
@@ -1771,7 +1477,7 @@ mod tests {
         )
         .unwrap();
 
-        // Consistent with claude/opencode: the custom model (config key, no
+        // Consistent with claude: the custom model (config key, no
         // `kimi:` prefix) is tried first, then kimi's session default.
         let attempts = build_title_attempts();
         let chain: Vec<(&str, Option<&str>)> = attempts

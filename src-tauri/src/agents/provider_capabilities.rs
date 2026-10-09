@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderCapabilities {
-    /// Stable provider id — `"claude"`, `"codex"`, `"cursor"`, …. Same
+    /// Stable provider id — `"claude"`, `"codex"`, `"kimi"`, …. Same
     /// string the rest of the codebase uses on `AgentModelOption`.
     pub provider: String,
     /// Human-readable label used in confirmation dialogs, status copy,
@@ -51,8 +51,8 @@ pub struct ProviderCapabilities {
     /// returns a meaningful list, not an empty stub).
     pub supports_slash_commands: bool,
     /// Provider authenticates via an in-app key entry rather than the
-    /// embedded login terminal flow. True for Cursor; false for Claude
-    /// + Codex.
+    /// embedded login terminal flow. False for every shipped provider
+    /// today (Claude, Codex, Kimi); kept for future key-based providers.
     pub requires_api_key: bool,
 }
 
@@ -68,26 +68,6 @@ pub fn capabilities_for_provider(provider: &str) -> ProviderCapabilities {
             display_name: "Codex".into(),
             supports_plan_mode: true,
             supports_active_goal: true,
-            supports_context_usage: true,
-            supports_steer: true,
-            supports_slash_commands: true,
-            requires_api_key: false,
-        },
-        "cursor" => ProviderCapabilities {
-            provider: "cursor".into(),
-            display_name: "Cursor".into(),
-            supports_plan_mode: true,
-            supports_active_goal: false,
-            supports_context_usage: false,
-            supports_steer: false,
-            supports_slash_commands: true,
-            requires_api_key: true,
-        },
-        "opencode" => ProviderCapabilities {
-            provider: "opencode".into(),
-            display_name: "OpenCode".into(),
-            supports_plan_mode: true,
-            supports_active_goal: false,
             supports_context_usage: true,
             supports_steer: true,
             supports_slash_commands: true,
@@ -128,7 +108,7 @@ pub fn capabilities_for_provider(provider: &str) -> ProviderCapabilities {
 /// Convenience: list every provider Helmor ships today. Frontends use
 /// this to render the capability table in settings (eventually), and
 /// tests use it to assert there are no holes in the matrix.
-pub const KNOWN_PROVIDERS: &[&str] = &["claude", "codex", "cursor", "opencode", "kimi"];
+pub const KNOWN_PROVIDERS: &[&str] = &["claude", "codex", "kimi"];
 
 #[cfg(test)]
 mod tests {
@@ -180,43 +160,6 @@ mod tests {
         assert!(caps.supports_steer);
         assert!(caps.supports_slash_commands);
         assert!(!caps.requires_api_key, "Codex uses embedded login");
-    }
-
-    #[test]
-    fn cursor_capabilities() {
-        let caps = capabilities_for_provider("cursor");
-        assert_eq!(caps.provider, "cursor");
-        assert!(
-            caps.supports_plan_mode,
-            "Cursor plan mode surfaces createPlan as a plan-review card"
-        );
-        assert!(!caps.supports_active_goal);
-        assert!(
-            !caps.supports_context_usage,
-            "Cursor doesn't surface context usage today"
-        );
-        assert!(!caps.supports_steer);
-        assert!(caps.supports_slash_commands);
-        assert!(caps.requires_api_key, "Cursor authenticates via API key");
-    }
-
-    #[test]
-    fn opencode_capabilities() {
-        let caps = capabilities_for_provider("opencode");
-        assert_eq!(caps.provider, "opencode");
-        assert_eq!(
-            caps.display_name, "OpenCode",
-            "must not fall back to Claude"
-        );
-        assert!(
-            caps.supports_plan_mode,
-            "opencode runs the read-only plan agent"
-        );
-        assert!(!caps.supports_active_goal, "opencode has no /goal loop");
-        assert!(caps.supports_context_usage);
-        assert!(caps.supports_steer);
-        assert!(caps.supports_slash_commands);
-        assert!(!caps.requires_api_key, "opencode uses embedded login");
     }
 
     #[test]

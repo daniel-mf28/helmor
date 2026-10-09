@@ -5,7 +5,6 @@ import {
 	ghArchivePlan,
 	glabArchivePlan,
 	llamaArchivePlan,
-	opencodeArchivePlan,
 	resolveVendorTarget,
 	targetInfoForArch,
 } from "./vendor-platform.ts";
@@ -20,8 +19,6 @@ describe("vendor platform boundary", () => {
 			codexPkg: "@openai/codex-darwin-arm64",
 			codexTriple: "aarch64-apple-darwin",
 			codexNpmSuffix: "darwin-arm64",
-			opencodePkg: "opencode-darwin-arm64",
-			opencodeNpmSuffix: "darwin-arm64",
 			ghArch: "arm64",
 			glabArch: "arm64",
 		});
@@ -33,8 +30,6 @@ describe("vendor platform boundary", () => {
 			codexPkg: "@openai/codex-darwin-x64",
 			codexTriple: "x86_64-apple-darwin",
 			codexNpmSuffix: "darwin-x64",
-			opencodePkg: "opencode-darwin-x64",
-			opencodeNpmSuffix: "darwin-x64",
 			ghArch: "amd64",
 			glabArch: "amd64",
 		});
@@ -81,7 +76,6 @@ describe("vendor platform boundary", () => {
 		expect(target.claudeCodePkg).toBe("@anthropic-ai/claude-code-win32-x64");
 		expect(target.codexPkg).toBe("@openai/codex-win32-x64");
 		expect(target.codexTriple).toBe("x86_64-pc-windows-msvc");
-		expect(target.opencodePkg).toBe("opencode-windows-x64");
 		expect(ghArchivePlan(target).archiveName).toBe(
 			"gh_2.95.0_windows_amd64.zip",
 		);
@@ -130,13 +124,6 @@ describe("vendor platform boundary", () => {
 			sha256:
 				"82c8bd152cdfb8175fd03d1d18ac0f8cddce22a7e68164572c107f628b0d8b7c",
 		});
-		expect(opencodeArchivePlan(target, "1.16.2")).toEqual({
-			slug: "opencode-darwin-arm64-1.16.2",
-			archiveName: "opencode-darwin-arm64-1.16.2.tgz",
-			url: "https://registry.npmjs.org/opencode-darwin-arm64/-/opencode-darwin-arm64-1.16.2.tgz",
-			sha256:
-				"2103383d7562c1783cb66d63d31630ff90448d1ade90f8a187778d18c4b9ee5f",
-		});
 		expect(llamaArchivePlan(target)).toEqual({
 			slug: "llama-b9763-bin-macos-arm64",
 			archiveName: "llama-b9763-bin-macos-arm64.tar.gz",
@@ -157,9 +144,6 @@ describe("vendor platform boundary", () => {
 		);
 		expect(codexArchivePlan(target, "0.134.0").archiveName).toBe(
 			"codex-0.134.0-darwin-x64.tgz",
-		);
-		expect(opencodeArchivePlan(target, "1.16.2").archiveName).toBe(
-			"opencode-darwin-x64-1.16.2.tgz",
 		);
 		expect(llamaArchivePlan(target).archiveName).toBe(
 			"llama-b9763-bin-macos-x64.tar.gz",

@@ -1,9 +1,4 @@
-import {
-	ClaudeIcon,
-	CursorIcon,
-	OpenAIIcon,
-	OpenCodeIcon,
-} from "@/components/icons";
+import { ClaudeIcon, OpenAIIcon } from "@/components/icons";
 import type { SessionContextCandidate } from "@/features/panel/session-context";
 import { type AgentProvider, isCodexProvider } from "@/lib/api";
 import { I18nText, useI18n } from "@/lib/i18n";
@@ -78,12 +73,6 @@ function SessionProviderIcon({
 }) {
 	if (isCodexProvider(provider)) {
 		return <OpenAIIcon className={className} />;
-	}
-	if (provider === "cursor") {
-		return <CursorIcon className={className} />;
-	}
-	if (provider === "opencode") {
-		return <OpenCodeIcon className={className} />;
 	}
 	return <ClaudeIcon className={className} />;
 }

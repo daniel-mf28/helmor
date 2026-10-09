@@ -620,8 +620,6 @@ pub(super) fn stream_via_sidecar(
 
                         if is_aborted {
                             pipeline_state.accumulator.flush_codex_in_progress();
-                            pipeline_state.accumulator.flush_cursor_in_progress();
-                            pipeline_state.accumulator.flush_opencode_in_progress();
                         }
                         // Kimi finalizes on `kimi/turn_complete`, which never
                         // arrives when the stream ends via `error`+`end`

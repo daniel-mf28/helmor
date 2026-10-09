@@ -128,7 +128,7 @@ function QuestionBlock({
 /**
  * Transcript card for a resolved (or still-open) agent→user question —
  * the persisted record of an AskUserQuestion / Codex requestUserInput /
- * OpenCode question, with the chosen answers highlighted (#796).
+ * Kimi question, with the chosen answers highlighted (#796).
  */
 export function UserQuestionCard({ part }: { part: UserQuestionPart }) {
 	const { t } = useI18n();

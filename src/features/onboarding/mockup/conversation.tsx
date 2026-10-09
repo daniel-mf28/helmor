@@ -166,7 +166,7 @@ export function MockConversation({
 					rightSlot={
 						<AgentPickerButtonUI
 							icon={<OpenAIIcon className="size-3.5" />}
-							label="Cursor"
+							label="Codex"
 						/>
 					}
 				/>

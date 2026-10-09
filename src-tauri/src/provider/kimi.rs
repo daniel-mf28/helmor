@@ -1,9 +1,9 @@
-//! Kimi Code custom-provider backend. File-backed (mirrors OpenCode): list /
+//! Kimi Code custom-provider backend. File-backed: list /
 //! upsert / remove read & write `${KIMI_CODE_HOME:-~/.kimi-code}/config.toml`
 //! directly via the toml_edit CST, in the `[providers.<id>]` /
 //! `[models."<id>/<model>"]` shape Kimi itself emits. No dependency on the
 //! `kimi provider` CLI — so it tolerates the unified card's optimistic,
-//! incrementally-filled writes exactly like the OpenCode config backend.
+//! incrementally-filled writes.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -303,8 +303,7 @@ fn ensure_table<'a>(doc: &'a mut DocumentMut, key: &str) -> Result<&'a mut Table
 
 /// Merge a provider + its models into the config CST. Tolerant of an
 /// incomplete provider (empty base URL / no models) so the unified card's
-/// incremental, fill-as-you-go writes don't error — mirrors the OpenCode
-/// file backend. Re-writing the same id replaces that provider's blocks;
+/// incremental, fill-as-you-go writes don't error. Re-writing the same id replaces that provider's blocks;
 /// comments and unrelated sections are preserved (toml_edit CST).
 fn merge_provider(doc: &mut DocumentMut, provider: &CustomProvider) -> Result<()> {
     let id = provider.id.trim();
@@ -547,7 +546,7 @@ keep = true
     #[test]
     fn merge_tolerates_incomplete_provider() {
         // The unified card writes a blank slot first, then fills it in. An empty
-        // base URL / no models must NOT error (mirrors the OpenCode backend).
+        // base URL / no models must NOT error.
         let mut doc = DocumentMut::new();
         let blank = CustomProvider {
             id: "a1b2c3d4".into(),

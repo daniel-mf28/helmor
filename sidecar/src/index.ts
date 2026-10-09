@@ -13,12 +13,9 @@ import type { PermissionUpdate } from "@anthropic-ai/claude-agent-sdk";
 import { isAbortError } from "./abort.js";
 import { ClaudeSessionManager } from "./claude/session-manager.js";
 import { CodexAppServerManager } from "./codex/app-server-manager.js";
-import { CursorSessionManager } from "./cursor/session-manager.js";
 import { createSidecarEmitter } from "./emitter.js";
 import { KimiSessionManager } from "./kimi/session-manager.js";
 import { errorDetails, logger } from "./logger.js";
-import { OPENCODE_PROTOCOL_CONFIG } from "./opencode-protocol/opencode.js";
-import { OpencodeProtocolSessionManager } from "./opencode-protocol/session-manager.js";
 import {
 	errorMessage,
 	optionalObject,
@@ -42,16 +39,10 @@ import { TITLE_GENERATION_TIMEOUT_MS } from "./title.js";
 
 const claudeManager = new ClaudeSessionManager();
 const codexManager = new CodexAppServerManager();
-const cursorManager = new CursorSessionManager();
-const opencodeManager = new OpencodeProtocolSessionManager(
-	OPENCODE_PROTOCOL_CONFIG,
-);
 const kimiManager = new KimiSessionManager();
 const managers: Record<Provider, SessionManager> = {
 	claude: claudeManager,
 	codex: codexManager,
-	cursor: cursorManager,
-	opencode: opencodeManager,
 	kimi: kimiManager,
 };
 
@@ -126,65 +117,14 @@ setInterval(() => {
 
 // Log-only handlers. Real sidecar crash is detected by Rust on EOF;
 // broadcasting a null-id error here would tear down every in-flight
-// stream over a transient Cursor NGHTTP2/TLS hiccup (#398/#402).
+// stream over a transient network hiccup (#398/#402).
 process.on("uncaughtException", (err) => {
 	logger.error("uncaughtException", errorDetails(err));
 });
 
 process.on("unhandledRejection", (reason) => {
-	// Cursor SDK opens background HTTP/2 sessions (statsig, run-event
-	// tailer) that periodically trip transport-level errors. The
-	// user-facing turn is awaited inside the manager's try/catch, so
-	// these are by construction off-path — demote to info.
-	if (isCursorSdkBackgroundChannelError(reason)) {
-		logger.info(
-			"Suppressed Cursor SDK background-channel transient error",
-			errorDetails(reason),
-		);
-		return;
-	}
 	logger.error("unhandledRejection", errorDetails(reason));
 });
-
-const TRANSIENT_NODE_ERROR_CODES = new Set([
-	// TLS SAN mismatch (Cursor side channels).
-	"ERR_TLS_CERT_ALTNAME_INVALID",
-	// HTTP/2 stream-level resets (FRAME_SIZE_ERROR, REFUSED_STREAM, ...).
-	"ERR_HTTP2_STREAM_ERROR",
-	"ERR_HTTP2_INVALID_STREAM",
-	"ERR_HTTP2_GOAWAY_SESSION",
-	// Socket-level.
-	"ECONNRESET",
-	"ECONNREFUSED",
-	"ETIMEDOUT",
-	"ENOTFOUND",
-	"EAI_AGAIN",
-	"EPIPE",
-]);
-
-function isCursorSdkBackgroundChannelError(reason: unknown): boolean {
-	if (!(reason instanceof Error)) return false;
-	if (reason.name !== "ConnectError") return false;
-	for (const code of collectErrorChainCodes(reason)) {
-		if (TRANSIENT_NODE_ERROR_CODES.has(code)) return true;
-	}
-	// Fallback: HTTP/2 errors sometimes lose `.code`; match by message.
-	const msg = reason.message;
-	return /NGHTTP2_/.test(msg) || /Stream closed with error code/i.test(msg);
-}
-
-function collectErrorChainCodes(err: Error): string[] {
-	const codes: string[] = [];
-	const seen = new Set<unknown>();
-	let curr: unknown = err;
-	while (curr && !seen.has(curr)) {
-		seen.add(curr);
-		const c = (curr as { code?: unknown }).code;
-		if (typeof c === "string") codes.push(c);
-		curr = (curr as { cause?: unknown }).cause;
-	}
-	return codes;
-}
 
 logger.info("Sidecar starting", { pid: process.pid });
 emitter.ready(1);
@@ -257,8 +197,6 @@ function parseTitleAttempts(raw: unknown): TitleAttempt[] {
 			const provider =
 				obj.provider === "claude" ||
 				obj.provider === "codex" ||
-				obj.provider === "cursor" ||
-				obj.provider === "opencode" ||
 				obj.provider === "kimi"
 					? obj.provider
 					: null;
@@ -290,7 +228,7 @@ async function handleGenerateTitle(
 		const generateBranch =
 			typeof params.generateBranch === "boolean" ? params.generateBranch : true;
 		// Rust builds the ordered attempt chain from the user's configured
-		// models (action → review → default, deduped); each claude/opencode
+		// models (action → review → default, deduped); each claude/codex
 		// step tries the custom model first, then the provider's fast default.
 		// Walk it and stop at the first attempt that produces a title.
 		const attempts = parseTitleAttempts(params.attempts);
@@ -342,23 +280,8 @@ async function handleListModels(
 ): Promise<void> {
 	try {
 		const provider = parseProvider(params.provider);
-		// Optional override key — onboarding uses this to validate a key
-		// before persisting it to settings.
-		const apiKey =
-			typeof params.apiKey === "string" && params.apiKey.length > 0
-				? params.apiKey
-				: undefined;
-		const forceReload = params.forceReload === true;
-		logger.debug(`[${id}] listModels`, {
-			provider,
-			override: Boolean(apiKey),
-			forceReload,
-		});
-		const models = await managers[provider].listModels(
-			apiKey || forceReload
-				? { ...(apiKey ? { apiKey } : {}), forceReload }
-				: undefined,
-		);
+		logger.debug(`[${id}] listModels`, { provider });
+		const models = await managers[provider].listModels();
 		emitter.modelsListed(id, provider, models);
 		logger.debug(`[${id}] listModels → ${models.length} entries (${provider})`);
 	} catch (err) {
@@ -423,23 +346,6 @@ async function handleGetContextUsage(
 	} catch (err) {
 		const msg = errorMessage(err);
 		logger.error(`[${id}] getContextUsage FAILED: ${msg}`, errorDetails(err));
-		emitter.error(id, msg);
-	}
-}
-
-/// Hot-push runtime config (Cursor API key). Restarting the sidecar
-/// would interrupt unrelated in-flight Claude/Codex turns.
-function handleUpdateConfig(id: string, params: Record<string, unknown>): void {
-	try {
-		if ("cursorApiKey" in params) {
-			const raw = params.cursorApiKey;
-			const next = typeof raw === "string" ? raw : null;
-			cursorManager.setApiKey(next);
-		}
-		emitter.pong(id);
-	} catch (err) {
-		const msg = errorMessage(err);
-		logger.error(`[${id}] updateConfig FAILED: ${msg}`, errorDetails(err));
 		emitter.error(id, msg);
 	}
 }
@@ -602,9 +508,6 @@ for await (const line of rl) {
 			case "mutateCodexGoal":
 				await handleMutateCodexGoal(id, params);
 				break;
-			case "updateConfig":
-				handleUpdateConfig(id, params);
-				break;
 			case "shutdown":
 				await handleShutdown(id);
 				break;
@@ -617,11 +520,9 @@ for await (const line of rl) {
 				const message =
 					typeof params.message === "string" ? params.message : undefined;
 				logger.debug(`[${id}] permissionResponse`, { permissionId, behavior });
-				// Route by id prefix: `codex-`, `opencode-`, `kimi-`, else Claude.
+				// Route by id prefix: `codex-`, `kimi-`, else Claude.
 				if (permissionId.startsWith("codex-")) {
 					codexManager.resolvePermission(permissionId, behavior);
-				} else if (permissionId.startsWith("opencode-")) {
-					opencodeManager.resolvePermission(permissionId, behavior);
 				} else if (permissionId.startsWith("kimi-")) {
 					kimiManager.resolvePermission(permissionId, behavior);
 				} else {
@@ -665,7 +566,6 @@ for await (const line of rl) {
 				const claimed =
 					claudeManager.resolveUserInput(userInputId, resolution) ||
 					codexManager.resolveUserInput(userInputId, resolution) ||
-					opencodeManager.resolveUserInput(userInputId, resolution) ||
 					kimiManager.resolveUserInput(userInputId, resolution);
 				if (!claimed) {
 					// No live waiter — the parked promise was lost (sidecar
@@ -696,11 +596,10 @@ for await (const line of rl) {
 	}
 }
 
-// Parent (Rust) is gone. opencode runs as a DETACHED child whose live
-// SSE/HTTP connections keep our event loop alive, so falling off the end here
-// would NOT exit — we'd linger as an orphan (ppid=1) holding a `serve`, which
-// `reapOrphans` can't reap (the serve's parent, us, is still alive). Tear the
-// servers down and exit explicitly; a backstop timer guards a stalled shutdown.
+// Parent (Rust) is gone. Agent children (Codex app-server, Kimi ACP) can hold
+// live connections that keep our event loop alive, so falling off the end here
+// might NOT exit — tear the managers down and exit explicitly; a backstop
+// timer guards a stalled shutdown.
 logger.info("stdin closed — sidecar exiting");
 setTimeout(() => process.exit(0), 3000);
 try {

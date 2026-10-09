@@ -8,14 +8,8 @@ vi.mock("@/components/icons", () => ({
 	ClaudeIcon: (props: { className?: string }) => (
 		<span data-testid="claude-icon" {...props} />
 	),
-	CursorIcon: (props: { className?: string }) => (
-		<span data-testid="cursor-icon" {...props} />
-	),
 	OpenAIIcon: (props: { className?: string }) => (
 		<span data-testid="codex-icon" {...props} />
-	),
-	OpenCodeIcon: (props: { className?: string }) => (
-		<span data-testid="opencode-icon" {...props} />
 	),
 }));
 
