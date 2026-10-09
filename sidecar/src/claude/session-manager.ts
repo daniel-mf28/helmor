@@ -49,6 +49,7 @@ import {
 } from "../title.js";
 import { claudeConfigDirEnv, expandClaudeConfigDir } from "./config-dir.js";
 import { loadProjectMcpServers } from "./project-mcp.js";
+import { isStaleResumeNotificationResult } from "./stale-resume-result.js";
 
 /**
  * Hard upper bound on how long `listSlashCommands` will wait for the SDK's
@@ -739,6 +740,9 @@ export class ClaudeSessionManager implements SessionManager {
 		let bgDrainSettledByGrace = false;
 		let deferredCompletedResult: SDKMessage | null = null;
 		let turnEnded = false;
+		// Set on the first `result` that belongs to THIS turn (anything but a
+		// stale resume-prelude result — see `isStaleResumeNotificationResult`).
+		let ownResultSeen = false;
 		const clearBgDrainTimer = () => {
 			if (bgDrainTimer === null) return;
 			clearTimeout(bgDrainTimer);
@@ -875,6 +879,26 @@ export class ClaudeSessionManager implements SessionManager {
 					lastRateLimitInfo = (
 						message as { rate_limit_info?: RateLimitOverageInfo }
 					).rate_limit_info;
+				}
+				// Resume after an interrupted turn: claude-code first replays the
+				// dead background tasks as a zero-round-trip notification turn and
+				// writes its `result` BEFORE dequeuing this turn's prompt. That
+				// result is not ours — ending on it would drop the user's prompt
+				// and surface "empty response". Skip it (only before our own first
+				// result) and keep draining the same query for the real turn.
+				if (message.type === "result") {
+					if (
+						resume &&
+						!ownResultSeen &&
+						isStaleResumeNotificationResult(message)
+					) {
+						logger.info(
+							`[${requestId}] skipping stale resume notification result`,
+							{ resume: resume ?? null },
+						);
+						continue;
+					}
+					ownResultSeen = true;
 				}
 				// Surface fast-mode-not-active off the init event (carries
 				// `fast_mode_state` right after send), once — not the terminal
