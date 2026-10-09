@@ -229,7 +229,6 @@ export class OpencodeProtocolServer {
 	readonly binPath: string;
 	private proc: ChildProcess | null = null;
 	private handle: Promise<ProtocolServerHandle> | null = null;
-	private proxyUrl: string | null = null;
 	/** Port the live server bound; lets `kill()` reap a serve that escaped the group. */
 	private lastPort: number | null = null;
 	/** Startup orphan-reap runs once per process, before the first spawn. */
@@ -248,23 +247,11 @@ export class OpencodeProtocolServer {
 		this.binPath = resolveBinPath(config);
 	}
 
-	/** Idempotent. Restarts if the proxy in `env` changed. Only called at turn
-	 *  start, so it never interrupts an in-flight stream. */
+	/** Idempotent. Only called at turn start, so it never interrupts an
+	 *  in-flight stream. */
 	start(env: NodeJS.ProcessEnv): Promise<ProtocolServerHandle> {
 		const effectiveEnv = buildOpencodeEnv(env);
-		const proxyUrl =
-			effectiveEnv.HTTPS_PROXY ??
-			effectiveEnv.HTTP_PROXY ??
-			effectiveEnv.ALL_PROXY ??
-			null;
-		if (this.handle && proxyUrl !== this.proxyUrl) {
-			logger.info(`${this.config.id} proxy changed — restarting server`, {
-				proxy: proxyUrl ?? "(none)",
-			});
-			void this.kill();
-		}
 		if (this.handle) return this.handle;
-		this.proxyUrl = proxyUrl;
 		this.handle = this.spawnAndConnect(effectiveEnv).catch((err) => {
 			// Allow a later sendMessage to retry from scratch.
 			this.handle = null;

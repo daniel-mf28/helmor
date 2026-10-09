@@ -11,7 +11,6 @@
 import { createInterface } from "node:readline";
 import type { PermissionUpdate } from "@anthropic-ai/claude-agent-sdk";
 import { isAbortError } from "./abort.js";
-import { applyAgentProxyToProcessEnv } from "./agent-proxy.js";
 import { ClaudeSessionManager } from "./claude/session-manager.js";
 import { CodexAppServerManager } from "./codex/app-server-manager.js";
 import { CursorSessionManager } from "./cursor/session-manager.js";
@@ -23,7 +22,6 @@ import { OpencodeProtocolSessionManager } from "./opencode-protocol/session-mana
 import {
 	errorMessage,
 	optionalObject,
-	parseAgentProxySettings,
 	parseCodexProvider,
 	parseGetContextUsageParams,
 	parseListSlashCommandsParams,
@@ -207,7 +205,6 @@ async function handleSendMessage(
 	try {
 		const provider = parseProvider(params.provider);
 		const sendParams = parseSendMessageParams(params);
-		applyAgentProxyToProcessEnv(sendParams.agentProxy);
 		logger.debug(`[${id}] sendMessage`, {
 			prompt: sendParams.prompt?.slice(0, 100),
 			model: sendParams.model ?? "(default)",
@@ -288,7 +285,6 @@ async function handleGenerateTitle(
 			typeof params.branchRenamePrompt === "string"
 				? params.branchRenamePrompt
 				: null;
-		const agentProxy = parseAgentProxySettings(params, "agentProxy");
 		// Default true so older clients without the field keep getting both
 		// title and branch. Pass `false` to skip the branch slug entirely.
 		const generateBranch =
@@ -320,7 +316,6 @@ async function handleGenerateTitle(
 						model: attempt.model,
 						claudeEnvironment: attempt.claudeEnvironment,
 						codexProvider: attempt.codexProvider,
-						agentProxy,
 						generateBranch,
 					},
 				);

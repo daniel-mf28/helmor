@@ -110,7 +110,6 @@ fn base_input<'a>(session_id: Option<&'a str>) -> BuildSendMessageParamsInput<'a
         claude_base_url: None,
         claude_auth_token: None,
         claude_vertex: None,
-        agent_proxy: None,
         claude_thinking_display: None,
         images: &[],
         codex_provider: None,
@@ -218,22 +217,6 @@ fn includes_vertex_keychain_api_key_helper_settings() {
         .get("ANTHROPIC_AUTH_TOKEN")
         .is_none());
     assert_yaml_snapshot!("params_with_vertex_keychain", &params);
-}
-
-#[test]
-fn includes_agent_proxy_for_any_provider() {
-    let env = TestEnv::new();
-    seed_workspace_session(&env.connection(), "w-5", "s-5", None);
-
-    let proxy = serde_json::json!({
-        "mode": "custom",
-        "customUrl": "http://127.0.0.1:7890",
-    });
-    let mut input = base_input(Some("s-5"));
-    input.agent_proxy = Some(&proxy);
-
-    let params = build(input);
-    assert_yaml_snapshot!("params_with_agent_proxy", &params);
 }
 
 #[test]

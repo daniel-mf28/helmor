@@ -141,7 +141,6 @@ async function driveToSendMessage(sessionId: string) {
 		activeEmitter: null,
 		notificationGate: null,
 		lastSentModel: "",
-		agentProxyKey: "none",
 		lastRetryAt: null,
 		lastRetryNotice: null,
 		subAgentTracker: new SubAgentTracker(fake.server as never),

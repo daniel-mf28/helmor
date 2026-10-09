@@ -76,9 +76,3 @@ Helmor bundles a llama.cpp runtime used for small on-device features (like
 automatic session titles), with models managed under **Settings → Local LLM**.
 Your prompts to coding agents always go to the provider you selected — never
 to a third party.
-
-## Network and proxies
-
-Agent processes inherit your proxy configuration: Helmor can follow the macOS
-system proxy or use a custom HTTP/SOCKS5 proxy (**Settings**). This applies to
-Claude Code, Codex, and Cursor traffic alike.

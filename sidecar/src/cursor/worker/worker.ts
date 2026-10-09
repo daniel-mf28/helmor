@@ -7,7 +7,6 @@
  * logger) goes to stderr, which the proxy drains into the sidecar log. */
 
 import { createInterface } from "node:readline";
-import { applyAgentProxyToProcessEnv } from "../../agent-proxy.js";
 import type { SidecarEmitter } from "../../emitter.js";
 import { CursorCore } from "./cursor-core.js";
 import { isAuthError, isRetryableCursorError } from "./cursor-helpers.js";
@@ -134,7 +133,6 @@ async function handle(msg: ToWorker): Promise<void> {
 			core.setApiKey(msg.apiKey);
 			return;
 		case "send":
-			applyAgentProxyToProcessEnv(msg.params.agentProxy);
 			// CursorCore emits its own terminal end/error; `sendDone` just
 			// releases the proxy's awaiting promise.
 			await core.sendMessage(msg.requestId, msg.params, wireEmitter);

@@ -15,7 +15,6 @@ import {
 	prependPathSegment,
 	type WindowsPathEnvOptions,
 } from "../agent-path-env.js";
-import { type AgentProxySettings, buildAgentProxyEnv } from "../agent-proxy.js";
 import { logger } from "../logger.js";
 
 // ---------------------------------------------------------------------------
@@ -62,7 +61,6 @@ export interface CodexAppServerOptions {
 	onRequest: OnRequest;
 	onExit: OnExit;
 	onError: OnError;
-	agentProxy?: AgentProxySettings;
 	/** Disable user-configured MCP servers for this app-server instance.
 	 *  Used by one-shot title generation so it never races the real
 	 *  conversation's MCP init on a worktree's first run. */
@@ -115,7 +113,6 @@ export function buildCodexAppServerArgs(opts?: {
  */
 export function buildCodexEnv(
 	binaryPath: string,
-	agentProxy?: AgentProxySettings,
 	options: BuildCodexEnvOptions = {},
 ): NodeJS.ProcessEnv {
 	const env = { ...(options.baseEnv ?? process.env) };
@@ -132,8 +129,6 @@ export function buildCodexEnv(
 	if (pathDir) {
 		prependPathSegment(env, pathDir, platform);
 	}
-	const proxyEnv = buildAgentProxyEnv(agentProxy);
-	if (proxyEnv) Object.assign(env, proxyEnv);
 	return env;
 }
 
@@ -159,7 +154,7 @@ export class CodexAppServer {
 			{
 				cwd: opts.cwd,
 				stdio: ["pipe", "pipe", "pipe"],
-				env: buildCodexEnv(opts.binaryPath, opts.agentProxy),
+				env: buildCodexEnv(opts.binaryPath),
 			},
 		);
 

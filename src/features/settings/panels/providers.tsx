@@ -12,7 +12,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { getAgentLoginStatus, getAgentVersions } from "@/lib/api";
 import { helmorQueryKeys } from "@/lib/query-client";
 import { SettingsGroup } from "../components/settings-row";
-import { AgentProxyPanel } from "./model-providers";
 import {
 	CLAUDE_ADAPTER,
 	CODEX_ADAPTER,
@@ -144,7 +143,6 @@ export function ProvidersPanel() {
 						<CursorCardBody />
 					</ProviderConfigRow>
 				</ProviderRow>
-				<AgentProxyPanel />
 			</SettingsGroup>
 		</TooltipProvider>
 	);

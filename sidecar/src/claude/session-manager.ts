@@ -20,7 +20,6 @@ import {
 	applyWindowsPathFromRegistry,
 	type WindowsPathEnvOptions,
 } from "../agent-path-env.js";
-import { buildAgentProxyEnv } from "../agent-proxy.js";
 import {
 	buildClaudeRichMeta,
 	buildClaudeStoredMeta,
@@ -418,7 +417,6 @@ export class ClaudeSessionManager implements SessionManager {
 			claudeThinkingDisplay,
 			claudeEnvironment,
 			claudeSettings,
-			agentProxy,
 			images,
 			sourceRepoPath,
 		} = params;
@@ -475,9 +473,7 @@ export class ClaudeSessionManager implements SessionManager {
 			additionalDirectories.length > 0
 				? { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" }
 				: undefined;
-		const proxyEnv = buildAgentProxyEnv(agentProxy);
 		const queryEnv = mergeQueryEnv(
-			proxyEnv,
 			claudeEnv,
 			additionalDirectoryEnv,
 			MCP_BLOCKING_ENV,
@@ -1158,8 +1154,7 @@ export class ClaudeSessionManager implements SessionManager {
 			Object.keys(options.claudeEnvironment).length > 0
 				? options.claudeEnvironment
 				: undefined;
-		const proxyEnv = buildAgentProxyEnv(options?.agentProxy);
-		const queryEnv = mergeQueryEnv(proxyEnv, claudeEnv);
+		const queryEnv = mergeQueryEnv(claudeEnv);
 		const generateBranch = options?.generateBranch ?? true;
 		const q = query({
 			prompt: buildTitlePrompt(userMessage, branchRenamePrompt, generateBranch),
@@ -1432,8 +1427,7 @@ export class ClaudeSessionManager implements SessionManager {
 				yield* [];
 			})();
 
-		const proxyEnv = buildAgentProxyEnv(params.agentProxy);
-		const queryEnv = mergeQueryEnv(proxyEnv);
+		const queryEnv = mergeQueryEnv();
 		const q = query({
 			prompt: promptIter,
 			options: {

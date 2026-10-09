@@ -50,8 +50,6 @@ restores the stash. Two things can conflict:
 - **Stop** the turn — the session stays usable; send again to continue.
 - Check the provider sign-in (Claude Code / Codex login, API keys in
   Settings → Models).
-- Behind a proxy? Configure it in Settings — agent processes inherit the
-  system or custom proxy you set there.
 
 ## The `helmor` CLI isn't found
 

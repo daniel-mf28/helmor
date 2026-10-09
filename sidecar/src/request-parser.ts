@@ -4,7 +4,6 @@
  * missing or wrong-shaped field.
  */
 
-import type { AgentProxySettings } from "./agent-proxy.js";
 import type {
 	CodexProviderConfig,
 	GetContextUsageParams,
@@ -114,7 +113,6 @@ export function parseSendMessageParams(
 		claudeEnvironment: parseOptionalStringRecord(params, "claudeEnvironment"),
 		claudeSettings: parseOptionalStringRecord(params, "claudeSettings"),
 		codexProvider: parseCodexProvider(params, "codexProvider"),
-		agentProxy: parseAgentProxySettings(params, "agentProxy"),
 		additionalDirectories: parseOptionalStringArray(
 			params,
 			"additionalDirectories",
@@ -146,29 +144,6 @@ export function parseCodexProvider(
 	const apiKey = optionalString(obj, "apiKey") ?? "";
 	const wireApi = optionalString(obj, "wireApi") ?? "responses";
 	return { id, baseUrl, apiKey, model, wireApi };
-}
-
-export function parseAgentProxySettings(
-	params: Record<string, unknown>,
-	key: string,
-): AgentProxySettings | undefined {
-	const value = params[key];
-	if (value === undefined || value === null) return undefined;
-	if (typeof value !== "object" || Array.isArray(value)) {
-		throw new Error(`params.${key} must be an object`);
-	}
-	const mode = (value as Record<string, unknown>).mode;
-	if (mode === "system") {
-		return { mode };
-	}
-	if (mode === "custom") {
-		const customUrl = (value as Record<string, unknown>).customUrl;
-		if (typeof customUrl !== "string" || !customUrl.trim()) {
-			throw new Error(`params.${key}.customUrl must be a non-empty string`);
-		}
-		return { mode, customUrl: customUrl.trim() };
-	}
-	throw new Error(`params.${key}.mode must be system or custom`);
 }
 
 export function parseOptionalStringRecord(
@@ -230,7 +205,6 @@ export function parseGetContextUsageParams(
 		providerSessionId: optionalString(params, "providerSessionId") ?? null,
 		model: requireString(params, "model"),
 		cwd: optionalString(params, "cwd"),
-		agentProxy: parseAgentProxySettings(params, "agentProxy"),
 	};
 }
 

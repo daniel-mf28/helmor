@@ -136,11 +136,6 @@ export type KimiProviderSettings = {
 	enabledModelIds: string[] | null;
 };
 
-export type AgentProxySettings = {
-	mode: "none" | "system" | "custom";
-	customUrl: string;
-};
-
 export type LocalLlmSettings = {
 	enabled: boolean;
 	model: string;
@@ -260,7 +255,6 @@ export type AppSettings = {
 	cursorProvider: CursorProviderSettings;
 	opencodeProvider: OpencodeProviderSettings;
 	kimiProvider: KimiProviderSettings;
-	agentProxy: AgentProxySettings;
 	localLlm: LocalLlmSettings;
 	startSurfacePreferences: StartSurfacePreferences;
 	/** Sidebar grouping mode. Persisted to localStorage (sync read on boot
@@ -370,10 +364,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
 	kimiProvider: {
 		cachedModels: null,
 		enabledModelIds: null,
-	},
-	agentProxy: {
-		mode: "none",
-		customUrl: "",
 	},
 	localLlm: {
 		enabled: false,
@@ -548,7 +538,6 @@ const SETTINGS_KEY_MAP: Record<
 	cursorProvider: "app.cursor_provider",
 	opencodeProvider: "app.opencode_provider",
 	kimiProvider: "app.kimi_provider",
-	agentProxy: "app.agent_proxy",
 	localLlm: "app.local_llm",
 	startSurfacePreferences: "app.start_surface_preferences",
 };
@@ -924,23 +913,6 @@ function parseEnabledModelIdsSetting(raw: string | undefined): string[] | null {
 	}
 }
 
-function parseAgentProxySettings(raw: string | undefined): AgentProxySettings {
-	if (!raw) return DEFAULT_SETTINGS.agentProxy;
-	try {
-		const parsed = JSON.parse(raw) as Record<string, unknown>;
-		const mode =
-			parsed.mode === "system" || parsed.mode === "custom"
-				? parsed.mode
-				: DEFAULT_SETTINGS.agentProxy.mode;
-		return {
-			mode,
-			customUrl: typeof parsed.customUrl === "string" ? parsed.customUrl : "",
-		};
-	} catch {
-		return DEFAULT_SETTINGS.agentProxy;
-	}
-}
-
 function parseLocalLlmSettings(raw: string | undefined): LocalLlmSettings {
 	if (!raw) return DEFAULT_SETTINGS.localLlm;
 	try {
@@ -1173,7 +1145,6 @@ export async function loadSettings(): Promise<AppSettings> {
 			kimiProvider: parseKimiProviderSettings(
 				raw[SETTINGS_KEY_MAP.kimiProvider],
 			),
-			agentProxy: parseAgentProxySettings(raw[SETTINGS_KEY_MAP.agentProxy]),
 			localLlm: parseLocalLlmSettings(raw[SETTINGS_KEY_MAP.localLlm]),
 			startSurfacePreferences: parseStartSurfacePreferences(
 				raw[SETTINGS_KEY_MAP.startSurfacePreferences],
@@ -1220,7 +1191,6 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<void> {
 				key === "cursorProvider" ||
 				key === "opencodeProvider" ||
 				key === "kimiProvider" ||
-				key === "agentProxy" ||
 				key === "localLlm" ||
 				key === "startSurfacePreferences" ||
 				key === "defaultModel" ||

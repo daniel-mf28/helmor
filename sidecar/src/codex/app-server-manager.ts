@@ -12,7 +12,6 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { ActiveTurnRegistry } from "../active-turn-registry.js";
-import type { AgentProxySettings } from "../agent-proxy.js";
 import { buildCodexStoredMeta } from "../context-usage.js";
 import type { SidecarEmitter } from "../emitter.js";
 import { resolveGitAccessDirectories } from "../git-access.js";
@@ -331,8 +330,6 @@ interface AppServerContext {
 	notificationGate: Promise<void> | null;
 	/** Last send's model id; Codex usage notifications omit it. */
 	lastSentModel: string;
-	/** Stable key for the proxy env used to spawn this app-server. */
-	agentProxyKey: string;
 	/** Wall-clock ms of the most recent "Reconnecting…" line on the
 	 *  Codex child process's stderr. Used to suppress the transient
 	 *  {method:"error"} notifications that Codex emits during its own
@@ -542,7 +539,6 @@ export class CodexAppServerManager implements SessionManager {
 			effortLevel,
 			permissionMode,
 			fastMode,
-			agentProxy,
 			codexProvider,
 			additionalDirectories,
 			images,
@@ -592,7 +588,6 @@ export class CodexAppServerManager implements SessionManager {
 			model,
 			permissionMode,
 			effectiveFastMode,
-			agentProxy,
 			codexProvider,
 		);
 		// Stop pressed during startup — `requestStop` already emitted `aborted`.
@@ -1099,7 +1094,6 @@ export class CodexAppServerManager implements SessionManager {
 		const server = new CodexAppServer({
 			binaryPath: CODEX_BIN_PATH,
 			cwd,
-			agentProxy: options?.agentProxy,
 			// Title generation must never start the user's configured MCP
 			// servers: on a new worktree's first turn that races the real
 			// conversation's MCP init and can leave tools (e.g. Linear)
@@ -1670,17 +1664,11 @@ export class CodexAppServerManager implements SessionManager {
 		model?: string,
 		permissionMode?: string,
 		fastMode?: boolean,
-		agentProxy?: AgentProxySettings,
 		codexProvider?: CodexProviderConfig,
 	): Promise<AppServerContext> {
-		const agentProxyKey = buildAgentProxyKey(agentProxy);
 		const existing = this.sessions.get(sessionId);
 		if (existing && !existing.server.killed) {
-			if (existing.agentProxyKey === agentProxyKey || existing.activeTurnId) {
-				return existing;
-			}
-			existing.server.kill();
-			this.sessions.delete(sessionId);
+			return existing;
 		}
 
 		// Forward-reference holder so the `onRetry` closure can reach the
@@ -1692,7 +1680,6 @@ export class CodexAppServerManager implements SessionManager {
 		const server = new CodexAppServer({
 			binaryPath: CODEX_BIN_PATH,
 			cwd,
-			agentProxy,
 			onNotification: () => {},
 			onRequest: () => {},
 			onExit: (code, signal) => {
@@ -1794,7 +1781,6 @@ export class CodexAppServerManager implements SessionManager {
 			activeEmitter: null,
 			notificationGate: null,
 			lastSentModel: model ?? "",
-			agentProxyKey,
 			lastRetryAt: null,
 			lastRetryNotice: null,
 			subAgentTracker: new SubAgentTracker(server),
@@ -2015,12 +2001,6 @@ function parseSkillsResponse(
 		if (!byName.has(command.name)) byName.set(command.name, command);
 	}
 	return Array.from(byName.values());
-}
-
-function buildAgentProxyKey(agentProxy?: AgentProxySettings): string {
-	if (!agentProxy) return "none";
-	if (agentProxy.mode === "system") return "system";
-	return `custom:${agentProxy.customUrl}`;
 }
 
 /**

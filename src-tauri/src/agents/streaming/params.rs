@@ -23,7 +23,6 @@ pub struct BuildSendMessageParamsInput<'a> {
     pub claude_auth_token: Option<&'a str>,
     /// Vertex-type Claude provider; `Some` replaces base-url/token injection.
     pub claude_vertex: Option<&'a crate::provider::claude::ClaudeVertexConfig>,
-    pub agent_proxy: Option<&'a Value>,
     /// Forwarded as `claudeThinkingDisplay` to the sidecar. Expected
     /// values: `"summarized"` or `"omitted"`. Omitted from the wire
     /// payload when `None` so the sidecar falls back to its default.
@@ -95,11 +94,6 @@ pub fn build_send_message_params(input: BuildSendMessageParamsInput<'_>) -> Valu
     if let Some(vertex) = input.claude_vertex {
         if let Some(obj) = params.as_object_mut() {
             insert_vertex_params(obj, vertex);
-        }
-    }
-    if let Some(proxy) = input.agent_proxy {
-        if let Some(obj) = params.as_object_mut() {
-            obj.insert("agentProxy".to_string(), proxy.clone());
         }
     }
     if let Some(codex) = input.codex_provider {
