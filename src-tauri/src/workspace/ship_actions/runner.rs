@@ -69,6 +69,7 @@ pub fn run_workspace_ship_action(
                     model: None,
                     permission_mode: Some("auto".to_string()),
                     linked_directories: Vec::new(),
+                    claude_config_dir: None,
                 },
                 &mut |_event| {},
             )?;

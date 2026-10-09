@@ -10,7 +10,7 @@ use crate::pipeline::types::{ExtendedMessagePart, MessagePart};
 use crate::service;
 
 use super::args::{Cli, ModelsAction, SendArgs};
-use super::output;
+use super::{claude_accounts, output};
 
 pub fn send(args: &SendArgs, cli: &Cli) -> Result<()> {
     let prompt = read_prompt(&args.prompt).context("Failed to read prompt")?;
@@ -20,6 +20,9 @@ pub fn send(args: &SendArgs, cli: &Cli) -> Result<()> {
         args.permission_mode.clone()
     };
 
+    // Resolve first so an unknown label fails before any session is created.
+    let claude_config_dir = claude_accounts::resolve_flag(args.claude_account.as_deref())?;
+
     let params = service::SendMessageParams {
         workspace_ref: args.workspace.clone(),
         session_id: args.session.clone(),
@@ -27,6 +30,7 @@ pub fn send(args: &SendArgs, cli: &Cli) -> Result<()> {
         model: args.model.clone(),
         permission_mode,
         linked_directories: args.linked_dirs.clone(),
+        claude_config_dir,
     };
 
     let mut stdout = std::io::stdout().lock();

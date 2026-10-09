@@ -7,6 +7,7 @@
 use anyhow::{bail, Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
+use super::accounts::same_config_dir;
 use super::paths::normalize_config_dir;
 use crate::models::{db, settings};
 
@@ -62,6 +63,15 @@ fn read_session_config_dir(conn: &Connection, session_id: &str) -> Result<Option
     Ok(value.flatten().filter(|dir| !dir.trim().is_empty()))
 }
 
+fn session_message_count(conn: &Connection, session_id: &str) -> Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM session_messages WHERE session_id = ?1",
+        [session_id],
+        |row| row.get(0),
+    )
+    .context("Failed to count session messages")
+}
+
 /// Set (or clear, with `None`) a session's account. Refuses once the session
 /// has any message: the account is then fixed for the life of the chat.
 pub fn set_session_config_dir(
@@ -73,14 +83,7 @@ pub fn set_session_config_dir(
         Some(dir) => Some(normalize_config_dir(dir)?),
         None => None,
     };
-    let message_count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM session_messages WHERE session_id = ?1",
-            [session_id],
-            |row| row.get(0),
-        )
-        .context("Failed to count session messages")?;
-    if message_count > 0 {
+    if session_message_count(conn, session_id)? > 0 {
         bail!("The Claude account is fixed once a chat has messages. Start a new chat to switch.");
     }
     let updated = conn
@@ -93,6 +96,41 @@ pub fn set_session_config_dir(
         bail!("Session {session_id} does not exist");
     }
     Ok(())
+}
+
+/// Ensure a session runs on `desired` (`None` = default account), for callers
+/// that name the account explicitly (the CLI). Unlike
+/// [`set_session_config_dir`], asking for the account the session already has
+/// is a no-op even once it has messages; only an actual switch is refused.
+/// Returns whether the stored account changed.
+pub fn assign_session_config_dir(
+    conn: &Connection,
+    session_id: &str,
+    desired: Option<&str>,
+) -> Result<bool> {
+    let desired = desired.map(str::trim).filter(|dir| !dir.is_empty());
+    let current = read_session_config_dir(conn, session_id)?;
+    if same_config_dir(current.as_deref(), desired) {
+        return Ok(false);
+    }
+    if session_message_count(conn, session_id)? > 0 {
+        bail!(
+            "The Claude account is fixed for this chat: it already has messages on {}. \
+             Start a new session to use a different account.",
+            current.as_deref().unwrap_or("the default account"),
+        );
+    }
+    set_session_config_dir(conn, session_id, desired)?;
+    Ok(true)
+}
+
+/// [`assign_session_config_dir`] on a fresh write connection, for the CLI.
+/// Deliberately does NOT touch the app's last-used account: an orchestrating
+/// agent creating a Personal chat must not change which account the user's
+/// own next chat starts on. Returns whether the stored account changed.
+pub fn assign_on_write_conn(session_id: &str, desired: Option<&str>) -> Result<bool> {
+    let conn = db::write_conn()?;
+    assign_session_config_dir(&conn, session_id, desired)
 }
 
 // Unix-only: fixtures use POSIX absolute paths ("/tmp/...", "/Users/..."),
@@ -135,6 +173,53 @@ mod tests {
         let error = set_session_config_dir(&conn, "s1", Some("/tmp/claude-x")).unwrap_err();
         assert!(error.to_string().contains("fixed"));
         assert_eq!(read_session_config_dir(&conn, "s1").unwrap(), None);
+    }
+
+    fn add_message(conn: &Connection) {
+        conn.execute(
+            "INSERT INTO session_messages (id, session_id, role, content) VALUES ('m1', 's1', 'user', '{}')",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn assign_switches_a_fresh_session_and_reports_change() {
+        let conn = test_conn();
+        assert!(assign_session_config_dir(&conn, "s1", Some("/tmp/claude-x")).unwrap());
+        assert_eq!(
+            read_session_config_dir(&conn, "s1").unwrap().as_deref(),
+            Some("/tmp/claude-x")
+        );
+        // Same account again: no change. Back to default: change.
+        assert!(!assign_session_config_dir(&conn, "s1", Some("/tmp/claude-x/")).unwrap());
+        assert!(assign_session_config_dir(&conn, "s1", None).unwrap());
+        assert_eq!(read_session_config_dir(&conn, "s1").unwrap(), None);
+    }
+
+    #[test]
+    fn assign_refuses_to_switch_a_session_with_messages() {
+        let conn = test_conn();
+        assign_session_config_dir(&conn, "s1", Some("/tmp/claude-x")).unwrap();
+        add_message(&conn);
+        let error = assign_session_config_dir(&conn, "s1", None).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("fixed for this chat"), "{message}");
+        assert!(message.contains("/tmp/claude-x"), "{message}");
+        assert!(message.contains("new session"), "{message}");
+        assert_eq!(
+            read_session_config_dir(&conn, "s1").unwrap().as_deref(),
+            Some("/tmp/claude-x")
+        );
+    }
+
+    #[test]
+    fn assign_to_the_same_account_is_fine_on_a_locked_session() {
+        let conn = test_conn();
+        add_message(&conn);
+        // Default account -> default account.
+        assert!(!assign_session_config_dir(&conn, "s1", None).unwrap());
+        assert!(assign_session_config_dir(&conn, "s1", Some("/tmp/x")).is_err());
     }
 
     #[test]

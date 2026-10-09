@@ -113,6 +113,12 @@ pub struct SendMessageParams {
     /// Extra linked directories (`/add-dir`). When empty, persisted linked
     /// directories for the session are used instead.
     pub linked_directories: Vec<String>,
+    /// Claude account to run the target session on, already resolved to a
+    /// config dir: `None` = not specified (leave the session as is),
+    /// `Some(None)` = the default account, `Some(Some(dir))` = that dir.
+    /// Applied before anything is sent; refused if the session already has
+    /// messages on a different account.
+    pub claude_config_dir: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -196,6 +202,25 @@ pub fn send_message(
             }
         },
     };
+
+    // 2b. Pin the requested Claude account. Runs before any write below so a
+    //     locked chat fails without queuing or persisting anything.
+    if let Some(desired) = &params.claude_config_dir {
+        let changed =
+            crate::claude_accounts::session::assign_on_write_conn(&session_id, desired.as_deref())?;
+        if changed {
+            let _ = crate::ui_sync::notify_running_app(
+                crate::ui_sync::UiMutationEvent::SessionListChanged {
+                    workspace_id: workspace_id.clone(),
+                },
+            );
+            let _ = crate::ui_sync::notify_running_app(
+                crate::ui_sync::UiMutationEvent::SettingsChanged {
+                    key: Some(crate::claude_accounts::session::LAST_CONFIG_DIR_KEY.to_string()),
+                },
+            );
+        }
+    }
 
     // 3. Resolve model — param > session row > configured app default > Sol.
     //    Provider hint is required so cursor's `default` doesn't infer to
@@ -352,6 +377,16 @@ pub fn send_message(
         "provider": model.provider,
         "permissionMode": params.permission_mode.as_deref().unwrap_or("auto"),
     });
+    // Run under the session's Claude account (same lookup the in-app
+    // streaming path uses); without it a standalone send would silently use
+    // the default account.
+    if model.provider.as_str() == "claude" {
+        if let Some(dir) =
+            crate::claude_accounts::session::lookup_session_config_dir(Some(&session_id))
+        {
+            payload["claudeConfigDir"] = serde_json::Value::String(dir);
+        }
+    }
     if !additional_directories.is_empty() {
         payload["additionalDirectories"] = serde_json::Value::Array(
             additional_directories

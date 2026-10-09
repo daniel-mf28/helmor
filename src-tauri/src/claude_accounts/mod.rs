@@ -8,10 +8,12 @@
 //!
 //! ```text
 //! paths::*    <- ~ expansion, normalization, keychain service name
+//! accounts::* <- configured account list + `--claude-account` resolution
 //! detect::*   <- find existing ~/.claude-* dirs to seed the account list
 //! session::*  <- per-session account column + "last used" default
 //! ```
 
+pub mod accounts;
 pub mod detect;
 pub mod paths;
 pub mod session;
