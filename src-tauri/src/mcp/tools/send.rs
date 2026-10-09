@@ -26,6 +26,7 @@ pub(super) fn tool_send(args: &Value) -> Result<String> {
         model,
         permission_mode,
         linked_directories: Vec::new(),
+        claude_config_dir: None,
     };
 
     let mut output = String::new();

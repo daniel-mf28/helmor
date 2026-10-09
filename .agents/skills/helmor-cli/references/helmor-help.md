@@ -15,6 +15,7 @@ Commands:
   session      Session CRUD and inspection
   files        File listing, reading, writing, staging (editor surface)
   send         Send a prompt to an AI agent
+  claude-accounts  Claude subscription accounts (one per CLAUDE_CONFIG_DIR)
   models       List available AI models
   github       GitHub integration — auth, PR lookup, merge
   scripts      Inspect repo-level setup/run/archive scripts

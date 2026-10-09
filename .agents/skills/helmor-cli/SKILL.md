@@ -1,6 +1,6 @@
 ---
 name: helmor-cli
-description: Use the Helmor CLI to remote-control Helmor from the terminal. Use when the user asks to inspect Helmor data/settings, manage repositories/workspaces/sessions/files, send prompts to agents, list models, use GitHub integration, inspect scripts, run Helmor as an MCP server, generate shell completions, quit a running app, check/install/update the Helmor CLI beta, install/update Helmor skills through the beta app flow, or needs the Helmor command reference. Also plan and build a large change as a stack of dependent PRs (`/helmor-cli stack`), split a change you've already written into a stack (`/helmor-cli break`), and re-sync a stack after lower layers change or merge (`/helmor-cli restack`).
+description: Use the Helmor CLI to remote-control Helmor from the terminal. Use when the user asks to inspect Helmor data/settings, manage repositories/workspaces/sessions/files, send prompts to agents, pick which Claude subscription account (Work/Personal) a chat runs on, list models, use GitHub integration, inspect scripts, run Helmor as an MCP server, generate shell completions, quit a running app, check/install/update the Helmor CLI beta, install/update Helmor skills through the beta app flow, or needs the Helmor command reference. Also plan and build a large change as a stack of dependent PRs (`/helmor-cli stack`), split a change you've already written into a stack (`/helmor-cli break`), and re-sync a stack after lower layers change or merge (`/helmor-cli restack`).
 ---
 
 # Helmor CLI
@@ -100,6 +100,19 @@ Favor JSON output for automation:
 ```bash
 helmor --json send --help
 ```
+
+### Pick A Claude Account Per Chat
+
+Helmor can run each chat on a different Claude subscription (e.g. Work vs Personal). List the accounts, then pass one with `--claude-account <LABEL|PATH|default>` (label is case-insensitive; a path may start with `~/`; `default` is the built-in account):
+
+```bash
+helmor claude-accounts list [--json]
+helmor session new --workspace <ws-ref> --claude-account Personal
+helmor send --workspace <ws-ref> --claude-account Personal 'Review the diff.'
+helmor session update-settings --workspace <ws-ref> <session-id> --claude-account Work
+```
+
+The account is fixed once a chat has messages: `send` and `update-settings` fail with a clear error for a chat that already has messages on a different account, so start a new session (`session new --claude-account ...`) instead. Without the flag, new sessions start on the last-picked account (marked `last used` in `claude-accounts list`); setting an account through the CLI does not change that default, so agents never move the user's own next chat to another account. `session list` shows each session's account (`claudeAccount` in `--json`). Only plain Claude subscription models use it.
 
 ### Integrations And Local Tooling
 
