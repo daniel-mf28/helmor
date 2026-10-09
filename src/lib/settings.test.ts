@@ -315,6 +315,26 @@ describe("settings", () => {
 		expect(settings.terminalFontFamily).toBe("Berkeley Mono");
 	});
 
+	it("falls back from removed color themes and accepts Catppuccin", () => {
+		window.localStorage.setItem("helmor-light-theme", "banana");
+		window.localStorage.setItem("helmor-dark-theme", "catppuccin-mocha");
+
+		const settings = getPreloadedSettings();
+
+		expect(settings.lightTheme).toBe("default");
+		expect(settings.darkTheme).toBe("catppuccin-mocha");
+	});
+
+	it("preloads Ink & Coral for either appearance mode", () => {
+		window.localStorage.setItem("helmor-light-theme", "ink-coral");
+		window.localStorage.setItem("helmor-dark-theme", "ink-coral");
+
+		const settings = getPreloadedSettings();
+
+		expect(settings.lightTheme).toBe("ink-coral");
+		expect(settings.darkTheme).toBe("ink-coral");
+	});
+
 	it("hydrates and saves terminal font from localStorage", async () => {
 		window.localStorage.setItem(
 			"helmor-terminal-font-family",

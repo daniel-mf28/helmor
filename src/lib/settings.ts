@@ -14,13 +14,14 @@ export type ThemeMode = "system" | "light" | "dark";
 export type ColorTheme =
 	| "default"
 	| "midnight"
-	| "forest"
-	| "ember"
 	| "aurora"
 	| "aubergine"
 	| "hoth"
-	| "choco-mint"
-	| "banana";
+	| "ink-coral"
+	| "catppuccin-latte"
+	| "catppuccin-frappe"
+	| "catppuccin-macchiato"
+	| "catppuccin-mocha";
 
 /** Behavior when submitting a message while the agent is still responding.
  *  - `steer`: inject into the active turn (provider-native mid-turn steer).
@@ -526,13 +527,14 @@ const VALID_SIDEBAR_SORTS: readonly SidebarSort[] = [
 export const VALID_COLOR_THEMES: readonly ColorTheme[] = [
 	"default",
 	"midnight",
-	"forest",
-	"ember",
 	"aurora",
 	"aubergine",
 	"hoth",
-	"choco-mint",
-	"banana",
+	"ink-coral",
+	"catppuccin-latte",
+	"catppuccin-frappe",
+	"catppuccin-macchiato",
+	"catppuccin-mocha",
 ];
 
 // Synchronous theme read for flash-free splash boot. The full settings
