@@ -13,6 +13,21 @@ pub struct GenerateSessionTitleRequest {
     pub session_id: String,
     pub user_message: String,
     pub title_seed: Option<String>,
+    /// Model the triggering turn was sent with. Lets a local session skip
+    /// the cloud title chain even before its model is stored on the row.
+    #[serde(default)]
+    pub model_id: Option<String>,
+}
+
+/// A session is local when the triggering turn or the stored session model
+/// is the on-device model. Local sessions never use the cloud title chain:
+/// staying untitled beats sending the user's prompt to a cloud model.
+pub(crate) fn is_local_title_request(
+    request_model: Option<&str>,
+    stored_model: Option<&str>,
+) -> bool {
+    let local = super::catalog::LOCAL_MODEL_ID;
+    request_model == Some(local) || stored_model == Some(local)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -155,13 +170,19 @@ pub async fn generate_session_title(
 ) -> CmdResult<GenerateSessionTitleResponse> {
     let connection =
         crate::models::db::read_conn().map_err(|e| anyhow::anyhow!("Failed to open DB: {e}"))?;
-    let (current_title, action_kind): (String, Option<super::ActionKind>) = connection
+    let (current_title, action_kind, stored_model): (
+        String,
+        Option<super::ActionKind>,
+        Option<String>,
+    ) = connection
         .query_row(
-            "SELECT title, action_kind FROM sessions WHERE id = ?1",
+            "SELECT title, action_kind, model FROM sessions WHERE id = ?1",
             [&request.session_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|e| anyhow::anyhow!("Session not found: {e}"))?;
+    let local_session =
+        is_local_title_request(request.model_id.as_deref(), stored_model.as_deref());
 
     let should_generate_title = action_kind.is_none()
         && can_replace_session_title(&current_title, request.title_seed.as_deref());
@@ -311,6 +332,17 @@ pub async fn generate_session_title(
     };
 
     let session_id = request.session_id.clone();
+    if local_result.is_none() && local_session {
+        tracing::info!(
+            session_id = %session_id,
+            "generate_session_title: local session, local title failed; cloud chain skipped"
+        );
+        return Ok(GenerateSessionTitleResponse {
+            title: None,
+            branch_renamed: false,
+            skipped: true,
+        });
+    }
     let (generated_title, generated_branch): (Option<String>, Option<String>) =
         if let Some((title, branch)) = local_result {
             (Some(title), branch)
@@ -1314,6 +1346,15 @@ pub fn fetch_live_context_usage(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_title_requests_detected_from_either_source() {
+        assert!(is_local_title_request(Some("helmor-local"), None));
+        assert!(is_local_title_request(None, Some("helmor-local")));
+        assert!(is_local_title_request(Some("sonnet"), Some("helmor-local")));
+        assert!(!is_local_title_request(Some("sonnet"), Some("sonnet")));
+        assert!(!is_local_title_request(None, None));
+    }
 
     fn make_request(cwd: Option<&str>, repo_id: Option<&str>) -> ListSlashCommandsRequest {
         ListSlashCommandsRequest {

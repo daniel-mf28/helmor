@@ -39,6 +39,19 @@ pub struct BuildSendMessageParamsInput<'a> {
     /// account. Forwarded as `claudeConfigDir` only for Claude *subscription*
     /// turns — custom base-URL / Vertex models and other providers ignore it.
     pub claude_config_dir: Option<&'a str>,
+    /// On-device model turn: the Claude agent is pointed at the bundled
+    /// llama-server through [`local_agent_env`]. Replaces every other
+    /// Claude endpoint/account injection.
+    pub local: Option<LocalTurn<'a>>,
+}
+
+/// What a local-model turn needs on the wire.
+#[derive(Clone, Copy)]
+pub struct LocalTurn<'a> {
+    pub endpoint: &'a crate::local_llm::AgentEndpoint,
+    /// Isolated `CLAUDE_CONFIG_DIR` so the user's Claude login, user-level
+    /// MCP servers, plugins and hooks never load into a local session.
+    pub config_dir: &'a str,
 }
 
 /// Build the `sendMessage` request params that the sidecar receives.
@@ -100,6 +113,20 @@ pub fn build_send_message_params(input: BuildSendMessageParamsInput<'_>) -> Valu
             insert_vertex_params(obj, vertex);
         }
     }
+    if let Some(local) = input.local {
+        if let Some(obj) = params.as_object_mut() {
+            obj.insert(
+                "claudeEnvironment".to_string(),
+                Value::Object(local_agent_env(
+                    local.endpoint,
+                    std::env::var("NO_PROXY").ok().as_deref(),
+                )),
+            );
+            obj.insert("claudeSettings".to_string(), local_agent_settings());
+            obj.insert("claudeConfigDir".to_string(), Value::from(local.config_dir));
+        }
+        return params;
+    }
     if let Some(config_dir) = claude_account_dir_for_turn(&input) {
         if let Some(obj) = params.as_object_mut() {
             obj.insert("claudeConfigDir".to_string(), Value::from(config_dir));
@@ -122,10 +149,80 @@ pub fn build_send_message_params(input: BuildSendMessageParamsInput<'_>) -> Valu
     params
 }
 
+/// Environment that points the Claude agent at the on-device model and keeps
+/// it off the network: every model alias resolves to the local alias, all
+/// non-essential Anthropic traffic is disabled, the context window matches
+/// the server's `-c`, and loopback bypasses any configured proxy.
+pub fn local_agent_env(
+    endpoint: &crate::local_llm::AgentEndpoint,
+    existing_no_proxy: Option<&str>,
+) -> serde_json::Map<String, Value> {
+    let model = crate::local_llm::API_MODEL;
+    let window = endpoint.context_tokens.to_string();
+    // Leave room for the conversation; a 32K window gets 8K of output.
+    let max_output = (endpoint.context_tokens / 4)
+        .clamp(4_096, 16_384)
+        .to_string();
+    let no_proxy = merge_no_proxy(existing_no_proxy);
+    let mut env = serde_json::Map::new();
+    let pairs: [(&str, &str); 19] = [
+        ("ANTHROPIC_BASE_URL", &endpoint.url),
+        ("ANTHROPIC_AUTH_TOKEN", &endpoint.token),
+        // Blank any inherited API key so only the local token is sent.
+        ("ANTHROPIC_API_KEY", ""),
+        ("ANTHROPIC_MODEL", model),
+        ("ANTHROPIC_SMALL_FAST_MODEL", model),
+        ("ANTHROPIC_DEFAULT_HAIKU_MODEL", model),
+        ("ANTHROPIC_DEFAULT_SONNET_MODEL", model),
+        ("ANTHROPIC_DEFAULT_OPUS_MODEL", model),
+        ("ANTHROPIC_DEFAULT_FABLE_MODEL", model),
+        ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
+        ("DISABLE_TELEMETRY", "1"),
+        ("DISABLE_ERROR_REPORTING", "1"),
+        ("DISABLE_AUTOUPDATER", "1"),
+        ("CLAUDE_CODE_MAX_CONTEXT_TOKENS", &window),
+        ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", &window),
+        ("CLAUDE_CODE_MAX_OUTPUT_TOKENS", &max_output),
+        ("NO_PROXY", &no_proxy),
+        ("no_proxy", &no_proxy),
+        ("MCP_CONNECTION_NONBLOCKING", "0"),
+    ];
+    for (key, value) in pairs {
+        env.insert(key.to_string(), Value::from(value));
+    }
+    env
+}
+
+/// Inline `--settings` for local turns: web tools are denied (they reach
+/// Anthropic-hosted services) and project MCP servers are never auto-enabled.
+fn local_agent_settings() -> Value {
+    serde_json::json!({
+        "permissions": { "deny": ["WebSearch", "WebFetch"] },
+        "enableAllProjectMcpServers": false,
+    })
+}
+
+fn merge_no_proxy(existing: Option<&str>) -> String {
+    let mut hosts: Vec<String> = existing
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|h| !h.is_empty())
+        .map(str::to_string)
+        .collect();
+    for host in ["127.0.0.1", "localhost"] {
+        if !hosts.iter().any(|h| h == host) {
+            hosts.push(host.to_string());
+        }
+    }
+    hosts.join(",")
+}
+
 /// The Claude account applies only to a plain Claude subscription turn:
 /// provider `claude`, no custom base URL / auth token, no Vertex gateway.
 fn claude_account_dir_for_turn<'a>(input: &BuildSendMessageParamsInput<'a>) -> Option<&'a str> {
     let is_subscription_turn = input.provider == "claude"
+        && input.local.is_none()
         && input.claude_base_url.is_none()
         && input.claude_auth_token.is_none()
         && input.claude_vertex.is_none();

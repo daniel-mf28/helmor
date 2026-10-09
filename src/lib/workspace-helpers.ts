@@ -686,6 +686,13 @@ export function summaryToArchivedRow(summary: WorkspaceSummary): WorkspaceRow {
 	};
 }
 
+/** On-device model id. Mirrors Rust `LOCAL_MODEL_ID` in `agents/catalog.rs`. */
+export const LOCAL_MODEL_ID = "helmor-local";
+
+export function isLocalModelId(modelId: string | null | undefined): boolean {
+	return modelId === LOCAL_MODEL_ID;
+}
+
 export function resolveSessionSelectedModelId({
 	session,
 	modelSelections,
@@ -709,8 +716,12 @@ export function resolveSessionSelectedModelId({
 	// A persisted pick can outlive its model (e.g. the Cursor key was removed,
 	// dropping that section). Once the catalog has loaded, drop a pick that's no
 	// longer in it so we fall back to a valid default instead of a dangling id.
+	// A local pick is never dropped: swapping it for a cloud default would
+	// send local-intended text off the machine. The backend reports "local
+	// model unavailable" at send time instead.
 	if (
 		selected &&
+		!isLocalModelId(selected.modelId) &&
 		modelSections.length > 0 &&
 		!findModelOption(modelSections, selected.modelId, selected.provider)
 	) {

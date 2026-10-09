@@ -81,7 +81,45 @@ pub fn static_model_sections() -> Vec<AgentModelSection> {
             sections.insert(at + offset, section);
         }
     }
+    if let Some(local) = local_model_section(&crate::local_llm::load_settings()) {
+        sections.push(local);
+    }
     drop_empty_sections(sections)
+}
+
+/// Model id (and wire model) of the on-device model. Matches the alias the
+/// bundled llama-server advertises, so the agent's requests name it as-is.
+pub const LOCAL_MODEL_ID: &str = crate::local_llm::API_MODEL;
+/// Picker section id for on-device models.
+pub const LOCAL_SECTION_ID: &str = "local";
+
+/// The "On this Mac" picker section: present only while Local LLM is on and
+/// a GGUF is selected. Runs on the Claude agent pointed at the local server.
+fn local_model_section(settings: &crate::local_llm::Settings) -> Option<AgentModelSection> {
+    let path = settings.model.trim();
+    if !settings.enabled || path.is_empty() {
+        return None;
+    }
+    let name = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("Local model");
+    Some(AgentModelSection {
+        id: LOCAL_SECTION_ID.to_string(),
+        label: "On this Mac".to_string(),
+        status: AgentModelSectionStatus::Ready,
+        options: vec![AgentModelOption {
+            id: LOCAL_MODEL_ID.to_string(),
+            provider: "claude".to_string(),
+            label: format!("Local · {name}"),
+            cli_model: LOCAL_MODEL_ID.to_string(),
+            provider_key: Some(LOCAL_SECTION_ID.to_string()),
+            effort_levels: Vec::new(),
+            supports_fast_mode: false,
+            supports_context_usage: true,
+        }],
+    })
 }
 
 /// Full unfiltered catalog for the Settings "Models" multi-selects. Custom
@@ -492,6 +530,9 @@ pub struct ResolvedModel {
     /// Some → Vertex-type Claude provider; replaces base-url/token injection.
     pub claude_vertex: Option<crate::provider::claude::ClaudeVertexConfig>,
     pub codex_provider: Option<CodexProviderConfig>,
+    /// On-device model: the turn runs the Claude agent against the bundled
+    /// llama-server and must never fall back to a cloud endpoint.
+    pub local: bool,
 }
 
 impl ResolvedModel {
@@ -510,6 +551,22 @@ impl ResolvedModel {
 /// ids); falls back to prefix inference (`gpt-` → codex, else
 /// claude).
 pub fn resolve_model(model_id: &str, provider_hint: Option<&str>) -> ResolvedModel {
+    // Checked first and unconditionally: a local session must never resolve
+    // to a cloud model, even when Local LLM is off or its model was removed.
+    // The local server endpoint is attached per turn by the streaming path.
+    if model_id == LOCAL_MODEL_ID {
+        return ResolvedModel {
+            id: LOCAL_MODEL_ID.to_string(),
+            provider: "claude".to_string(),
+            cli_model: LOCAL_MODEL_ID.to_string(),
+            supports_effort: false,
+            claude_base_url: None,
+            claude_auth_token: None,
+            claude_vertex: None,
+            codex_provider: None,
+            local: true,
+        };
+    }
     if let Some(model) = crate::provider::claude::resolve(model_id) {
         // Vertex providers authenticate via the vertex env block; plain
         // base-url/token injection would shadow it (ANTHROPIC_AUTH_TOKEN
@@ -524,6 +581,7 @@ pub fn resolve_model(model_id: &str, provider_hint: Option<&str>) -> ResolvedMod
             claude_auth_token: (!is_vertex).then_some(model.api_key),
             claude_vertex: model.vertex,
             codex_provider: None,
+            local: false,
         };
     }
 
@@ -543,6 +601,7 @@ pub fn resolve_model(model_id: &str, provider_hint: Option<&str>) -> ResolvedMod
                 wire_api: "responses".to_string(),
                 wire_model: model.cli_model,
             }),
+            local: false,
         };
     }
 
@@ -566,6 +625,7 @@ pub fn resolve_model(model_id: &str, provider_hint: Option<&str>) -> ResolvedMod
         claude_auth_token: None,
         claude_vertex: None,
         codex_provider: None,
+        local: false,
     }
 }
 
@@ -950,6 +1010,37 @@ mod tests {
         );
     }
 
+    fn local_settings(enabled: bool, model: &str) -> crate::local_llm::Settings {
+        serde_json::from_value(serde_json::json!({ "enabled": enabled, "model": model }))
+            .expect("settings")
+    }
+
+    #[test]
+    fn local_section_only_when_enabled_with_a_model() {
+        assert!(local_model_section(&local_settings(false, "/m/Nex-mini.gguf")).is_none());
+        assert!(local_model_section(&local_settings(true, "  ")).is_none());
+        let section = local_model_section(&local_settings(true, "/m/Nex-mini.gguf")).unwrap();
+        assert_eq!(section.id, "local");
+        let option = &section.options[0];
+        assert_eq!(option.id, "helmor-local");
+        assert_eq!(option.cli_model, "helmor-local");
+        assert_eq!(option.provider, "claude");
+        assert_eq!(option.label, "Local · Nex-mini");
+        assert!(option.effort_levels.is_empty());
+    }
+
+    #[test]
+    fn local_model_always_resolves_local_never_cloud() {
+        for hint in [None, Some("claude"), Some("codex")] {
+            let model = resolve_model("helmor-local", hint);
+            assert!(model.local, "hint {hint:?}");
+            assert_eq!(model.provider, "claude");
+            assert_eq!(model.cli_model, "helmor-local");
+            assert!(!model.supports_effort);
+            assert!(model.claude_base_url.is_none());
+        }
+    }
+
     #[test]
     fn sidecar_provider_collapses_codex_family() {
         let mk = |provider: &str| ResolvedModel {
@@ -961,6 +1052,7 @@ mod tests {
             claude_auth_token: None,
             claude_vertex: None,
             codex_provider: None,
+            local: false,
         };
         assert_eq!(mk("codex").sidecar_provider(), "codex");
         assert_eq!(mk("codex:hundun").sidecar_provider(), "codex");

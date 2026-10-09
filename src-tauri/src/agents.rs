@@ -10,6 +10,7 @@ use crate::error::CommandError;
 pub mod action_kind;
 mod catalog;
 pub(crate) mod claude_project_files;
+pub(crate) mod local_turn;
 pub(crate) mod model_ref;
 pub mod partial_coalescer;
 mod persistence;
@@ -35,7 +36,7 @@ pub use self::streaming::{
     abort_all_active_streams_blocking, bridge_aborted_event, bridge_done_event, bridge_error_event,
     bridge_permission_request_event, bridge_user_input_request_event, build_send_message_params,
     lookup_workspace_linked_directories, ActiveStreamSummary, ActiveStreams,
-    BuildSendMessageParamsInput, SessionStreamHub,
+    BuildSendMessageParamsInput, LocalTurn, SessionStreamHub,
 };
 
 use self::persistence::{
@@ -269,6 +270,26 @@ pub async fn send_agent_message_stream(
     let stream_id = Uuid::new_v4().to_string();
     let active_streams = app.state::<ActiveStreams>();
 
+    // On-device model: load it (bounded, cancellable by Stop) before the
+    // turn starts. A failure rejects the send — never a cloud fallback.
+    let local_endpoint = if model.local {
+        Some(local_turn::ensure_local_for_turn(&app, request.helmor_session_id.as_deref()).await?)
+    } else {
+        None
+    };
+    let local_config_dir = if model.local {
+        Some(local_turn::local_claude_config_dir()?.display().to_string())
+    } else {
+        None
+    };
+    let local = local_endpoint
+        .as_ref()
+        .zip(local_config_dir.as_deref())
+        .map(|(endpoint, config_dir)| LocalTurn {
+            endpoint,
+            config_dir,
+        });
+
     stream_via_sidecar(
         app.clone(),
         on_event,
@@ -279,6 +300,7 @@ pub async fn send_agent_message_stream(
         &prompt,
         &request,
         &working_directory,
+        local,
     )
 }
 
@@ -341,6 +363,8 @@ pub async fn stop_agent_stream(
     sidecar: tauri::State<'_, crate::sidecar::ManagedSidecar>,
     request: AgentStopRequest,
 ) -> CmdResult<()> {
+    // A local turn may still be waiting for its model to load.
+    local_turn::cancel_pending_local_start(&request.session_id);
     let stop_req = crate::sidecar::SidecarRequest {
         id: Uuid::new_v4().to_string(),
         method: "stopSession".to_string(),
