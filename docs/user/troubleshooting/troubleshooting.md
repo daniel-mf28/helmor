@@ -57,12 +57,12 @@ restores the stash. Two things can conflict:
 - `helmor cli-status` reports what's installed and which data directory it
   points at.
 
-## Updates won't install
+## Updating
 
-Check **Settings → App Updates** for state, then the logs. As a fallback,
-download the latest release from
-[GitHub releases](https://github.com/dohooo/helmor/releases) and install over
-the existing app — your data in `~/helmor/` is untouched.
+Helmor does not self-update. Reinstall with `scripts/fork/install-local-app.sh`,
+or install the latest build from
+[GitHub releases](https://github.com/daniel-mf28/helmor/releases) over the
+existing app — your data in `~/helmor/` is untouched.
 
 ## Disk usage creeping up
 

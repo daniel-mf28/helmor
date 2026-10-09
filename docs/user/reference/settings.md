@@ -54,11 +54,6 @@ Every keybinding in the app is rebindable, per scope (app, chat, composer,
 editor, terminal), with conflict detection and a reset-to-defaults. The full
 map: [Keyboard shortcuts](keyboard-shortcuts.md).
 
-## App Updates
-
-Current version, update channel status, manual *Check for updates*. Updates
-download in the background and apply on restart.
-
 ## Local LLM
 
 Manage the on-device models that power local features such as automatic

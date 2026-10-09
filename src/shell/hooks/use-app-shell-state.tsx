@@ -16,7 +16,6 @@ import { useCallback, useMemo } from "react";
 import type { ComposerCreateContext } from "@/features/conversation";
 import { useDockUnreadBadge } from "@/features/dock-badge";
 import type { SettingsSection } from "@/features/settings";
-import { useAppUpdater } from "@/features/updater/use-app-updater";
 import { useSettings } from "@/lib/settings";
 import { isQuickPanelWindow } from "@/lib/window-role";
 import { useRouterSelection } from "@/router/use-router-selection";
@@ -116,7 +115,6 @@ export function useAppShellState({
 			workspaceReselectTick,
 		],
 	);
-	const appUpdateStatus = useAppUpdater();
 	useDockUnreadBadge();
 	useEnsureDefaultModel();
 	useSlugProviderStartupSync();
@@ -284,7 +282,6 @@ export function useAppShellState({
 		pushWorkspaceToast,
 		appSettings,
 		repositories,
-		appUpdateStatus,
 		sessionSelectionHistory,
 		handleOpenWorkspaceStart,
 		startCreateContext,

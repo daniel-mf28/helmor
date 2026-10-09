@@ -109,7 +109,6 @@ Sections observed:
   - `Steer`
   - `Claude Code Thinking Display`
   - `Clean up archived workspaces`
-  - `App Updates`
   - `Helmor Components`
 - Appearance:
   - `Theme`

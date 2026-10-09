@@ -3,21 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const GITHUB_CLIENT_ID_KEY: &str = "HELMOR_GITHUB_CLIENT_ID";
-const UPDATER_ENDPOINTS_KEY: &str = "HELMOR_UPDATER_ENDPOINTS";
-const UPDATER_PUBKEY_KEY: &str = "HELMOR_UPDATER_PUBKEY";
 
 fn main() {
     ensure_external_bin_placeholders();
     embed_windows_manifest();
 
     println!("cargo:rerun-if-changed=build.rs");
-    for key in [
-        GITHUB_CLIENT_ID_KEY,
-        UPDATER_ENDPOINTS_KEY,
-        UPDATER_PUBKEY_KEY,
-    ] {
-        println!("cargo:rerun-if-env-changed={key}");
-    }
+    println!("cargo:rerun-if-env-changed={GITHUB_CLIENT_ID_KEY}");
 
     for env_path in candidate_env_paths() {
         // Only watch files that exist. Watching a missing file makes Cargo
@@ -27,8 +19,6 @@ fn main() {
             println!("cargo:rerun-if-changed={}", env_path.display());
         }
         load_env_var(&env_path, GITHUB_CLIENT_ID_KEY);
-        load_env_var(&env_path, UPDATER_ENDPOINTS_KEY);
-        load_env_var(&env_path, UPDATER_PUBKEY_KEY);
     }
 
     if windows_msvc_target() {

@@ -33,14 +33,8 @@ The script will:
 
 - `src-tauri/target/release/bundle/dmg/`
 - `src-tauri/target/release/bundle/macos/`
-- the updater bundle (`Helmor.app.tar.gz`) and signature (`.sig`)
-
-`latest.json` is not produced by the local `tauri build` command. Helmor publishes
-that file in GitHub Actions through the official `tauri-action`, which uses the
-generated updater bundle and signature to create the GitHub Releases metadata.
 
 ## 4. Move to GitHub Actions after local success
 
 After the local build succeeds, copy the same values into the GitHub repository secrets described in [release-secrets.md](./release-secrets.md).
 
-macOS publishes the signed updater manifest (`latest.json`) via `publish.yml`.

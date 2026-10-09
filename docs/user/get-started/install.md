@@ -47,10 +47,10 @@ picture.
 
 ## Updates
 
-Helmor checks for updates automatically and installs them on restart. You can
-trigger a check manually in **Settings → App Updates**. After an update, a
-"What's new" toast summarizes the changes — full notes are in the
-[GitHub releases](https://github.com/dohooo/helmor/releases).
+Helmor does not update itself. Install new builds with
+`scripts/fork/install-local-app.sh`. After an update, a "What's new" toast
+summarizes the changes — full notes are in the
+[GitHub releases](https://github.com/daniel-mf28/helmor/releases).
 
 ## Installing the CLI
 

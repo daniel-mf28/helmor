@@ -27,9 +27,6 @@ PY
 )"
 
 required_vars=(
-  HELMOR_UPDATER_ENDPOINTS
-  HELMOR_UPDATER_PUBKEY
-  TAURI_SIGNING_PRIVATE_KEY
   APPLE_CERTIFICATE
   APPLE_CERTIFICATE_PASSWORD
   APPLE_SIGNING_IDENTITY
@@ -96,7 +93,3 @@ echo
 echo "Expected artifacts:"
 echo "  - src-tauri/target/release/bundle/dmg/"
 echo "  - src-tauri/target/release/bundle/macos/"
-echo "  - src-tauri/target/release/bundle/macos/Helmor.app.tar.gz"
-echo "  - src-tauri/target/release/bundle/macos/Helmor.app.tar.gz.sig"
-echo
-echo "latest.json is published in CI by tauri-action using these updater artifacts."

@@ -43,7 +43,6 @@ export function AppShell({
 	const headerLeadingNode = useMemo(
 		() => (
 			<WorkspaceHeaderLeading
-				appUpdateStatus={s.appUpdateStatus}
 				leftSidebarToggleShortcut={chrome.leftSidebarToggleShortcut}
 				showOnDesktop={panels.sidebarCollapsed}
 				onExpandSidebar={() => panels.setSidebarCollapsed(false)}
@@ -51,7 +50,6 @@ export function AppShell({
 		),
 		[
 			panels.sidebarCollapsed,
-			s.appUpdateStatus,
 			chrome.leftSidebarToggleShortcut,
 		],
 	);
@@ -109,7 +107,6 @@ export function AppShell({
 				addRepositoryShortcut: chrome.addRepositoryShortcut,
 				sidebarFilterShortcut: chrome.sidebarFilterShortcut,
 				leftSidebarToggleShortcut: chrome.leftSidebarToggleShortcut,
-				appUpdateStatus: s.appUpdateStatus,
 				appSettings: s.appSettings,
 				onSelectWorkspace: sel.handleSelectWorkspace,
 				onOpenNewWorkspace: s.handleOpenWorkspaceStart,

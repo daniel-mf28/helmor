@@ -64,7 +64,6 @@ import { clampEffort, findModelOption } from "@/lib/workspace-helpers";
 import { SettingsGroup, SettingsRow } from "./components/settings-row";
 import { SettingsSelect } from "./components/settings-select";
 import { AccountPanel } from "./panels/account";
-import { AppUpdatesPanel } from "./panels/app-updates";
 import { AppearancePanel } from "./panels/appearance";
 import { ArchiveCleanupPanel } from "./panels/archive-cleanup";
 import { ComponentsPanel } from "./panels/components";
@@ -504,7 +503,6 @@ export const SettingsDialog = memo(function SettingsDialog({
 										</ToggleGroup>
 									</SettingsRow>
 									<ArchiveCleanupPanel />
-									<AppUpdatesPanel />
 									<ComponentsPanel />
 								</SettingsGroup>
 							)}

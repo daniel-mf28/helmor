@@ -1,4 +1,4 @@
-// Left workspace sidebar — workspaces list, app-update button, sidebar
+// Left workspace sidebar — workspaces list, sidebar
 // collapse, and the settings entry button at the bottom.
 import { PanelLeftClose } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
@@ -12,8 +12,6 @@ import { WorkspacesSidebarContainer } from "@/features/navigation/container";
 import { SettingsButton } from "@/features/settings";
 import { getShortcut } from "@/features/shortcuts/registry";
 import { InlineShortcutDisplay } from "@/features/shortcuts/shortcut-display";
-import { AppUpdateButton } from "@/features/updater/app-update-button";
-import type { AppUpdateStatus } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { AppSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
@@ -41,7 +39,6 @@ type Props = {
 	addRepositoryShortcut: string | null;
 	sidebarFilterShortcut: string | null;
 	leftSidebarToggleShortcut: string | null;
-	appUpdateStatus: AppUpdateStatus | null;
 	appSettings: AppSettings;
 	onSelectWorkspace: (workspaceId: string | null) => void;
 	onOpenNewWorkspace: () => void;
@@ -63,7 +60,6 @@ export function ShellSidebarPane({
 	addRepositoryShortcut,
 	sidebarFilterShortcut,
 	leftSidebarToggleShortcut,
-	appUpdateStatus,
 	appSettings,
 	onSelectWorkspace,
 	onOpenNewWorkspace,
@@ -204,7 +200,6 @@ export function ShellSidebarPane({
 								shortcut={getShortcut(appSettings.shortcuts, "settings.open")}
 							/>
 						</div>
-						<AppUpdateButton status={appUpdateStatus} />
 					</div>
 				</div>
 			</div>
