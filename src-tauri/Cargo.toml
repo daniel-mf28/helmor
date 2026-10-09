@@ -13,7 +13,8 @@ default-run = "helmor"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "helmor_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# rlib only; mobile builds would need "staticlib" and "cdylib" back.
+crate-type = ["rlib"]
 
 [build-dependencies]
 dotenvy = "0.15"
@@ -46,8 +47,9 @@ serde_json = "1"
 jsonc-parser = { version = "0.32", features = ["cst", "serde"] }
 sha2 = "0.10"
 hex = "0.4"
-tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "test", "devtools"] }
+tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "devtools"] }
 tempfile = "3"
+tauri = { version = "2", features = ["test"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
@@ -130,15 +132,15 @@ tempfile = "3"
 
 # ---------------------------------------------------------------------------
 # Dev profile: optimised for fastest compilation, not runtime performance.
-# sccache is the cross-worktree cache; incremental is disabled because the
-# two are mutually exclusive.
+# Incremental is on for the local crate (registry deps are never incremental,
+# so sccache still caches them).
 # ---------------------------------------------------------------------------
 [profile.dev]
 debug = "line-tables-only"   # keep backtraces, skip 80% of debug info
 split-debuginfo = "unpacked" # skip dsymutil merge (macOS default, explicit)
 opt-level = 0
 codegen-units = 256          # max intra-crate parallelism
-incremental = false          # required for sccache compatibility
+incremental = true
 
 [profile.dev.package."*"]
 debug = false       # deps don't need debug info at all

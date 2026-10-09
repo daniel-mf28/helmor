@@ -18,9 +18,14 @@ const WATCH_IGNORED = [
 export default defineConfig(async () => ({
 	plugins: [
 		react(),
-		babel({
-			plugins: [["babel-plugin-react-compiler", {}]],
-		}),
+		// Skip the react-compiler under vitest: test behaviour doesn't need memoization.
+		...(process.env.VITEST
+			? []
+			: [
+					babel({
+						plugins: [["babel-plugin-react-compiler", {}]],
+					}),
+				]),
 		tailwindcss(),
 	],
 	resolve: {
@@ -82,7 +87,7 @@ export default defineConfig(async () => ({
 	test: {
 		environment: "jsdom",
 		setupFiles: "./src/test/setup.ts",
-		css: true,
+		css: false,
 		// GitHub Actions macos-latest runs ~50x slower than local for the
 		// same spec (transform + import easily consume tens of seconds
 		// before the first test runs). waitFor-heavy tests in the nav +

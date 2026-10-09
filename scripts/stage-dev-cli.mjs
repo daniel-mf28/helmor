@@ -42,10 +42,18 @@ const artifacts = resolveBundleArtifacts({
 	platform: process.platform,
 });
 
-// Force cargo to re-link the top-level binary even when the compile is cached:
-// the stale artifact sitting here is `build.rs`'s no-op shell placeholder, and
-// it must not survive as the "built" CLI.
-rmSync(artifacts.cliSource, { force: true });
+// Only remove the artifact when it is `build.rs`'s no-op shell placeholder, so
+// cargo must re-link a real CLI. A real binary is left alone (no forced relink).
+try {
+	const existing = readFileSync(artifacts.cliSource)
+		.subarray(0, 16)
+		.toString("latin1");
+	if (existing.startsWith("#!/bin/sh")) {
+		rmSync(artifacts.cliSource, { force: true });
+	}
+} catch {
+	// Missing artifact: nothing to remove.
+}
 
 console.log("[stage-dev-cli] building debug helmor-cli…");
 execFileSync(
