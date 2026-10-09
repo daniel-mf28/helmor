@@ -370,6 +370,9 @@ pub(super) fn stream_via_sidecar(
             app: &app,
             hub: stream_hub.inner(),
             session_id: hsid_copy.as_deref(),
+            partials: std::cell::RefCell::new(
+                crate::agents::partial_coalescer::PartialCoalescer::default(),
+            ),
         };
         let mut turn_session = state::TurnSession::new(state::TurnContext {
             provider: provider.clone(),
@@ -386,7 +389,24 @@ pub(super) fn stream_via_sidecar(
         });
 
         loop {
-            let event = match rx.recv_timeout(HEARTBEAT_TIMEOUT) {
+            // Wait for the next sidecar event. The heartbeat deadline is
+            // measured from here, exactly like the previous single
+            // `recv_timeout(HEARTBEAT_TIMEOUT)`. While a coalesced
+            // streaming partial is parked we wake early at its flush
+            // deadline, send it (trailing edge), and keep waiting — those
+            // wake-ups never count as a heartbeat timeout.
+            let heartbeat_deadline = Instant::now() + HEARTBEAT_TIMEOUT;
+            let recv_result = loop {
+                let wake_at = actions::partial_flush_deadline(&apply_ctx)
+                    .map_or(heartbeat_deadline, |d| d.min(heartbeat_deadline));
+                match rx.recv_timeout(wake_at.saturating_duration_since(Instant::now())) {
+                    Err(RecvTimeoutError::Timeout) if Instant::now() < heartbeat_deadline => {
+                        actions::flush_due_partial(&apply_ctx, Instant::now());
+                    }
+                    other => break other,
+                }
+            };
+            let event = match recv_result {
                 Ok(ev) => ev,
                 Err(err @ (RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected)) => {
                     let kind = match err {
@@ -1026,7 +1046,14 @@ pub(super) fn stream_via_sidecar(
                         // event arrived first). The frontend still gets
                         // the bare PlanCaptured marker so its overlay
                         // doesn't get stuck waiting on it.
-                        let _ = on_event.send(AgentStreamEvent::PlanCaptured {});
+                        // Routed through apply_action (not a raw
+                        // `on_event.send`) so a parked streaming partial
+                        // is flushed ahead of it — event order is the
+                        // frontend contract.
+                        actions::apply_action(
+                            actions::Action::EmitToFrontend(AgentStreamEvent::PlanCaptured {}),
+                            &apply_ctx,
+                        );
                     }
                 }
                 "userInputRequest" => {
@@ -1460,6 +1487,15 @@ pub(super) fn stream_via_sidecar(
                 }
             }
         }
+
+        // Every exit from the loop above follows a terminal emit (Done /
+        // Aborted / Error) routed through `apply_action`, which resolves
+        // any parked streaming partial first — nothing may be left over
+        // (and nothing may be sent after the terminal event).
+        debug_assert!(
+            !apply_ctx.partials.borrow().has_pending(),
+            "streaming partial still parked after terminal event"
+        );
 
         tracing::info!(
             rid = %rid,

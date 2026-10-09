@@ -1,0 +1,14 @@
+---
+source: tests/stream_partial_coalescing.rs
+expression: h.wire
+---
+- t_ms: 0
+  kind: streamingPartial
+  body:
+    - a
+- t_ms: 10
+  kind: streamingPartial
+  body:
+    - abc
+- t_ms: 10
+  kind: done

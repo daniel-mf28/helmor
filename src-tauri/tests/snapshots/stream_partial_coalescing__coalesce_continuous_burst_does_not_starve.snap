@@ -1,0 +1,24 @@
+---
+source: tests/stream_partial_coalescing.rs
+expression: h.wire
+---
+- t_ms: 0
+  kind: streamingPartial
+  body:
+    - "0"
+- t_ms: 25
+  kind: streamingPartial
+  body:
+    - "012345"
+- t_ms: 50
+  kind: streamingPartial
+  body:
+    - "012345678910"
+- t_ms: 75
+  kind: streamingPartial
+  body:
+    - "0123456789101112131415"
+- t_ms: 100
+  kind: streamingPartial
+  body:
+    - "012345678910111213141516171819"
