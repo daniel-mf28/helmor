@@ -84,7 +84,9 @@ pub fn rate_limits_setting_key(config_dir: Option<&str>) -> String {
     }
 }
 
-#[cfg(test)]
+// Unix-only: fixtures use POSIX absolute paths ("/tmp/...", "/Users/..."),
+// which are relative on Windows. The keychain naming they pin is macOS-only.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

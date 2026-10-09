@@ -95,7 +95,9 @@ pub fn set_session_config_dir(
     Ok(())
 }
 
-#[cfg(test)]
+// Unix-only: fixtures use POSIX absolute paths ("/tmp/...", "/Users/..."),
+// which are relative on Windows. The keychain naming they pin is macOS-only.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
