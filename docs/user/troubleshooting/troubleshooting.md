@@ -56,8 +56,6 @@ restores the stash. Two things can conflict:
 ## The `helmor` CLI isn't found
 
 - Install it via **Settings → Experimental → Command Line Tool**.
-- On Windows, open a *new* terminal after installing so the updated `PATH` is
-  visible.
 - `helmor cli-status` reports what's installed and which data directory it
   points at.
 

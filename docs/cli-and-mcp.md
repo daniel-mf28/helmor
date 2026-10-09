@@ -14,10 +14,6 @@ This installs a managed launcher to the app bundle's `helmor-cli`:
 
 - macOS release: `/usr/local/bin/helmor`
 - macOS debug: `/usr/local/bin/helmor-dev`
-- Windows release: `%LOCALAPPDATA%\Helmor\bin\helmor.cmd`
-- Windows debug: `%LOCALAPPDATA%\Helmor\bin\helmor-dev.cmd`
-
-On Windows, open a new terminal after installing so the updated user `PATH` is visible.
 
 ### Development
 
@@ -143,12 +139,6 @@ macOS:
 claude mcp add helmor -- /usr/local/bin/helmor mcp
 ```
 
-Windows:
-
-```powershell
-claude mcp add helmor -- helmor mcp
-```
-
 Verify: `claude mcp list`
 
 ### Register with Claude Desktop
@@ -165,10 +155,6 @@ macOS: edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
   }
 }
 ```
-
-Windows: edit Claude Desktop's `claude_desktop_config.json` and use either `helmor`
-after restarting Claude Desktop, or the absolute `helmor.cmd` path under
-`%LOCALAPPDATA%\Helmor\bin`.
 
 Restart Claude Desktop after changing the config.
 
@@ -187,9 +173,6 @@ macOS: edit `~/.cursor/mcp.json`:
 }
 ```
 
-Windows: use `helmor` after restarting Cursor, or the absolute `helmor.cmd`
-path under `%LOCALAPPDATA%\Helmor\bin`.
-
 ### Dev Mode
 
 Use the debug entrypoint instead:
@@ -198,12 +181,6 @@ macOS:
 
 ```bash
 claude mcp add helmor-dev -- /usr/local/bin/helmor-dev mcp
-```
-
-Windows:
-
-```powershell
-claude mcp add helmor-dev -- helmor-dev mcp
 ```
 
 ## Testing the MCP Server

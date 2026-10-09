@@ -20,7 +20,7 @@ on:
       expected_platforms:
         description: "Comma-separated platform keys the manifest MUST contain"
         required: false
-        default: "darwin-aarch64,darwin-x86_64,windows-x86_64"
+        default: "darwin-aarch64,darwin-x86_64"
         type: string
 
 permissions:

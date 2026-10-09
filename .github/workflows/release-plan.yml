@@ -17,7 +17,7 @@ name: Release Plan
 #      (b) additionally tags `@helmor/marketing@...` which we don't want.
 #
 # 3. The tag push triggers `publish.yml` for signed/notarized macOS DMGs,
-#    macOS updater artifacts, and the Windows NSIS installer, which attach
+#    and macOS updater artifacts, which attach
 #    them to the GitHub Release.
 #
 # Why PAT instead of GITHUB_TOKEN: GitHub suppresses workflow runs for

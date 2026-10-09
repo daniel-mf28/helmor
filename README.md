@@ -72,7 +72,7 @@ flowchart LR
 
 [**Download Helmor →**](https://github.com/dohooo/helmor/releases)
 
-macOS (Apple Silicon & Intel) · Windows (x64)
+macOS (Apple Silicon & Intel)
 
 [**Read the docs →**](https://docs.helmor.ai)
 

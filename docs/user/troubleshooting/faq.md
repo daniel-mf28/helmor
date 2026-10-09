@@ -14,7 +14,7 @@ your machine, Helmor picks the logins up automatically.
 
 ### Which platforms are supported?
 
-macOS (Apple Silicon and Intel) and Windows (x64).
+macOS (Apple Silicon and Intel).
 
 ### Where is my data?
 

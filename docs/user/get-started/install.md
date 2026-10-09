@@ -7,7 +7,6 @@ Grab the latest release from
 
 - **macOS** — DMG for Apple Silicon and Intel. Open the DMG and drag Helmor to
   Applications.
-- **Windows** — x64 setup installer.
 
 Everything Helmor needs is bundled inside the app: the agent CLIs
 (Claude Code, Codex, and friends) and the GitHub/GitLab CLIs (`gh`, `glab`).
@@ -59,9 +58,7 @@ The `helmor` terminal command is optional but recommended:
 
 **Settings → Experimental → Command Line Tool → Install**
 
-This installs a small launcher (to `/usr/local/bin/helmor` on macOS, or
-`%LOCALAPPDATA%\Helmor\bin\helmor.cmd` on Windows) that always points at your
-installed app, so the CLI and the app never drift apart. On Windows, open a
-new terminal afterwards so the updated `PATH` is picked up.
+This installs a small launcher (to `/usr/local/bin/helmor`) that always points at your
+installed app, so the CLI and the app never drift apart.
 
 See [CLI & MCP](../reference/cli-and-mcp.md) for what you can do with it.

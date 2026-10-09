@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-Defaults on macOS. On Windows, ⌘ maps to Ctrl. Every binding can be changed in
+Defaults on macOS. Every binding can be changed in
 **Settings → Shortcuts** (per scope, with conflict detection).
 
 ## Workspaces
