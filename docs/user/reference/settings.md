@@ -64,10 +64,6 @@ download in the background and apply on restart.
 Manage the on-device models that power local features such as automatic
 session titles. Downloads can be paused and resumed.
 
-## Mobile companion *(experimental)*
-
-Pair a phone to keep an eye on sessions away from your desk.
-
 ## Experimental
 
 - **Command Line Tool** — install the `helmor` CLI to your PATH

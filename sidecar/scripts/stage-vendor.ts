@@ -1,4 +1,4 @@
-// Stage claude-code + codex + opencode + gh + glab + cloudflared into
+// Stage claude-code + codex + opencode + gh + glab into
 // `sidecar/dist/vendor/` for Tauri to ship as bundle resources. macOS host only.
 //
 // Cross-arch staging: in CI the host is always Apple Silicon (macos-26
@@ -33,7 +33,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	claudeCodeArchivePlan,
-	cloudflaredArchivePlan,
 	codexArchivePlan,
 	type DarwinArch,
 	ghArchivePlan,
@@ -74,7 +73,7 @@ const BUNDLE_CACHE = join(SIDECAR_ROOT, ".bundle-cache");
 
 // Downloaded archives are the network-expensive part and SHA256-verified, so we
 // share one cache across all worktrees of this repo: a new worktree reuses
-// already-fetched gh/glab/cloudflared/llama-cpp/node archives instead of
+// already-fetched gh/glab/llama-cpp/node archives instead of
 // re-downloading them. This is a dev-only optimization, so the cache lives
 // inside the PROJECT (the main worktree's `sidecar/.bundle-cache`) rather than a
 // global user dir — found via git's common dir, which every linked worktree
@@ -117,8 +116,6 @@ function mainWorktreeRoot(): string | null {
 //                registry.npmjs.org/@openai/codex/-/codex-$VER-darwin-{arm64,x64}.tgz
 //   claude-code: shasum -a 256 of the npm tarballs at
 //                registry.npmjs.org/@anthropic-ai/claude-code-darwin-{arm64,x64}/-/claude-code-darwin-{arm64,x64}-$VER.tgz
-//   cloudflared: shasum -a 256 of the .tgz at
-//                github.com/cloudflare/cloudflared/releases/download/$VER/cloudflared-darwin-{arm64,amd64}.tgz
 //   opencode:    shasum -a 256 of the npm tarball at
 //                registry.npmjs.org/opencode-darwin-{arm64,x64}/-/opencode-darwin-{arm64,x64}-$VER.tgz
 
@@ -317,46 +314,6 @@ function stageGlabBinary(target: TargetInfo): string {
 		);
 	}
 	const binDest = join(DIST_VENDOR, "glab", `glab${EXE}`);
-	copyFile(binSrc, binDest);
-	chmodSync(binDest, 0o755);
-	maybeSignMacBinary(binDest, false);
-	return binDest;
-}
-
-// ---------------------------------------------------------------------------
-// cloudflared — mobile-companion tunnel. Single Go binary; the `.tgz` holds
-// just `cloudflared` at the archive root. Signed without entitlements (no JIT).
-// ---------------------------------------------------------------------------
-
-function stageCloudflaredBinary(target: TargetInfo): string {
-	ensureCacheDir();
-	const binDest = join(DIST_VENDOR, "cloudflared", `cloudflared${EXE}`);
-	const plan = cloudflaredArchivePlan(target);
-	const archive = join(ARCHIVE_CACHE, plan.archiveName);
-
-	// Windows: upstream publishes a bare `cloudflared-windows-<arch>.exe` (no
-	// archive), so download it straight to the destination (no extraction).
-	// No pinned sha256 (soft-verify).
-	if (target.os === "windows") {
-		downloadMaybeVerify(plan.url, archive, plan.sha256);
-		copyFile(archive, binDest);
-		return binDest;
-	}
-
-	downloadAndVerify(plan.url, archive, plan.sha256);
-
-	const extractDir = join(BUNDLE_CACHE, plan.slug);
-	freshExtractDir(extractDir);
-	execFileSync(TAR_BIN, ["-xzf", archive, "-C", extractDir], {
-		stdio: "inherit",
-	});
-
-	const binSrc = join(extractDir, "cloudflared");
-	if (!existsSync(binSrc)) {
-		throw new Error(
-			`[stage-vendor] cloudflared binary missing after extract: ${binSrc}`,
-		);
-	}
 	copyFile(binSrc, binDest);
 	chmodSync(binDest, 0o755);
 	maybeSignMacBinary(binDest, false);
@@ -1123,9 +1080,6 @@ stageOptional("kimi", () => stageKimiBinary(target));
 stageOptional("gh", () => stageGhBinary(target));
 stageOptional("glab", () => stageGlabBinary(target));
 
-// ----- cloudflared (mobile-companion tunnel) -----
-stageOptional("cloudflared", () => stageCloudflaredBinary(target));
-
 // ----- llama.cpp (local LLM server for auto-rename / Local AI) -----
 stageOptional("llama-cpp", () => stageLlamaCppBinaries(target));
 
@@ -1145,7 +1099,6 @@ console.log(`  opencode    ${humanSize(join(DIST_VENDOR, "opencode"))}`);
 console.log(`  kimi        ${humanSize(join(DIST_VENDOR, "kimi"))}`);
 console.log(`  gh          ${humanSize(join(DIST_VENDOR, "gh"))}`);
 console.log(`  glab        ${humanSize(join(DIST_VENDOR, "glab"))}`);
-console.log(`  cloudflared ${humanSize(join(DIST_VENDOR, "cloudflared"))}`);
 console.log(`  llama-cpp   ${humanSize(join(DIST_VENDOR, "llama-cpp"))}`);
 if (process.env.HELMOR_STAGE_CURSOR_WORKER === "1") {
 	console.log(`  node        ${humanSize(join(DIST_VENDOR, "node"))}`);

@@ -452,8 +452,8 @@ export const WorkspaceConversationContainer = memo(
 			onSessionAborted,
 		});
 
-		// Mirror live turns this client didn't start (driven by another window
-		// or the phone via the mobile companion) into the shared thread cache,
+		// Mirror live turns this client didn't start (driven by another window)
+		// into the shared thread cache,
 		// so the desktop streams in real time instead of needing a reload.
 		useWatchSessionStream({ sessionId: displayedSessionId, activeStreams });
 

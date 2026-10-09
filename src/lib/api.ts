@@ -1,10 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { InspectorFileItem } from "./editor-session";
 import { type ErrorCode, extractError } from "./errors";
-// `invoke` / `Channel` / `listen` route through the transport shim so the same
-// frontend works in the desktop Tauri webview AND when served to a phone
-// browser by the companion server. See `src/lib/ipc.ts`.
-import { Channel, closeChannel, invoke, listen, type UnlistenFn } from "./ipc";
+import { Channel, invoke, listen, type UnlistenFn } from "./ipc";
 import type {
 	CustomProvider,
 	CustomProviderModel,
@@ -2368,7 +2365,6 @@ export type UiMutationEvent =
 	| { type: "slackWorkspacesChanged" }
 	| { type: "slackTokenInvalidated"; teamId: string }
 	| { type: "fastModeUnavailable"; sessionId: string; reason: string }
-	| { type: "pairedDevicesChanged" }
 	| { type: "terminalSessionIdle"; sessionId: string; workspaceId: string }
 	| {
 			type: "terminalPromptCaptured";
@@ -2407,7 +2403,6 @@ export async function subscribeUiMutations(
 	await invoke("subscribe_ui_mutations", { subscriptionId, onEvent });
 	return () => {
 		onEvent.onmessage = () => {};
-		closeChannel(onEvent);
 		void invoke("unsubscribe_ui_mutations", { subscriptionId });
 	};
 }
@@ -3869,11 +3864,10 @@ export async function stopAgentStream(
  * Attach a read-only *watcher* to a session's live agent stream.
  *
  * The client that called `startAgentMessageStream` renders the turn from its
- * own channel; this lets another client (a second window, or this same SPA
- * served to a phone via the mobile companion) mirror the SAME turn live. The
- * callback fires for every `AgentStreamEvent` the driver receives — feed them
- * through the same render pipeline. Works identically over native Tauri and the
- * companion HTTP/NDJSON transport. Returns an unlisten to detach.
+ * own channel; this lets another client (e.g. a second window) mirror the SAME
+ * turn live. The callback fires for every `AgentStreamEvent` the driver
+ * receives — feed them through the same render pipeline. Returns an unlisten
+ * to detach.
  */
 export async function subscribeSessionStream(
 	sessionId: string,
@@ -3889,9 +3883,6 @@ export async function subscribeSessionStream(
 	});
 	return () => {
 		onEvent.onmessage = () => {};
-		// Abort the companion fetch so the server frees the watcher and the
-		// browser releases the connection slot (no-op on native Tauri).
-		closeChannel(onEvent);
 		void invoke("unsubscribe_session_stream", { sessionId, subscriptionId });
 	};
 }
@@ -4722,108 +4713,3 @@ function describeInvokeError(error: unknown, fallback: string): string {
 	return extractError(error, fallback).message;
 }
 
-// --- Mobile browser companion ----------------------------------------------
-
-/** Companion server + tunnel status. */
-export type CompanionStatus = {
-	running: boolean;
-	/** Loopback address the server is bound to (`127.0.0.1:<port>`). */
-	addr: string | null;
-	/** Public tunnel URL, when a tunnel is up. */
-	publicUrl: string | null;
-	/** `"named"` (stable URL), `"quick"` (ephemeral), or `"none"`. */
-	mode: "named" | "quick" | "none";
-	/** Provisioned stable hostname, if any — independent of running state. */
-	stableHost: string | null;
-	/** Whether the user has signed in to Cloudflare. */
-	signedIn: boolean;
-};
-
-/** One-time payload returned when pairing a device. The phone scans `url`. */
-export type CompanionPairingPayload = {
-	deviceId: string;
-	label: string;
-	/** Plaintext PAT — shown once, never persisted in plaintext. */
-	pat: string;
-	/** Full pairing URL to encode as a QR: `<origin>/#pair=<pat>`. */
-	url: string;
-};
-
-/** A paired phone (active, non-revoked). */
-export type PairedDevice = {
-	id: string;
-	label: string;
-	createdAt: string;
-	lastSeenAt: string | null;
-};
-
-export async function getCompanionStatus(): Promise<CompanionStatus> {
-	return invoke<CompanionStatus>("companion_status");
-}
-
-export async function enableCompanion(): Promise<CompanionStatus> {
-	try {
-		return await invoke<CompanionStatus>("companion_enable");
-	} catch (error) {
-		throw new Error(
-			describeInvokeError(error, "Unable to enable the mobile companion."),
-		);
-	}
-}
-
-export async function disableCompanion(): Promise<void> {
-	await invoke<void>("companion_disable");
-}
-
-export async function pairCompanionDevice(
-	label: string,
-): Promise<CompanionPairingPayload> {
-	try {
-		return await invoke<CompanionPairingPayload>("companion_pair_device", {
-			label,
-		});
-	} catch (error) {
-		throw new Error(describeInvokeError(error, "Unable to pair device."));
-	}
-}
-
-export async function listPairedDevices(): Promise<PairedDevice[]> {
-	return (await invoke<PairedDevice[]>("companion_list_devices")) ?? [];
-}
-
-export async function revokePairedDevice(deviceId: string): Promise<void> {
-	await invoke<void>("companion_revoke_device", { deviceId });
-}
-
-/** Open the Cloudflare sign-in flow (browser). Resolves once cert.pem lands. */
-export async function signInCloudflare(): Promise<void> {
-	try {
-		await invoke<void>("companion_sign_in_cloudflare");
-	} catch (error) {
-		throw new Error(
-			describeInvokeError(error, "Cloudflare sign-in did not complete."),
-		);
-	}
-}
-
-/** Provision a permanent remote-*.helmor.ai URL and bring it up. */
-export async function allocateStableUrl(): Promise<CompanionStatus> {
-	try {
-		return await invoke<CompanionStatus>("companion_allocate_stable_url");
-	} catch (error) {
-		throw new Error(
-			describeInvokeError(error, "Unable to allocate a stable URL."),
-		);
-	}
-}
-
-/** Forget the permanent URL (revoke hostname + tear down). */
-export async function destroyStableUrl(): Promise<CompanionStatus> {
-	try {
-		return await invoke<CompanionStatus>("companion_destroy_stable_url");
-	} catch (error) {
-		throw new Error(
-			describeInvokeError(error, "Unable to forget the stable URL."),
-		);
-	}
-}

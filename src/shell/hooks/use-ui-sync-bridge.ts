@@ -273,11 +273,6 @@ function handleUiMutation(
 				queryKey: helmorQueryKeys.slackWorkspaces,
 			});
 			return;
-		case "pairedDevicesChanged":
-			void queryClient.invalidateQueries({
-				queryKey: helmorQueryKeys.pairedDevices,
-			});
-			return;
 		case "terminalSessionIdle":
 			// Terminal turn finished (agent Stop hook). Re-dispatch as the
 			// window event the read-state controller already listens on, so

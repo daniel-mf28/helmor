@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
 	claudeCodeArchivePlan,
-	cloudflaredArchivePlan,
 	codexArchivePlan,
 	ghArchivePlan,
 	glabArchivePlan,
@@ -25,7 +24,6 @@ describe("vendor platform boundary", () => {
 			opencodeNpmSuffix: "darwin-arm64",
 			ghArch: "arm64",
 			glabArch: "arm64",
-			cloudflaredArch: "arm64",
 		});
 		expect(targetInfoForArch("x64")).toEqual({
 			os: "darwin",
@@ -39,7 +37,6 @@ describe("vendor platform boundary", () => {
 			opencodeNpmSuffix: "darwin-x64",
 			ghArch: "amd64",
 			glabArch: "amd64",
-			cloudflaredArch: "amd64",
 		});
 	});
 
@@ -91,9 +88,6 @@ describe("vendor platform boundary", () => {
 		expect(glabArchivePlan(target).archiveName).toBe(
 			"glab_1.103.0_windows_amd64.zip",
 		);
-		expect(cloudflaredArchivePlan(target).archiveName).toBe(
-			"cloudflared-2026.6.1-windows-amd64.exe",
-		);
 		expect(llamaArchivePlan(target).archiveName).toBe(
 			"llama-b9763-bin-win-cpu-x64.zip",
 		);
@@ -121,13 +115,6 @@ describe("vendor platform boundary", () => {
 			url: "https://gitlab.com/gitlab-org/cli/-/releases/v1.103.0/downloads/glab_1.103.0_darwin_arm64.tar.gz",
 			sha256:
 				"fea5a07e6b41dfd04585c1ba08deaf95cd7e9b320a86d056f65415e254732fe3",
-		});
-		expect(cloudflaredArchivePlan(target)).toEqual({
-			slug: "cloudflared-darwin-arm64",
-			archiveName: "cloudflared-2026.6.1-darwin-arm64.tgz",
-			url: "https://github.com/cloudflare/cloudflared/releases/download/2026.6.1/cloudflared-darwin-arm64.tgz",
-			sha256:
-				"f6d4c439c6c782b83264951d327989ce5e23373acc5942b872411601fedb020d",
 		});
 		expect(claudeCodeArchivePlan(target, "2.1.154")).toEqual({
 			slug: "claude-code-darwin-arm64-2.1.154",
@@ -164,9 +151,6 @@ describe("vendor platform boundary", () => {
 		expect(ghArchivePlan(target).archiveName).toBe("gh_2.95.0_macOS_amd64.zip");
 		expect(glabArchivePlan(target).archiveName).toBe(
 			"glab_1.103.0_darwin_amd64.tar.gz",
-		);
-		expect(cloudflaredArchivePlan(target).archiveName).toBe(
-			"cloudflared-2026.6.1-darwin-amd64.tgz",
 		);
 		expect(claudeCodeArchivePlan(target, "2.1.154").archiveName).toBe(
 			"claude-code-darwin-x64-2.1.154.tgz",

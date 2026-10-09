@@ -1,6 +1,6 @@
 ---
 name: helmor-bump-vendors
-description: Bump or upgrade the pinned versions of Helmor's bundled agent CLIs, SDKs, and supporting binaries — Claude Code + claude-agent-sdk (lockstep), Codex, Cursor SDK, OpenCode, Kimi, Pi, and gh / glab / cloudflared / llama.cpp / Node. Encodes exactly which files to edit (`sidecar/package.json`, `sidecar/scripts/vendor-platform.ts`), how to source each version and compute its SHA256, the Claude SDK↔CLI lockstep rule, npm dist-tags caveats (latest vs next vs stable), the cross-arch (arm64+x64) SHA requirement, and the mandatory verification gates. Use whenever the user wants to upgrade / bump / update / refresh a bundled agent CLI or SDK version, check whether a vendor is behind latest, or run a dependency version sweep in the Helmor repo.
+description: Bump or upgrade the pinned versions of Helmor's bundled agent CLIs, SDKs, and supporting binaries — Claude Code + claude-agent-sdk (lockstep), Codex, Cursor SDK, OpenCode, Kimi, Pi, and gh / glab / llama.cpp / Node. Encodes exactly which files to edit (`sidecar/package.json`, `sidecar/scripts/vendor-platform.ts`), how to source each version and compute its SHA256, the Claude SDK↔CLI lockstep rule, npm dist-tags caveats (latest vs next vs stable), the cross-arch (arm64+x64) SHA requirement, and the mandatory verification gates. Use whenever the user wants to upgrade / bump / update / refresh a bundled agent CLI or SDK version, check whether a vendor is behind latest, or run a dependency version sweep in the Helmor repo.
 ---
 
 # Helmor Bump Vendors
@@ -27,7 +27,7 @@ Every bundled version is pinned in one (or both) of these files:
 |---|---|---|---|
 | **A. npm SDK only** | `@anthropic-ai/claude-agent-sdk`, `@cursor/sdk`, `@opencode-ai/sdk`, `@earendil-works/pi-*` | `package.json` line | No — plain npm dep |
 | **B. npm-distributed staged binary** | claude-code, codex, opencode | `package.json` line **+** SHA256 table key in `vendor-platform.ts` | Yes — from npm tarball |
-| **C. GitHub-release staged binary** | kimi, gh, glab, cloudflared, llama.cpp, node | `<NAME>_VERSION` const **+** SHA256 table in `vendor-platform.ts` (NOT in `package.json`) | Yes — source varies |
+| **C. GitHub-release staged binary** | kimi, gh, glab, llama.cpp, node | `<NAME>_VERSION` const **+** SHA256 table in `vendor-platform.ts` (NOT in `package.json`) | Yes — source varies |
 
 Per-vendor exact pin location, SHA256 source, and gotchas live in **`references/vendors.md`** —
 read the relevant section before editing.

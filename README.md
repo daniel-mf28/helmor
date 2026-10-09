@@ -50,7 +50,6 @@ in one window. Everything lives locally under `~/helmor/`.
 - **Quick panel** — ⇧⌥Space opens a floating window to start a workspace and chat from anywhere.
 - **Scriptable** — `helmor` CLI and MCP server; your terminal or another agent can drive Helmor.
 - **Skills** — install from onboarding or **Settings → Helmor Components**; browse with `/` in the composer.
-- **Mobile companion** *(experimental)* — Cloudflare tunnel to your desktop; start tasks from your phone's browser.
 
 *More on the way — Slack & GitHub context, plan mode, and agent-driven orchestration.*
 

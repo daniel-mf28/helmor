@@ -2,7 +2,6 @@ pub mod agents;
 pub mod cli;
 pub(crate) mod codex_config;
 pub(crate) mod commands;
-pub mod companion;
 pub mod data_dir;
 pub mod downloads;
 pub mod error;
@@ -139,8 +138,6 @@ pub fn run() {
         .manage(ui_sync::UiSyncManager::new())
         .manage(global_hotkey::GlobalHotkeyState::default())
         .manage(commands::forge_commands::ForgeAuthEdgeStore::default())
-        .manage(companion::CompanionState::new())
-        .manage(companion::TunnelState::new())
         .setup(|app| {
             // Ensure data directory structure exists
             data_dir::ensure_directory_structure()?;
@@ -378,73 +375,6 @@ pub fn run() {
 
             if let Err(error) = ui_sync::start_listener(app.handle().clone()) {
                 tracing::error!(error = %error, "Failed to start UI sync listener");
-            }
-
-            // Mobile browser companion (experimental, opt-in via env). Starts a
-            // loopback-bound HTTP/SSE server that mirrors the IPC surface so the
-            // same frontend can be served to a phone browser. Default app
-            // behaviour is unchanged unless `HELMOR_COMPANION` is set.
-            if std::env::var_os("HELMOR_COMPANION").is_some() {
-                let companion_handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    let streamer = companion::build_stream_starter(companion_handle.clone());
-                    let dispatcher = companion::build_dispatcher(companion_handle.clone());
-                    let verifier = companion::paired_device_verifier();
-                    let state = companion_handle.state::<companion::CompanionState>();
-                    match state
-                        .start(companion_handle.clone(), streamer, dispatcher, verifier)
-                        .await
-                    {
-                        // Loopback-only, opt-in dev gate: logging the token here
-                        // is what lets a same-machine `curl` / browser pair in
-                        // Slice 0. The public-tunnel slice replaces this with QR
-                        // pairing and never logs the token.
-                        Ok(info) => tracing::info!(
-                            addr = %info.addr,
-                            token = %info.token,
-                            "companion enabled (HELMOR_COMPANION) — listening on loopback",
-                        ),
-                        Err(error) => {
-                            tracing::error!(error = %format!("{error:#}"), "companion start failed")
-                        }
-                    }
-                });
-            }
-
-            // Auto-start the companion when a stable URL has been provisioned,
-            // so a paired phone reconnects at its permanent hostname after a
-            // desktop restart. No-op when the user never allocated one.
-            {
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    match companion::stable_url::load() {
-                        Ok(Some(record)) => {
-                            let companion_state = handle.state::<companion::CompanionState>();
-                            let tunnel_state = handle.state::<companion::TunnelState>();
-                            match companion::start_with_tunnel(
-                                handle.clone(),
-                                &companion_state,
-                                &tunnel_state,
-                            )
-                            .await
-                            {
-                                Ok(()) => tracing::info!(
-                                    host = %record.hostname,
-                                    "companion stable URL auto-started",
-                                ),
-                                Err(error) => tracing::error!(
-                                    error = %format!("{error:#}"),
-                                    host = %record.hostname,
-                                    "companion stable-url auto-start failed",
-                                ),
-                            }
-                        }
-                        Ok(None) => {}
-                        Err(error) => {
-                            tracing::warn!(error = %error, "failed to read companion stable url")
-                        }
-                    }
-                });
             }
 
             // On macOS, the default app-menu Quit item goes straight to
@@ -686,16 +616,7 @@ pub fn run() {
             commands::slack_commands::slack_search_messages,
             commands::slack_commands::slack_get_thread_detail,
             commands::slack_commands::slack_list_emoji,
-            commands::slack_commands::slack_prepare_thread_context,
-            commands::companion_commands::companion_status,
-            commands::companion_commands::companion_enable,
-            commands::companion_commands::companion_disable,
-            commands::companion_commands::companion_pair_device,
-            commands::companion_commands::companion_list_devices,
-            commands::companion_commands::companion_revoke_device,
-            commands::companion_commands::companion_sign_in_cloudflare,
-            commands::companion_commands::companion_allocate_stable_url,
-            commands::companion_commands::companion_destroy_stable_url
+            commands::slack_commands::slack_prepare_thread_context
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -785,11 +706,6 @@ pub fn run() {
         // new version. By this point `request_quit` has stopped watchers
         // and torn down the sidecar, so blocking briefly here is safe.
         tauri::RunEvent::Exit => {
-            // Best-effort graceful shutdown of the companion server + tunnel
-            // (no-op when never started). The tasks also die with the process.
-            app_handle.state::<companion::TunnelState>().shutdown();
-            let companion = app_handle.state::<companion::CompanionState>();
-            tauri::async_runtime::block_on(companion.shutdown());
             updater::install_pending_on_exit_blocking();
         }
         _ => {}

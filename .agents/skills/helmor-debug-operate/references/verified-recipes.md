@@ -675,7 +675,7 @@ One read-only mapping pass observed:
 - `Accounts`: local forge account list. Do not copy account details into skill output.
 - `Team`: invite link, Team mode, Worker URL, Access token, Test connection. Inputs are sensitive configuration.
 - `Contexts`: GitHub/GitLab/Slack/Linear/Mobile tabs, repo selector, issue/PR switches, filters, and `Remove All`. Switches and remove actions mutate configuration.
-- `Experimental`: Local LLM, Smart triage, triage sources, Mobile companion, pair/revoke controls. Treat connect/delete/run/revoke/model actions as high-impact.
+- `Experimental`: Local LLM, Smart triage, triage sources. Treat connect/delete/run/revoke/model actions as high-impact.
 - `Developer`: Reset Onboarding and Reset All Dev Data. Do not execute in ordinary verification.
 - Repository settings entries: Remote, base branch, branch prefix, setup/run/archive scripts, built-in prompt preferences, and Delete Repository. Do not record script contents or change textareas.
 

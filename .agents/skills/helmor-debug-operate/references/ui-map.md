@@ -157,9 +157,8 @@ Sections observed:
   - Treat switches and remove actions as configuration mutations.
 - Experimental:
   - `Local LLM`
-  - `Mobile companion`
   - `Smart triage`
-  - Triage source connections, model add/delete/apply controls, mobile pair/revoke controls
+  - Triage source connections, model add/delete/apply controls
   - Treat connect, delete, run, pair, revoke, and apply actions as high-impact.
 - Developer:
   - `Show Onboarding Again`

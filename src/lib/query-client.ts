@@ -47,8 +47,6 @@ import {
 	type PrSyncState,
 	refreshWorkspaceChangeRequest,
 } from "./api";
-// Routed through the transport shim so query-cache persistence works in the
-// mobile browser companion too (not just the Tauri webview).
 import { invoke } from "./ipc";
 import { parsePrUrl } from "./pr-url";
 // Lazy-cycle-safe: session-thread-cache imports `helmorQueryKeys` from this
@@ -163,7 +161,6 @@ export const helmorQueryKeys = {
 	slackThread: (teamId: string, channelId: string, anchorTs: string) =>
 		["slackThread", teamId, channelId, anchorTs] as const,
 	slackEmojiMap: (teamId: string) => ["slackEmojiMap", teamId] as const,
-	pairedDevices: ["pairedDevices"] as const,
 };
 
 /** Persistence is opt-in per `queryOptions` via `meta: { persist: true }`.

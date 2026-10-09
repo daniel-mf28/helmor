@@ -71,7 +71,6 @@ import { ComponentsPanel } from "./panels/components";
 import { DevToolsPanel } from "./panels/dev-tools";
 import { InboxSettingsPanel } from "./panels/inbox";
 import { LocalLlmPanel } from "./panels/local-llm";
-import { MobileCompanionPanel } from "./panels/mobile-companion";
 import { ProvidersPanel } from "./panels/providers";
 import { RepositorySettingsPanel } from "./panels/repository-settings";
 
@@ -625,7 +624,6 @@ export const SettingsDialog = memo(function SettingsDialog({
 										settings={settings}
 										updateSettings={updateSettings}
 									/>
-									<MobileCompanionPanel />
 								</SettingsGroup>
 							)}
 

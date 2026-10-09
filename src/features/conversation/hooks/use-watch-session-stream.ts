@@ -4,8 +4,7 @@
  * The client that *sends* a message renders the turn from its own
  * `startAgentMessageStream` channel (see `use-streaming.ts`). This hook is the
  * mirror image: when the displayed session has an in-flight turn that THIS
- * client did NOT start (driven by a second window, or by the phone via the
- * mobile companion), it subscribes to the backend fan-out and feeds the same
+ * client did NOT start (e.g. driven by a second window), it subscribes to the backend fan-out and feeds the same
  * `update` / `streamingPartial` frames into the shared session-thread cache —
  * so the desktop streams live instead of needing a reload.
  *
