@@ -1,10 +1,10 @@
-//! Terminal-side helpers for the gh / glab auth-login flow:
+//! Terminal-side helpers for the gh auth-login flow:
 //!   - [`forge_cli_auth_command`] — produces the shell command we hand
 //!     off to the embedded Helmor terminal session.
 //!   - [`labels_for`] — provider-name / cli-name / connect-action
 //!     copy used by [`crate::forge::types::ForgeDetection`].
 //!
-//! The single-account "is gh/glab globally ready?" probe used to live
+//! The single-account "is gh globally ready?" probe used to live
 //! here too. It's gone — multi-account-era callers want either a list
 //! of logged-in accounts ([`crate::forge::accounts::backend_for`]
 //! `.list_logins`) or a per-repo binding check; "any account" was
@@ -15,24 +15,9 @@ use anyhow::{bail, Result};
 use super::bundled;
 use super::types::{ForgeLabels, ForgeProvider};
 
-pub(crate) fn forge_cli_auth_command(
-    provider: ForgeProvider,
-    host: Option<&str>,
-) -> Result<String> {
+pub(crate) fn forge_cli_auth_command(provider: ForgeProvider) -> Result<String> {
     Ok(match provider {
         ForgeProvider::Github => format!("{} auth login", bundled_program_token("gh")?),
-        ForgeProvider::Gitlab => {
-            let host = host.unwrap_or("gitlab.com");
-            // Reject obviously broken hostnames before they reach AppleScript:
-            // a newline would let the user inject extra `do script` commands.
-            if host.contains(['\n', '\r']) {
-                bail!("Invalid hostname (contains newline): {host:?}");
-            }
-            format!(
-                "{} auth login --hostname {host}",
-                bundled_program_token("glab")?
-            )
-        }
         ForgeProvider::Unknown => bail!("Unknown forge provider."),
     })
 }
@@ -65,13 +50,6 @@ pub(crate) fn labels_for(provider: ForgeProvider) -> ForgeLabels {
             change_request_name: "PR".to_string(),
             change_request_full_name: "pull request".to_string(),
             connect_action: "Connect GitHub".to_string(),
-        },
-        ForgeProvider::Gitlab => ForgeLabels {
-            provider_name: "GitLab".to_string(),
-            cli_name: "glab".to_string(),
-            change_request_name: "MR".to_string(),
-            change_request_full_name: "merge request".to_string(),
-            connect_action: "Connect GitLab".to_string(),
         },
         ForgeProvider::Unknown => ForgeLabels {
             provider_name: "Git".to_string(),

@@ -27,10 +27,7 @@ pub fn get_workspace_forge(workspace_id: &str) -> Result<ForgeDetection> {
         .as_deref()
         .and_then(|value| ForgeProvider::from_str(value).ok());
     let repo_root = record.root_path.as_deref().map(Path::new);
-    let stored_is_concrete = matches!(
-        stored_provider,
-        Some(ForgeProvider::Github) | Some(ForgeProvider::Gitlab)
-    );
+    let stored_is_concrete = matches!(stored_provider, Some(ForgeProvider::Github));
     if !stored_is_concrete {
         tracing::debug!(
             workspace_id,
@@ -245,21 +242,21 @@ mod tests {
     use super::*;
     use crate::error::AnyhowCodedExt;
 
-    fn gitlab_detection() -> ForgeDetection {
+    fn github_detection() -> ForgeDetection {
         build_detection_for_remote(
-            Some("git@gitlab.example.com:acme/repo.git"),
-            Some(ForgeProvider::Gitlab),
+            Some("git@github.com:acme/repo.git"),
+            Some(ForgeProvider::Github),
             None,
         )
     }
 
     #[test]
     fn backend_error_preserves_onboarding_code() {
-        let error = anyhow!("glab is missing").with_code(ErrorCode::ForgeOnboarding);
+        let error = anyhow!("gh is missing").with_code(ErrorCode::ForgeOnboarding);
         log_forge_backend_error(
             &error,
             "workspace-1",
-            &gitlab_detection(),
+            &github_detection(),
             "Forge action status lookup failed",
         );
 
@@ -268,11 +265,11 @@ mod tests {
 
     #[test]
     fn backend_error_does_not_classify_by_message_text() {
-        let error = anyhow!("GitLab CLI authentication required");
+        let error = anyhow!("GitHub CLI authentication required");
         log_forge_backend_error(
             &error,
             "workspace-1",
-            &gitlab_detection(),
+            &github_detection(),
             "Forge action status lookup failed",
         );
 

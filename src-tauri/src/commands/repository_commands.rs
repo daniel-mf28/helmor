@@ -136,7 +136,7 @@ pub async fn move_repository_in_sidebar(
 }
 
 /// Re-run forge auto-bind for a repo. Frontend calls this after the user
-/// completes a `gh auth login` / `glab auth login` flow so the repo
+/// completes a `gh auth login` flow so the repo
 /// picks up the freshly-added account without an app restart. Returns
 /// the bound login (or `None` when no logged-in account had access).
 #[tauri::command]

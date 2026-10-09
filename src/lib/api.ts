@@ -309,7 +309,7 @@ export type RepositoryCreateOption = {
 	branchPrefixType?: BranchPrefixType | null;
 	branchPrefixCustom?: string | null;
 	forgeProvider?: ForgeProvider | null;
-	/** gh/glab account login bound to this repo, or null when none had
+	/** gh account login bound to this repo, or null when none had
 	 * access at add-time. UI shows a "Connect" prompt when null. */
 	forgeLogin?: string | null;
 	repoIconSrc?: string | null;
@@ -320,7 +320,7 @@ export type AddRepositoryDefaults = {
 	lastCloneDirectory?: string | null;
 };
 
-/** A single gh / glab account with display profile attached. Listed
+/** A single gh account with display profile attached. Listed
  * by `listForgeAccounts` for the Settings → Account panel. */
 export type ForgeAccount = {
 	provider: ForgeProvider;
@@ -330,11 +330,11 @@ export type ForgeAccount = {
 	avatarUrl?: string | null;
 	email?: string | null;
 	/** True for the gh account currently marked active by `gh auth
-	 * switch`. Always true for GitLab (one account per host). */
+	 * switch`. */
 	active: boolean;
 };
 
-export type ForgeProvider = "github" | "gitlab" | "unknown";
+export type ForgeProvider = "github" | "unknown";
 
 export type ForgeLabels = {
 	providerName: string;
@@ -415,7 +415,7 @@ export type WorkspaceDetail = {
 	sessionCount: number;
 	messageCount: number;
 	forgeProvider?: ForgeProvider | null;
-	/** gh/glab account login bound to the parent repo. NULL means no
+	/** gh account login bound to the parent repo. NULL means no
 	 * account is bound — UI shows the "Connect" prompt. */
 	forgeLogin?: string | null;
 	/** Set when this workspace's setup script last finished with exit
@@ -569,7 +569,7 @@ export async function loadWorkspaceGroups(): Promise<WorkspaceGroup[]> {
 
 /**
  * Re-run the per-repo forge auto-bind. Frontend calls this after the
- * user finishes a `gh auth login` / `glab auth login` flow so the repo
+ * user finishes a `gh auth login` flow so the repo
  * picks up the new account without an app restart. Returns the bound
  * login (or `null` when no logged-in account had access).
  */
@@ -591,17 +591,10 @@ export async function getWorkspaceForge(
 	}
 }
 
-/** Enumerate all gh accounts plus one glab account per known host.
- * `gitlabHosts` is the list of GitLab hosts to probe (gathered from the
- * repos table — we don't shell out to glab for hosts the user isn't
- * actively using). */
-export async function listForgeAccounts(
-	gitlabHosts: string[],
-): Promise<ForgeAccount[]> {
+/** Enumerate all gh accounts across every host gh knows about. */
+export async function listForgeAccounts(): Promise<ForgeAccount[]> {
 	try {
-		return await invoke<ForgeAccount[]>("list_forge_accounts", {
-			gitlabHosts,
-		});
+		return await invoke<ForgeAccount[]>("list_forge_accounts");
 	} catch (error) {
 		throw new Error(
 			describeInvokeError(error, "Unable to list forge accounts."),
@@ -631,7 +624,7 @@ export async function checkWorkspaceForgeAuth(
 	}
 }
 
-/** Spot-fetch the gh/glab account bound to a workspace's parent repo,
+/** Spot-fetch the gh account bound to a workspace's parent repo,
  * with display profile (avatar / name / email). Returns null when the
  * repo has no resolvable forge account. Backed by the same per-process
  * cache that `listForgeAccounts` populates. */
@@ -2016,7 +2009,7 @@ export type ActionStatusKind =
 	| "pending"
 	| "running"
 	| "failure";
-export type ActionProvider = "github" | "gitlab" | "vercel" | "unknown";
+export type ActionProvider = "github" | "vercel" | "unknown";
 export type WorkspaceGitSyncStatus = "upToDate" | "behind" | "unknown";
 export type WorkspacePushStatus = "published" | "unpublished" | "unknown";
 

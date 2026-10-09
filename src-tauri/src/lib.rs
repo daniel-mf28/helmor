@@ -228,7 +228,7 @@ pub fn run() {
             // forge_login is still NULL. Covers (a) repos added before
             // the multi-account migration shipped, and (b) repos whose
             // initial bind found no candidate but the user has since
-            // run `gh/glab auth login`. Spawned blocking so the CLI
+            // run `gh auth login`. Spawned blocking so the CLI
             // probes don't stall the UI thread.
             let backfill_handle = app.handle().clone();
             tauri::async_runtime::spawn_blocking(move || {

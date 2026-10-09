@@ -434,7 +434,7 @@ export function workspaceForgeQueryOptions(workspaceId: string) {
  *      `remoteState: "unauthenticated"` for invalid tokens).
  *
  *  Backend has matching throttles on the underlying CLI calls
- *  (`gh / glab auth status` and `gh / glab api user`) so a burst
+ *  (`gh auth status` and `gh api user`) so a burst
  *  of refocuses doesn't fan out N CLI invocations.
  *
  *  Avatar *image bytes* are a separate concern and cached on disk

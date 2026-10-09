@@ -1,6 +1,6 @@
 /// Avatar fallback initials. Used inside `<AvatarFallback>` when the
-/// live avatar URL fails to load (e.g. self-hosted GitLab gating
-/// `/uploads/` behind a session cookie our PAT can't satisfy).
+/// live avatar URL fails to load (e.g. an avatar host gated behind a
+/// session cookie our token can't satisfy).
 ///
 /// Rules:
 ///   - Single token (no whitespace) → first letter, e.g. "octocat" → "O"

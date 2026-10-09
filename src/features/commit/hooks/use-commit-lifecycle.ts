@@ -516,7 +516,7 @@ export function useWorkspaceCommitLifecycle({
 				return;
 			}
 			try {
-				// create-PR / open-PR (reopen) run `gh pr` / `glab mr` in the
+				// create-PR / open-PR (reopen) run `gh pr` in the
 				// agent. Fire the auth check in the BACKGROUND — never block
 				// dispatch on it — so the session opens instantly; a logged-out
 				// result aborts the turn below. (commit-and-push / fix /

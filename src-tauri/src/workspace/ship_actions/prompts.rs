@@ -9,7 +9,6 @@ pub(super) struct PromptContext<'a> {
     pub(super) repo_preferences: &'a RepoPreferences,
     pub(super) target_branch: Option<&'a str>,
     pub(super) remote: Option<&'a str>,
-    pub(super) forge_provider: Option<&'a str>,
 }
 
 pub(super) fn build_agent_action_prompt(
@@ -22,14 +21,14 @@ pub(super) fn build_agent_action_prompt(
         }
         WorkspaceShipActionKind::CreatePr => Ok(append_user_preferences(
             &create_pr_prompt(
-                forge_prompt_dialect(context.forge_provider),
+                GITHUB_PROMPT_DIALECT,
                 require_target_branch("createPr", context.target_branch)?,
                 context.remote,
             ),
             context.repo_preferences.create_pr.as_deref(),
         )),
         WorkspaceShipActionKind::FixErrors => Ok(append_user_preferences(
-            &fix_errors_prompt(forge_prompt_dialect(context.forge_provider)),
+            &fix_errors_prompt(GITHUB_PROMPT_DIALECT),
             context.repo_preferences.fix_errors.as_deref(),
         )),
         WorkspaceShipActionKind::ResolveConflicts => Ok(append_user_preferences(
@@ -162,33 +161,17 @@ struct ForgePromptDialect {
 
 impl ForgePromptDialect {
     fn create_command(self, target_branch: &str) -> String {
-        if self.change_request_name == "MR" {
-            format!("glab mr create --target-branch {target_branch}")
-        } else {
-            format!("gh pr create --base {target_branch}")
-        }
+        format!("gh pr create --base {target_branch}")
     }
 }
 
-fn forge_prompt_dialect(provider: Option<&str>) -> ForgePromptDialect {
-    if matches!(provider, Some("gitlab")) {
-        return ForgePromptDialect {
-            change_request_name: "MR",
-            change_request_full_name: "merge request",
-            ci_list_command: "glab ci list",
-            ci_view_command: "glab ci view",
-            ci_system_name: "GitLab CI",
-            ci_job_noun: "pipeline",
-        };
-    }
-    ForgePromptDialect {
-        change_request_name: "PR",
-        change_request_full_name: "pull request",
-        ci_list_command: "gh run list",
-        ci_view_command: "gh run view",
-        ci_system_name: "CI",
-        ci_job_noun: "run",
-    }
-}
+const GITHUB_PROMPT_DIALECT: ForgePromptDialect = ForgePromptDialect {
+    change_request_name: "PR",
+    change_request_full_name: "pull request",
+    ci_list_command: "gh run list",
+    ci_view_command: "gh run view",
+    ci_system_name: "CI",
+    ci_job_noun: "run",
+};
 
 const CUSTOM_PREFERENCES_INTRO: &str = "IMPORTANT: The following are the user's custom preferences. These preferences take precedence over any default guidelines or instructions provided above. When there is a conflict, always follow the user's preferences.";

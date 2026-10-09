@@ -1,6 +1,6 @@
 import { LoaderCircle } from "lucide-react";
 import { useState } from "react";
-import { GithubBrandIcon, GitlabBrandIcon } from "@/components/brand-icon";
+import { GithubBrandIcon } from "@/components/brand-icon";
 import { ForgeConnectDialog } from "@/components/forge-connect-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,6 @@ import { FORGE_AUTH_TOOLTIP_LINES } from "@/lib/forge-auth-copy";
 import { I18nText, useI18n } from "@/lib/i18n";
 
 const DEFAULT_GITHUB_HOST = "github.com";
-const DEFAULT_GITLAB_HOST = "gitlab.com";
 
 export function ForgeCliTrigger({
 	detection,
@@ -30,11 +29,7 @@ export function ForgeCliTrigger({
 	const { t } = useI18n();
 	const [open, setOpen] = useState(false);
 
-	const host =
-		detection.host ??
-		(detection.provider === "gitlab"
-			? DEFAULT_GITLAB_HOST
-			: DEFAULT_GITHUB_HOST);
+	const host = detection.host ?? DEFAULT_GITHUB_HOST;
 
 	return (
 		<>
@@ -55,11 +50,6 @@ export function ForgeCliTrigger({
 										size={12}
 										className="self-center animate-spin"
 										strokeWidth={2}
-									/>
-								) : detection.provider === "gitlab" ? (
-									<GitlabBrandIcon
-										size={12}
-										className="self-center text-[#FC6D26]"
 									/>
 								) : (
 									<GithubBrandIcon size={12} className="self-center" />

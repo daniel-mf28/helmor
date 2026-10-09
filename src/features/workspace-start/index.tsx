@@ -76,7 +76,7 @@ function defaultBranchPrefix(repo: RepositoryCreateOption | null): string {
 function extractRepoName(remoteUrl?: string | null): string | null {
 	if (!remoteUrl) return null;
 
-	// Match github.com/owner/repo or gitlab.com/owner/repo patterns
+	// Match github.com/owner/repo patterns
 	const match = remoteUrl.match(/[:/]([^/]+\/[^/.]+)(?:\.git)?$/);
 	return match ? match[1] : null;
 }

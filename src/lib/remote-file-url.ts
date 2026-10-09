@@ -58,9 +58,6 @@ export function buildRemoteFileUrl(
 	if (host.includes("bitbucket.")) {
 		return `${base}/src/${ref}/${file}`;
 	}
-	if (host.includes("gitlab")) {
-		return `${base}/-/blob/${ref}/${file}`;
-	}
 	// Default to GitHub-style (covers github.com and GitHub Enterprise hosts).
 	return `${base}/blob/${ref}/${file}`;
 }

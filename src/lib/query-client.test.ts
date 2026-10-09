@@ -242,9 +242,6 @@ describe("workspaceForgeRefetchInterval", () => {
 		expect(
 			workspaceForgeRefetchInterval(forgeDetection({ provider: "github" })),
 		).toBe(60_000);
-		expect(
-			workspaceForgeRefetchInterval(forgeDetection({ provider: "gitlab" })),
-		).toBe(60_000);
 	});
 
 	it("stops probing unknown remotes", () => {

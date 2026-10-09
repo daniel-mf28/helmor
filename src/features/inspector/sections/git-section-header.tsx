@@ -1,6 +1,6 @@
 import { ChevronsRight, ExternalLink } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { GithubBrandIcon, GitlabBrandIcon } from "@/components/brand-icon";
+import { GithubBrandIcon } from "@/components/brand-icon";
 import { Button } from "@/components/ui/button";
 import {
 	Tooltip,
@@ -175,7 +175,6 @@ export function GitSectionHeader({
 			commitButtonState === "busy" ||
 			commitButtonMode !== "create-pr" ||
 			showForgeOnboarding);
-	const isMergeRequest = forgeDetection?.provider === "gitlab";
 	const showChangeRequest = changeRequest !== null && !showForgeOnboarding;
 	const showContinue = commitButtonMode === "merged" && showChangeRequest;
 	const headerRef = useRef<HTMLDivElement | null>(null);
@@ -319,15 +318,10 @@ export function GitSectionHeader({
 							>
 								<span className="inline-flex h-4 min-w-0 items-center gap-1.5 leading-4">
 									<span className="inline-flex size-4 shrink-0 items-center justify-center overflow-visible">
-										{isMergeRequest ? (
-											<GitlabBrandIcon size={12} />
-										) : (
-											<GithubBrandIcon size={12} />
-										)}
+										<GithubBrandIcon size={12} />
 									</span>
 									<span className="inline-flex h-4 min-w-0 items-center truncate leading-4 tabular-nums text-ui font-medium">
-										{isMergeRequest ? "!" : "#"}
-										{changeRequest.number}
+										#{changeRequest.number}
 									</span>
 									<ExternalLink
 										size={12}
@@ -337,9 +331,7 @@ export function GitSectionHeader({
 								</span>
 							</Button>
 						);
-						const openLabel = isMergeRequest
-							? t("inspectorOpenMergeRequest")
-							: t("inspectorOpenPullRequest");
+						const openLabel = t("inspectorOpenPullRequest");
 						return (
 							<Tooltip>
 								<TooltipTrigger asChild>{button}</TooltipTrigger>

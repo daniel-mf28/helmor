@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub enum ForgeProvider {
     Github,
-    Gitlab,
     Unknown,
 }
 
@@ -16,7 +15,6 @@ impl ForgeProvider {
     pub fn as_storage_str(self) -> &'static str {
         match self {
             ForgeProvider::Github => "github",
-            ForgeProvider::Gitlab => "gitlab",
             ForgeProvider::Unknown => "unknown",
         }
     }
@@ -28,7 +26,6 @@ impl FromStr for ForgeProvider {
     fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
         match value.trim().to_ascii_lowercase().as_str() {
             "github" => Ok(ForgeProvider::Github),
-            "gitlab" => Ok(ForgeProvider::Gitlab),
             "unknown" | "" => Ok(ForgeProvider::Unknown),
             _ => Err(()),
         }
@@ -93,7 +90,6 @@ pub enum ActionStatusKind {
 #[serde(rename_all = "camelCase")]
 pub enum ActionProvider {
     Github,
-    Gitlab,
     Vercel,
     Unknown,
 }
@@ -192,11 +188,7 @@ mod tests {
 
     #[test]
     fn forge_provider_round_trips_through_storage_str() {
-        for provider in [
-            ForgeProvider::Github,
-            ForgeProvider::Gitlab,
-            ForgeProvider::Unknown,
-        ] {
+        for provider in [ForgeProvider::Github, ForgeProvider::Unknown] {
             let encoded = provider.as_storage_str();
             assert_eq!(ForgeProvider::from_str(encoded).unwrap(), provider);
         }

@@ -1,5 +1,5 @@
-//! GitHub backend — mirrors the GitLab module layout (`api`, `context`,
-//! `pull_request`, `actions`, `types`, `accounts`). Public entry points
+//! GitHub backend (`api`, `context`, `pull_request`, `actions`,
+//! `types`, `accounts`). Public entry points
 //! are the workspace-scoped `lookup_workspace_pr` /
 //! `lookup_workspace_pr_action_status` / etc. functions consumed by
 //! [`crate::forge::workspace`] and the `helmor github pr` CLI.

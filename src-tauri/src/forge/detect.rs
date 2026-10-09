@@ -2,18 +2,18 @@
 //!
 //! Runs a chain of progressively more expensive checks against a git
 //! remote URL (and optionally the repo root) to classify it as GitHub /
-//! GitLab / Unknown. Each layer that fires contributes a human-readable
+//! Unknown. Each layer that fires contributes a human-readable
 //! `DetectionSignal` so the UI can explain *why* we picked a provider.
 //!
 //! Layer order (cheapest → strongest, short-circuits on first confident
 //! hit):
 //!
-//! 1. Well-known hosts (`github.com`, `gitlab.com`, …).
-//! 2. Host prefix/suffix heuristics (`gitlab.*`, `*.ghe.com`, …).
-//! 3. URL path heuristics (`/-/` is GitLab-exclusive).
-//! 4. Repo-root filesystem signals (`.gitlab-ci.yml`, `.github/workflows/`).
-//! 5. HTTPS probe (`/api/v4/version` for GitLab, `/api/v3/` for GH Enterprise).
-//! 6. CLI probe (`glab repo view` / `gh repo view`) when the CLI is present.
+//! 1. Well-known hosts (`github.com`, …). Hosts that are clearly another
+//!    forge (`gitlab.*`, …) short-circuit to `Unknown`.
+//! 2. Host prefix/suffix heuristics (`github.*`, `*.ghe.com`, …).
+//! 3. Repo-root filesystem signals (`.github/workflows/`).
+//! 4. HTTPS probe (`/api/v3/` for GH Enterprise).
+//! 5. CLI probe (`gh repo view`) when the CLI is present.
 
 use std::path::Path;
 use std::time::Duration;
@@ -64,12 +64,11 @@ fn detect_provider_for_repo_impl(
             });
             return (ForgeProvider::Github, signals);
         }
-        if matches_wellknown_gitlab(host) {
-            signals.push(DetectionSignal {
-                layer: "wellKnownHost",
-                detail: format!("Host `{host}` is a well-known GitLab host"),
-            });
-            return (ForgeProvider::Gitlab, signals);
+        // Hosts that are clearly some other forge: classify as Unknown
+        // right away so we never burn network/CLI probes on them (stale
+        // GitLab repos re-run detection on every lookup).
+        if host_is_known_non_github(host) {
+            return (ForgeProvider::Unknown, Vec::new());
         }
     }
 
@@ -81,35 +80,11 @@ fn detect_provider_for_repo_impl(
                 layer: "hostPattern",
                 detail: format!("Host `{host}` matches a GitHub naming pattern"),
             });
-            // Hostname patterns alone aren't conclusive for GH Enterprise —
-            // keep collecting signals, but treat this as provisional.
-        } else if host_looks_like_gitlab(host) {
-            signals.push(DetectionSignal {
-                layer: "hostPattern",
-                detail: format!("Host `{host}` matches a GitLab naming pattern"),
-            });
         }
     }
 
-    // Layer 3 — URL path heuristics. `/-/` is unique to GitLab's routing.
-    if let Some(remote) = parsed.as_ref() {
-        if remote.path.contains("/-/") {
-            signals.push(DetectionSignal {
-                layer: "urlPath",
-                detail: "URL path contains `/-/`, which is GitLab-specific".to_string(),
-            });
-            return (ForgeProvider::Gitlab, signals);
-        }
-    }
-
-    // Layer 4 — repo-root filesystem signals.
+    // Layer 3 — repo-root filesystem signals.
     if let Some(root) = repo_root {
-        if root.join(".gitlab-ci.yml").is_file() {
-            signals.push(DetectionSignal {
-                layer: "repoFile",
-                detail: "`.gitlab-ci.yml` present at repo root".to_string(),
-            });
-        }
         if root.join(".github").join("workflows").is_dir() {
             signals.push(DetectionSignal {
                 layer: "repoFile",
@@ -118,37 +93,26 @@ fn detect_provider_for_repo_impl(
         }
     }
 
-    // If Layer 2 + Layer 4 combined give us a consistent read, trust it
-    // before burning a network/CLI probe.
-    if let Some(resolved) = resolve_from_signals(&signals) {
-        return (resolved, signals);
+    // Any offline signal is enough to trust GitHub before burning a
+    // network/CLI probe.
+    if !signals.is_empty() {
+        return (ForgeProvider::Github, signals);
     }
 
     if !allow_expensive_probes {
         return (ForgeProvider::Unknown, signals);
     }
 
-    // Layer 5 — HTTPS probe (best-effort, short timeout).
+    // Layer 4 — HTTPS probe (best-effort, short timeout).
     if let Some(remote) = parsed.as_ref() {
-        if let Some(signal) = probe_gitlab_api(&remote.host) {
-            signals.push(signal);
-            return (ForgeProvider::Gitlab, signals);
-        }
         if let Some(signal) = probe_github_api(&remote.host) {
             signals.push(signal);
             return (ForgeProvider::Github, signals);
         }
     }
 
-    // Layer 6 — CLI probe (requires CLI installed).
+    // Layer 5 — CLI probe (requires CLI installed).
     if let Some(remote) = parsed.as_ref() {
-        if glab_recognizes_remote(remote) {
-            signals.push(DetectionSignal {
-                layer: "cliProbe",
-                detail: "`glab repo view` recognized the remote".to_string(),
-            });
-            return (ForgeProvider::Gitlab, signals);
-        }
         if gh_recognizes_remote(remote) {
             signals.push(DetectionSignal {
                 layer: "cliProbe",
@@ -158,27 +122,7 @@ fn detect_provider_for_repo_impl(
         }
     }
 
-    if let Some(resolved) = resolve_from_signals(&signals) {
-        return (resolved, signals);
-    }
-
     (ForgeProvider::Unknown, signals)
-}
-
-/// If the collected signals unambiguously point at one forge (no
-/// contradictions), trust them without another probe.
-fn resolve_from_signals(signals: &[DetectionSignal]) -> Option<ForgeProvider> {
-    let mentions_gitlab = signals
-        .iter()
-        .any(|s| s.detail.to_ascii_lowercase().contains("gitlab"));
-    let mentions_github = signals
-        .iter()
-        .any(|s| s.detail.to_ascii_lowercase().contains("github"));
-    match (mentions_gitlab, mentions_github) {
-        (true, false) => Some(ForgeProvider::Gitlab),
-        (false, true) => Some(ForgeProvider::Github),
-        _ => None,
-    }
 }
 
 /// Assemble the full `ForgeDetection` payload the frontend consumes.
@@ -213,13 +157,6 @@ fn matches_wellknown_github(host: &str) -> bool {
     )
 }
 
-fn matches_wellknown_gitlab(host: &str) -> bool {
-    matches!(
-        host.to_ascii_lowercase().as_str(),
-        "gitlab.com" | "www.gitlab.com" | "salsa.debian.org" | "framagit.org" | "invent.kde.org"
-    )
-}
-
 fn host_looks_like_github(host: &str) -> bool {
     let host = host.to_ascii_lowercase();
     host.starts_with("github.")
@@ -228,47 +165,15 @@ fn host_looks_like_github(host: &str) -> bool {
         || host.ends_with(".ghe.io")
 }
 
-fn host_looks_like_gitlab(host: &str) -> bool {
+/// Hosts that obviously belong to a non-GitHub forge (GitLab support
+/// was removed from this fork). Matching here classifies the remote as
+/// `Unknown` without any network or CLI probe.
+fn host_is_known_non_github(host: &str) -> bool {
     let host = host.to_ascii_lowercase();
-    host.starts_with("gitlab.")
-        || host.ends_with(".gitlab.com")
-        || host.ends_with(".gitlab.io")
-        || host.split('.').any(|segment| segment == "gitlab")
-}
-
-/// Short-timeout GET against GitLab's `/api/v4/version`. A 200/401 with a
-/// GitLab server header is a strong positive; anything else is
-/// inconclusive, so we return None and let the next layer try.
-fn probe_gitlab_api(host: &str) -> Option<DetectionSignal> {
-    let client = build_probe_client()?;
-    let url = format!("https://{host}/api/v4/version");
-    let response = client.get(&url).send().ok()?;
-    let status = response.status();
-    let server = response
-        .headers()
-        .get("server")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let has_gitlab_header = response
-        .headers()
-        .keys()
-        .any(|k| k.as_str().to_ascii_lowercase().starts_with("x-gitlab"));
-    if has_gitlab_header || server.contains("gitlab") {
-        return Some(DetectionSignal {
-            layer: "httpProbe",
-            detail: format!("`{url}` responded with a GitLab signature"),
-        });
-    }
-    if status.is_success() || status == reqwest::StatusCode::UNAUTHORIZED {
-        // `/api/v4/version` is a GitLab-specific path; a 401 here almost
-        // certainly means we hit a real GitLab instance that wants a token.
-        return Some(DetectionSignal {
-            layer: "httpProbe",
-            detail: format!("`{url}` returned {status} — GitLab API shape"),
-        });
-    }
-    None
+    matches!(
+        host.as_str(),
+        "salsa.debian.org" | "framagit.org" | "invent.kde.org"
+    ) || host.split('.').any(|segment| segment == "gitlab")
 }
 
 fn probe_github_api(host: &str) -> Option<DetectionSignal> {
@@ -295,28 +200,6 @@ fn build_probe_client() -> Option<reqwest::blocking::Client> {
         .connect_timeout(Duration::from_millis(800))
         .build()
         .ok()
-}
-
-fn glab_recognizes_remote(remote: &ParsedRemote) -> bool {
-    if run_command_with_timeout("glab", ["--version"], CLI_PROBE_TIMEOUT).is_err() {
-        return false;
-    }
-    let repo_path = format!("{}/{}", remote.namespace, remote.repo);
-    match run_command_with_timeout(
-        "glab",
-        [
-            "repo",
-            "view",
-            repo_path.as_str(),
-            "--hostname",
-            remote.host.as_str(),
-        ],
-        CLI_PROBE_TIMEOUT,
-    ) {
-        Ok(output) if output.success => true,
-        Ok(output) => looks_like_glab_unauthenticated(&command_detail(&output)),
-        Err(_) => false,
-    }
 }
 
 fn gh_recognizes_remote(remote: &ParsedRemote) -> bool {
@@ -350,14 +233,6 @@ fn gh_recognizes_remote(remote: &ParsedRemote) -> bool {
     }
 }
 
-fn looks_like_glab_unauthenticated(message: &str) -> bool {
-    let normalized = message.to_ascii_lowercase();
-    normalized.contains("not logged in")
-        || normalized.contains("not authenticated")
-        || normalized.contains("authentication")
-        || normalized.contains("glab auth login")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,39 +246,11 @@ mod tests {
     }
 
     #[test]
-    fn well_known_gitlab_host_detected_offline() {
-        let (provider, signals) =
-            detect_provider_for_repo(Some("git@gitlab.com:group/proj.git"), None);
-        assert_eq!(provider, ForgeProvider::Gitlab);
-        assert_eq!(signals.first().map(|s| s.layer), Some("wellKnownHost"));
-    }
-
-    #[test]
-    fn self_hosted_gitlab_detected_via_host_pattern_without_glab() {
-        // Without glab installed, the layered detector must still classify
-        // a `gitlab.<company>.com` host as GitLab via Layer 2.
-        let (provider, signals) =
-            detect_provider_for_repo(Some("git@gitlab.mycorp.com:team/svc.git"), None);
-        assert_eq!(provider, ForgeProvider::Gitlab);
-        assert!(signals.iter().any(|s| s.layer == "hostPattern"));
-    }
-
-    #[test]
     fn self_hosted_github_enterprise_detected_via_host_pattern() {
         let (provider, signals) =
             detect_provider_for_repo(Some("git@github.enterprise.corp:team/svc.git"), None);
         assert_eq!(provider, ForgeProvider::Github);
         assert!(signals.iter().any(|s| s.layer == "hostPattern"));
-    }
-
-    #[test]
-    fn url_path_dash_segment_signals_gitlab() {
-        let (provider, signals) = detect_provider_for_repo(
-            Some("https://code.example.com/group/proj/-/tree/main"),
-            None,
-        );
-        assert_eq!(provider, ForgeProvider::Gitlab);
-        assert!(signals.iter().any(|s| s.layer == "urlPath"));
     }
 
     #[test]
@@ -416,24 +263,39 @@ mod tests {
     }
 
     #[test]
-    fn gitlab_ci_yml_supplies_file_signal() {
+    fn gitlab_hosts_classify_as_unknown_offline() {
+        for url in [
+            "git@gitlab.com:group/proj.git",
+            "git@gitlab.mycorp.com:team/svc.git",
+            "https://salsa.debian.org/team/pkg.git",
+        ] {
+            let (provider, signals) = detect_provider_for_repo(Some(url), None);
+            assert_eq!(provider, ForgeProvider::Unknown, "{url}");
+            assert!(signals.is_empty(), "{url}");
+        }
+    }
+
+    #[test]
+    fn github_workflows_dir_supplies_file_signal() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join(".gitlab-ci.yml"), b"stages: []").unwrap();
-        let (provider, signals) =
-            detect_provider_for_repo(Some("git@code.example.com:team/svc.git"), Some(dir.path()));
-        assert_eq!(provider, ForgeProvider::Gitlab);
+        std::fs::create_dir_all(dir.path().join(".github").join("workflows")).unwrap();
+        let (provider, signals) = detect_provider_for_repo_offline(
+            Some("git@code.example.com:team/svc.git"),
+            Some(dir.path()),
+        );
+        assert_eq!(provider, ForgeProvider::Github);
         assert!(signals.iter().any(|s| s.layer == "repoFile"));
     }
 
     #[test]
     fn workspace_detection_reruns_when_cached_provider_is_missing() {
         let detection = build_detection_for_remote(
-            Some("git@gitlab.internal.example:team/svc.git"),
+            Some("git@github.internal.example:team/svc.git"),
             None,
             None,
         );
 
-        assert_eq!(detection.provider, ForgeProvider::Gitlab);
+        assert_eq!(detection.provider, ForgeProvider::Github);
         assert!(detection
             .detection_signals
             .iter()
@@ -458,7 +320,7 @@ mod tests {
     #[test]
     fn workspace_detection_prefers_concrete_cached_provider() {
         let detection = build_detection_for_remote(
-            Some("git@gitlab.internal.example:team/svc.git"),
+            Some("git@code.internal.example:team/svc.git"),
             Some(ForgeProvider::Github),
             None,
         );

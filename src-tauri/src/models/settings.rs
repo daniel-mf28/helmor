@@ -13,7 +13,7 @@ use super::db;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BranchPrefixType {
-    /// `<forge_login>/<dir>` — use the bound gh/glab account login.
+    /// `<forge_login>/<dir>` — use the bound gh account login.
     Username,
     /// `<branch_prefix_custom><dir>` — user-supplied literal prefix.
     Custom,
@@ -54,7 +54,7 @@ pub struct EffectiveBranchPrefixSettings {
     pub branch_prefix_custom: Option<String>,
     pub forge_provider: Option<String>,
     pub remote_url: Option<String>,
-    /// gh/glab account login bound to this repo. Drives the
+    /// gh account login bound to this repo. Drives the
     /// `<login>/<dir>` shape under the `Username` mode.
     pub forge_login: Option<String>,
 }

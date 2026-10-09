@@ -1,20 +1,13 @@
 import { MarkGithubIcon } from "@primer/octicons-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Loader2, LogIn, Plus, X } from "lucide-react";
-import {
-	useCallback,
-	useEffect,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { ArrowLeft, ArrowRight, Loader2, Plus } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	AccountHoverCardContent,
 	type ForgeAccountInfo,
 } from "@/components/account-hover-card-content";
-import { GithubBrandIcon, GitlabBrandIcon } from "@/components/brand-icon";
+import { GithubBrandIcon } from "@/components/brand-icon";
 import { CachedAvatar } from "@/components/cached-avatar";
 import type { TerminalHandle } from "@/components/terminal-output";
 import { Button } from "@/components/ui/button";
@@ -23,7 +16,6 @@ import {
 	HoverCardContent,
 	HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { Input } from "@/components/ui/input";
 import {
 	backfillForgeRepoBindings,
 	type ForgeAccount,
@@ -35,7 +27,7 @@ import {
 	stopForgeCliAuthTerminal,
 	writeForgeCliAuthTerminalStdin,
 } from "@/lib/api";
-import { formatSource, I18nText, translateSource, useI18n } from "@/lib/i18n";
+import { formatSource, I18nText, useI18n } from "@/lib/i18n";
 import { initialsFor } from "@/lib/initials";
 import { helmorQueryKeys } from "@/lib/query-client";
 import { useForgeAccountsAll } from "@/lib/use-forge-accounts";
@@ -45,10 +37,9 @@ import type { OnboardingStep } from "../types";
 
 const CLI_AUTH_POLL_INTERVAL_MS = 2000;
 const CLI_AUTH_POLL_TIMEOUT_MS = 120_000;
-const DEFAULT_GITLAB_HOST = "gitlab.com";
+const GITHUB_HOST = "github.com";
 
 type RepoCliProvider = Exclude<ForgeProvider, "unknown">;
-type GitlabPanel = "host" | null;
 
 type ActiveTerminal = {
 	provider: RepoCliProvider;
@@ -89,21 +80,14 @@ export function RepositoryCliStep({
 		logins: [],
 		checking: true,
 	});
-	const [gitlab, setGitlab] = useState<CliState>({
-		logins: [],
-		checking: true,
-	});
-	const [gitlabHost, setGitlabHost] = useState(DEFAULT_GITLAB_HOST);
-	const [gitlabStatusHost, setGitlabStatusHost] = useState(DEFAULT_GITLAB_HOST);
-	const [activeGitlabPanel, setActiveGitlabPanel] = useState<GitlabPanel>(null);
 	const [activeTerminal, setActiveTerminal] = useState<ActiveTerminal | null>(
 		null,
 	);
-	// Which provider tab is currently active in the add-account flow.
+	// Which provider is currently active in the add-account flow.
 	// `null` = not adding (idle picker visible). Stays set across one
 	// successful login so the user can immediately add another account
-	// of the same kind without leaving the flow; only the × button
-	// (handleAbortFlow) clears it.
+	// without leaving the flow; only the × button (handleAbortFlow)
+	// clears it.
 	const [addFlowProvider, setAddFlowProvider] =
 		useState<RepoCliProvider | null>(null);
 	const [addingAccount, setAddingAccount] = useState<AddingAccount | null>(
@@ -111,22 +95,14 @@ export function RepositoryCliStep({
 	);
 	const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const queryClient = useQueryClient();
-	// Include the active GitLab host so a brand-new host (no repos yet
-	// in onboarding) gets probed by `listForgeAccounts` — otherwise the
-	// freshly-added login never lands in `accountsQuery.data` and the
-	// `useLayoutEffect` below can't clear the loading spinner.
-	const extraGitlabHosts = useMemo(
-		() => (gitlabStatusHost ? [gitlabStatusHost] : []),
-		[gitlabStatusHost],
-	);
-	const accountsQuery = useForgeAccountsAll(extraGitlabHosts);
+	const accountsQuery = useForgeAccountsAll();
 
 	const inFlow = addFlowProvider !== null;
 
 	// Tracks whether the panel-collapse + TabButtons-fade-in sequence
 	// has finished. Drives the "first time entering flow needs a 700ms
-	// delay before terminal/host expand" vs "tab-to-tab switching is
-	// instant" distinction. Without this the first delay leaks into
+	// delay before the terminal expands" vs "re-arming is instant"
+	// distinction. Without this the first delay leaks into
 	// every subsequent provider switch and feels sluggish.
 	const [flowSettled, setFlowSettled] = useState(false);
 	useEffect(() => {
@@ -148,12 +124,12 @@ export function RepositoryCliStep({
 
 	// Keep already-fetched logins on screen while refetching: clearing
 	// to `[]` causes the AccountListPanel avatar bar to flash empty
-	// (and the compact "Checking…" text to flicker in) when the user
-	// submits a GitLab host or otherwise re-triggers the load.
+	// (and the compact "Checking…" text to flicker in) when the load
+	// re-triggers.
 	useEffect(() => {
 		let cancelled = false;
 		setGithub((prev) => ({ logins: prev.logins, checking: true }));
-		listForgeLogins("github", "github.com")
+		listForgeLogins("github", GITHUB_HOST)
 			.then((logins) => {
 				if (!cancelled) setGithub({ logins, checking: false });
 			})
@@ -167,45 +143,20 @@ export function RepositoryCliStep({
 		};
 	}, []);
 
-	useEffect(() => {
-		let cancelled = false;
-		setGitlab((prev) => ({ logins: prev.logins, checking: true }));
-		listForgeLogins("gitlab", gitlabStatusHost)
-			.then((logins) => {
-				if (!cancelled) setGitlab({ logins, checking: false });
-			})
-			.catch(() => {
-				if (!cancelled) {
-					setGitlab((prev) => ({ logins: prev.logins, checking: false }));
-				}
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, [gitlabStatusHost]);
-
 	useEffect(() => clearPoll, [clearPoll]);
 
-	/// Reset the active add-flow tab to its initial sub-stage. For
-	/// GitHub that's a fresh terminal spawn (re-running `gh auth
-	/// login`); for GitLab it's the host-input form. Used after a
-	/// successful login (so the user can immediately add another
-	/// account of the same kind) and when switching tabs.
+	/// Reset the add-flow to a fresh terminal spawn (re-running `gh
+	/// auth login`). Used after a successful login (so the user can
+	/// immediately add another account) and from the GitHub buttons.
 	const resetFlowTo = useCallback(
 		(provider: RepoCliProvider) => {
 			clearPoll();
 			setAddFlowProvider(provider);
-			if (provider === "github") {
-				setActiveGitlabPanel(null);
-				setActiveTerminal({
-					provider: "github",
-					host: "github.com",
-					instanceId: crypto.randomUUID(),
-				});
-			} else {
-				setActiveTerminal(null);
-				setActiveGitlabPanel("host");
-			}
+			setActiveTerminal({
+				provider,
+				host: GITHUB_HOST,
+				instanceId: crypto.randomUUID(),
+			});
 		},
 		[clearPoll],
 	);
@@ -242,11 +193,7 @@ export function RepositoryCliStep({
 					// below that watches `accountsQuery.data` and clears
 					// pending the same React commit the avatar lands.
 					setAddingAccount({ provider, host, login: newLogin });
-					if (provider === "github") {
-						setGithub({ logins, checking: false });
-					} else {
-						setGitlab({ logins, checking: false });
-					}
+					setGithub({ logins, checking: false });
 					void queryClient.invalidateQueries({
 						queryKey: helmorQueryKeys.forgeAccountsAll,
 					});
@@ -261,14 +208,14 @@ export function RepositoryCliStep({
 					setAddingAccount(null);
 					toast(
 						formatSource("miscFinishCliAuthClickSetUpAgain", {
-							provider: provider === "gitlab" ? "GitLab" : "GitHub",
+							provider: "GitHub",
 						}),
 					);
 					return;
 				}
 				pollTimerRef.current = setTimeout(tick, CLI_AUTH_POLL_INTERVAL_MS);
 			};
-			// Fire immediately — gh/glab usually has the new login on disk
+			// Fire immediately — gh usually has the new login on disk
 			// by the time the terminal closes, so waiting 2s would just
 			// add a visible delay before the spinner appears.
 			void tick();
@@ -291,9 +238,7 @@ export function RepositoryCliStep({
 		);
 		if (!found) return;
 		setAddingAccount(null);
-		// Re-arm the same tab's next stage so the user can chain
-		// another login. GitHub spawns a fresh terminal; GitLab
-		// opens the host input form.
+		// Re-arm a fresh terminal so the user can chain another login.
 		resetFlowTo(pending.provider);
 		// Sync the just-added account against any pre-existing repos
 		// (e.g. from a prior session) so they pick up the binding
@@ -307,10 +252,9 @@ export function RepositoryCliStep({
 				}
 			})
 			.catch(() => {});
-		const label = pending.provider === "gitlab" ? "GitLab" : "GitHub";
 		toast.success(
 			formatSource("miscProviderConnectedAsLogin", {
-				provider: label,
+				provider: "GitHub",
 				login: pending.login,
 			}),
 		);
@@ -325,30 +269,14 @@ export function RepositoryCliStep({
 		return () => clearTimeout(timer);
 	}, [addingAccount]);
 
-	const openTerminal = useCallback(
-		(provider: RepoCliProvider, host: string) => {
-			clearPoll();
-			setActiveGitlabPanel(null);
-			setActiveTerminal({
-				provider,
-				host,
-				instanceId: crypto.randomUUID(),
-			});
-		},
-		[clearPoll],
-	);
-
 	const handleTerminalExit = useCallback(
 		(code: number | null) => {
 			if (!activeTerminal) return;
-			const baseline = new Set(
-				(activeTerminal.provider === "github" ? github : gitlab).logins,
-			);
+			const baseline = new Set(github.logins);
 			if (code !== 0) {
 				// User cancelled (×, Ctrl+C, terminal kill) or the CLI
 				// failed — collapse everything back to the idle picker.
 				setActiveTerminal(null);
-				setActiveGitlabPanel(null);
 				setAddFlowProvider(null);
 				setAddingAccount(null);
 				return;
@@ -364,25 +292,22 @@ export function RepositoryCliStep({
 			});
 			pollUntilReady(activeTerminal.provider, activeTerminal.host, baseline);
 		},
-		[activeTerminal, github, gitlab, pollUntilReady],
+		[activeTerminal, github, pollUntilReady],
 	);
 
 	const handleTerminalError = useCallback(() => {
 		setActiveTerminal(null);
-		setActiveGitlabPanel(null);
 		setAddFlowProvider(null);
 		setAddingAccount(null);
 	}, []);
 
-	/// Bail out of the active add-flow (terminal or GitLab host input)
-	/// and return to the picker. Wired into the embedded terminal's
-	/// title-bar close button + the host panel's close button.
+	/// Bail out of the active add-flow and return to the picker. Wired
+	/// into the embedded terminal's title-bar close button.
 	/// `setActiveTerminal(null)` triggers the `ForgeCliTerminalPreview`
 	/// effect cleanup, which kills the spawned PTY.
 	const handleAbortFlow = useCallback(() => {
 		clearPoll();
 		setActiveTerminal(null);
-		setActiveGitlabPanel(null);
 		setAddFlowProvider(null);
 		setAddingAccount(null);
 	}, [clearPoll]);
@@ -393,27 +318,6 @@ export function RepositoryCliStep({
 		// fresh account or re-auth if their current one is broken.
 		resetFlowTo("github");
 	}, [resetFlowTo]);
-
-	const handleGitlabSetUp = useCallback(() => {
-		resetFlowTo("gitlab");
-	}, [resetFlowTo]);
-
-	const handleGitlabHostSubmit = useCallback(() => {
-		const host = normalizeGitlabHost(gitlabHost);
-		if (!host) {
-			toast.error(translateSource("miscEnterGitlabDomain"));
-			return;
-		}
-		setGitlabHost(host);
-		// Setting `gitlabStatusHost` triggers the loader effect for
-		// gitlab logins (see `useEffect([gitlabStatusHost])` above) —
-		// no need for a manual `refreshStatus` here. That parallel
-		// fetch lands well before the user finishes CLI auth, so the
-		// post-terminal poll baseline ends up correct.
-		setGitlabStatusHost(host);
-		clearPoll();
-		openTerminal("gitlab", host);
-	}, [clearPoll, gitlabHost, openTerminal]);
 
 	return (
 		<section
@@ -438,14 +342,11 @@ export function RepositoryCliStep({
 				<div className="mt-7 grid w-full gap-3">
 					<AccountListPanel
 						githubLogins={github.logins}
-						gitlabLogins={gitlab.logins}
-						gitlabStatusHost={gitlabStatusHost}
-						loading={github.checking || gitlab.checking}
+						loading={github.checking}
 						compact={inFlow}
 						addingAccount={addingAccount}
 						accounts={accountsQuery.data ?? []}
 						onAddGithub={handleGithubSetUp}
-						onAddGitlab={handleGitlabSetUp}
 					/>
 
 					{/* Sequential animation orchestration:
@@ -454,35 +355,22 @@ export function RepositoryCliStep({
 					 *       (height tracks panel collapse; opacity has
 					 *       a 350ms delay so the buttons appear "into"
 					 *       a slot that's already partway opened)
-					 *    3. Terminal/Host slots open with 700ms delay
-					 *       so they wait until the tab buttons settle.
+					 *    3. Terminal slot opens with 700ms delay so it
+					 *       waits until the tab button settles.
 					 *  Closing reverses with no delays — everything
 					 *  collapses in parallel for a snappy exit. */}
 					<TabButtons
 						inFlow={inFlow}
 						activeProvider={addFlowProvider}
 						onAddGithub={handleGithubSetUp}
-						onAddGitlab={handleGitlabSetUp}
 					/>
 
-					{/* Terminal sits ABOVE the GitLab host slot so its top
-					 *  edge stays pinned to the picker — host slot
-					 *  collapsing underneath can't tug it upward. */}
 					<RepositoryCliTerminalSlot
 						active={activeTerminal !== null}
 						flowSettled={flowSettled}
 						terminal={activeTerminal}
 						onTerminalExit={handleTerminalExit}
 						onTerminalError={handleTerminalError}
-						onClose={handleAbortFlow}
-					/>
-
-					<GitlabHostSlot
-						active={activeGitlabPanel === "host"}
-						flowSettled={flowSettled}
-						value={gitlabHost}
-						onChange={setGitlabHost}
-						onSubmit={handleGitlabHostSubmit}
 						onClose={handleAbortFlow}
 					/>
 				</div>
@@ -520,28 +408,22 @@ export function RepositoryCliStep({
 /// the picker slot and the tab anchor below the panel.
 function AccountListPanel({
 	githubLogins,
-	gitlabLogins,
-	gitlabStatusHost,
 	loading,
 	compact,
 	addingAccount,
 	accounts,
 	onAddGithub,
-	onAddGitlab,
 }: {
 	githubLogins: string[];
-	gitlabLogins: string[];
-	gitlabStatusHost: string;
 	loading: boolean;
 	/** Switch to a single-row stacked-avatar view while a flow is
 	 *  open, so the panel can't push the terminal off-screen. */
 	compact: boolean;
 	addingAccount: AddingAccount | null;
-	/** Hoisted from the parent so onboarding's extra-host probe is
-	 * shared rather than diverging into its own cache entry. */
+	/** Hoisted from the parent so the roster query is shared rather
+	 * than diverging into its own cache entry. */
 	accounts: ForgeAccount[];
 	onAddGithub: () => void;
-	onAddGitlab: () => void;
 }) {
 	const accountByLogin = new Map<string, ForgeAccount>();
 	for (const account of accounts) {
@@ -557,17 +439,9 @@ function AccountListPanel({
 	for (const login of githubLogins) {
 		rows.push({
 			provider: "github",
-			host: "github.com",
+			host: GITHUB_HOST,
 			login,
 			account: accountByLogin.get(`github::${login}`) ?? null,
-		});
-	}
-	for (const login of gitlabLogins) {
-		rows.push({
-			provider: "gitlab",
-			host: gitlabStatusHost,
-			login,
-			account: accountByLogin.get(`gitlab::${login}`) ?? null,
 		});
 	}
 
@@ -579,7 +453,7 @@ function AccountListPanel({
 	// shrink and the buttons sliding up are the same motion.
 	const innerRef = useRef<HTMLDivElement>(null);
 	const [innerHeight, setInnerHeight] = useState<number | null>(null);
-	const totalRows = githubLogins.length + gitlabLogins.length;
+	const totalRows = githubLogins.length;
 	useLayoutEffect(() => {
 		if (innerRef.current) {
 			setInnerHeight(innerRef.current.offsetHeight);
@@ -619,30 +493,19 @@ function AccountListPanel({
 					</ul>
 				)}
 				{/* Idle-only picker. Dashed `+` shell with a hover-reveal
-				 *  pair of provider buttons inside. Removed entirely in
-				 *  compact mode so the panel collapses to a single row. */}
-				{compact ? null : (
-					<PickerHoverReveal
-						onAddGithub={onAddGithub}
-						onAddGitlab={onAddGitlab}
-					/>
-				)}
+				 *  provider button inside. Removed entirely in compact
+				 *  mode so the panel collapses to a single row. */}
+				{compact ? null : <PickerHoverReveal onAddGithub={onAddGithub} />}
 			</div>
 		</div>
 	);
 }
 
 /// Idle-state picker living inside the AccountListPanel: a dashed
-/// `+` shell that swaps to two solid provider buttons on hover or
+/// `+` shell that swaps to a solid GitHub button on hover or
 /// keyboard focus. Owns its own hover state via CSS `:hover` /
 /// `:focus-within` — no parent JS plumbing.
-function PickerHoverReveal({
-	onAddGithub,
-	onAddGitlab,
-}: {
-	onAddGithub: () => void;
-	onAddGitlab: () => void;
-}) {
+function PickerHoverReveal({ onAddGithub }: { onAddGithub: () => void }) {
 	return (
 		<div className="group relative mt-3 h-9">
 			<div
@@ -651,18 +514,12 @@ function PickerHoverReveal({
 			>
 				<Plus className="size-4" strokeWidth={2.2} />
 			</div>
-			<div className="pointer-events-none absolute inset-0 grid grid-cols-2 gap-2 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+			<div className="pointer-events-none absolute inset-0 grid grid-cols-1 gap-2 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
 				<PickerButton
 					onClick={onAddGithub}
 					muted={false}
 					icon={<MarkGithubIcon size={14} />}
 					label="GitHub"
-				/>
-				<PickerButton
-					onClick={onAddGitlab}
-					muted={false}
-					icon={<GitlabBrandIcon size={14} className="text-[#FC6D26]" />}
-					label="GitLab"
 				/>
 			</div>
 		</div>
@@ -681,12 +538,10 @@ function TabButtons({
 	inFlow,
 	activeProvider,
 	onAddGithub,
-	onAddGitlab,
 }: {
 	inFlow: boolean;
 	activeProvider: RepoCliProvider | null;
 	onAddGithub: () => void;
-	onAddGitlab: () => void;
 }) {
 	return (
 		<div
@@ -706,7 +561,7 @@ function TabButtons({
 					transition: inFlow ? "opacity 0ms 700ms" : "none",
 				}}
 				className={cn(
-					"grid h-9 grid-cols-2 gap-2",
+					"grid h-9 grid-cols-1 gap-2",
 					inFlow ? "opacity-100" : "pointer-events-none opacity-0",
 				)}
 			>
@@ -715,12 +570,6 @@ function TabButtons({
 					muted={inFlow && activeProvider !== "github"}
 					icon={<MarkGithubIcon size={14} />}
 					label="GitHub"
-				/>
-				<PickerButton
-					onClick={onAddGitlab}
-					muted={inFlow && activeProvider !== "gitlab"}
-					icon={<GitlabBrandIcon size={14} className="text-[#FC6D26]" />}
-					label="GitLab"
 				/>
 			</div>
 		</div>
@@ -775,14 +624,11 @@ function CompactAccountStack({
 	const addingLabel = addingAccount
 		? addingAccount.login
 			? f("miscAddingLogin", { login: addingAccount.login })
-			: f("miscAddingProviderAccount", {
-					provider: addingAccount.provider === "gitlab" ? "GitLab" : "GitHub",
-				})
+			: f("miscAddingProviderAccount", { provider: "GitHub" })
 		: null;
 
 	if (rows.length === 0) {
-		// Compact mode is only active while the terminal / host panel is
-		// open, so the user is already mid-add. If we're already past
+		// Compact mode is only active while the terminal is open, so the user is already mid-add. If we're already past
 		// the CLI auth and waiting on profile data, show the loading
 		// label here too.
 		return (
@@ -902,15 +748,8 @@ function AccountRow({
 		account: ForgeAccount | null;
 	};
 }) {
-	const { f } = useI18n();
 	const account = row.account;
 	const displayName = account?.name?.trim() || row.login;
-	const providerIcon =
-		row.provider === "gitlab" ? (
-			<GitlabBrandIcon size={11} className="text-[#FC6D26]" />
-		) : (
-			<GithubBrandIcon size={11} />
-		);
 	return (
 		<li className="flex items-center gap-3 px-1 py-2">
 			<CachedAvatar
@@ -931,12 +770,8 @@ function AccountRow({
 					</span>
 				</div>
 				<div className="mt-0.5 flex items-center gap-1 text-micro text-muted-foreground">
-					{providerIcon}
-					<span className="truncate">
-						{row.provider === "gitlab"
-							? f("miscGitlabHost", { host: row.host })
-							: "GitHub"}
-					</span>
+					<GithubBrandIcon size={11} />
+					<span className="truncate">GitHub</span>
 				</div>
 			</div>
 		</li>
@@ -955,7 +790,7 @@ function RepositoryCliTerminalSlot({
 	/** True once the panel-collapse + TabButtons-fade-in handshake
 	 *  has finished. Drives whether the terminal slot waits for that
 	 *  sequence (first time entering flow) or expands immediately
-	 *  (tab-to-tab provider switch with the panel already compact). */
+	 *  (re-arm with the panel already compact). */
 	flowSettled: boolean;
 	terminal: ActiveTerminal | null;
 	onTerminalExit: (code: number | null) => void;
@@ -971,7 +806,7 @@ function RepositoryCliTerminalSlot({
 			style={{
 				// First time entering flow (`!flowSettled`): wait for
 				// panel collapse + tab fade-in. Once `flowSettled` is
-				// true, tab-to-tab switches are instant.
+				// true, re-arming is instant.
 				// Closing: always 0ms.
 				transitionDelay: active && !flowSettled ? "700ms" : "0ms",
 			}}
@@ -984,88 +819,6 @@ function RepositoryCliTerminalSlot({
 					onError={onTerminalError}
 					onClose={onClose}
 				/>
-			</div>
-		</div>
-	);
-}
-
-/// Slot for the GitLab host input. Both opening and closing run a
-/// height transition so it stays in lockstep with the panel collapse
-/// and the tab fade-in / out. Opening is gated behind a 700ms delay
-/// so the slot waits until the tab buttons settle before sliding in;
-/// closing has no delay so the exit feels snappy and the Back / Next
-/// buttons glide up immediately.
-function GitlabHostSlot({
-	active,
-	flowSettled,
-	value,
-	onChange,
-	onSubmit,
-	onClose,
-}: {
-	active: boolean;
-	flowSettled: boolean;
-	value: string;
-	onChange: (value: string) => void;
-	onSubmit: () => void;
-	onClose: () => void;
-}) {
-	const { t } = useI18n();
-	const openDelay = active && !flowSettled ? "700ms" : "0ms";
-	return (
-		<div
-			className="overflow-hidden transition-[height] duration-700 ease-[cubic-bezier(.22,.82,.2,1)]"
-			style={{
-				height: active ? "168px" : "0px",
-				transitionDelay: openDelay,
-			}}
-		>
-			<div className="relative h-full">
-				<div
-					style={{
-						transitionDelay: openDelay,
-					}}
-					className={cn(
-						"absolute inset-x-0 top-0 rounded-xl border border-border/55 bg-card p-4 shadow-md transition-all duration-700 ease-[cubic-bezier(.22,.82,.2,1)]",
-						active
-							? "translate-x-0 opacity-100"
-							: "pointer-events-none translate-x-[calc(100%+3rem)] opacity-0",
-					)}
-				>
-					<button
-						type="button"
-						onClick={onClose}
-						aria-label={t("cancel")}
-						className="absolute top-3 right-3 inline-flex size-6 cursor-interactive items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-					>
-						<X className="size-3.5" strokeWidth={2.4} />
-					</button>
-					<div className="text-body font-medium text-foreground">
-						<I18nText source="gitlabDomain" />
-					</div>
-					<p className="mt-1 text-small leading-5 text-muted-foreground">
-						<I18nText source="useGitlabComSelfHostedGitlab" />
-					</p>
-					<form
-						className="mt-4 flex items-center gap-2"
-						onSubmit={(event) => {
-							event.preventDefault();
-							onSubmit();
-						}}
-					>
-						<Input
-							value={value}
-							onChange={(event) => onChange(event.target.value)}
-							placeholder={DEFAULT_GITLAB_HOST}
-							aria-label="gitlabDomain"
-							className="h-10"
-						/>
-						<Button type="submit" className="h-10 shrink-0 gap-2 px-3">
-							<LogIn className="size-4" />
-							<I18nText source="log" />
-						</Button>
-					</form>
-				</div>
 			</div>
 		</div>
 	);
@@ -1087,7 +840,7 @@ function ForgeCliTerminalPreview({
 	const termRef = useRef<TerminalHandle | null>(null);
 	// Keep onExit/onError out of the spawn effect's deps — parent
 	// re-renders recreate them, and a re-run kills the just-started
-	// shell mid-init, dropping the auto-typed `glab auth login` bytes.
+	// shell mid-init, dropping the auto-typed `gh auth login` bytes.
 	const onExitRef = useRef(onExit);
 	const onErrorRef = useRef(onError);
 	useEffect(() => {
@@ -1189,14 +942,9 @@ function ForgeCliTerminalPreview({
 
 	if (!terminal) return null;
 
-	const title =
-		terminal.provider === "gitlab"
-			? `glab auth login · ${terminal.host}`
-			: "gh auth login";
-
 	return (
 		<OnboardingTerminalPreview
-			title={title}
+			title="gh auth login"
 			active={active}
 			terminalRef={termRef}
 			heightClassName="h-[258px]"
@@ -1208,12 +956,4 @@ function ForgeCliTerminalPreview({
 			onClose={onClose}
 		/>
 	);
-}
-
-function normalizeGitlabHost(value: string) {
-	return value
-		.trim()
-		.replace(/^https?:\/\//i, "")
-		.split("/")[0]
-		.trim();
 }

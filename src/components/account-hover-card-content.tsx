@@ -1,4 +1,4 @@
-import { GithubBrandIcon, GitlabBrandIcon } from "@/components/brand-icon";
+import { GithubBrandIcon } from "@/components/brand-icon";
 import { CachedAvatar } from "@/components/cached-avatar";
 import type { ForgeAccount, ForgeProvider } from "@/lib/api";
 import { initialsFor } from "@/lib/initials";
@@ -19,12 +19,7 @@ type AccountInfo = {
  */
 export function AccountHoverCardContent({ account }: { account: AccountInfo }) {
 	const displayName = account.name?.trim() || account.login;
-	const providerBadge =
-		account.provider === "gitlab" ? (
-			<GitlabBrandIcon size={11} className="text-[#FC6D26]" />
-		) : (
-			<GithubBrandIcon size={11} />
-		);
+	const providerBadge = <GithubBrandIcon size={11} />;
 	return (
 		<div className="flex items-center gap-3">
 			<div className="relative shrink-0">
@@ -50,11 +45,6 @@ export function AccountHoverCardContent({ account }: { account: AccountInfo }) {
 				{account.email ? (
 					<div className="mt-0.5 truncate text-mini text-muted-foreground">
 						{account.email}
-					</div>
-				) : null}
-				{account.provider === "gitlab" ? (
-					<div className="mt-0.5 truncate text-mini text-muted-foreground/70">
-						{account.host}
 					</div>
 				) : null}
 			</div>

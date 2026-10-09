@@ -6,18 +6,18 @@ import {
 	resolveRepoPreferencePrompt,
 } from "./repo-preferences-prompts";
 
-const GITLAB_FORGE: ForgeDetection = {
-	provider: "gitlab",
-	host: "gitlab.example.com",
+const GITHUB_FORGE: ForgeDetection = {
+	provider: "github",
+	host: "github.com",
 	namespace: "acme",
 	repo: "repo",
-	remoteUrl: "git@gitlab.example.com:acme/repo.git",
+	remoteUrl: "git@github.com:acme/repo.git",
 	labels: {
-		providerName: "GitLab",
-		cliName: "glab",
-		changeRequestName: "MR",
-		changeRequestFullName: "merge request",
-		connectAction: "Connect GitLab",
+		providerName: "GitHub",
+		cliName: "gh",
+		changeRequestName: "PR",
+		changeRequestFullName: "pull request",
+		connectAction: "Connect GitHub",
 	},
 	detectionSignals: [],
 };
@@ -60,19 +60,6 @@ describe("repo preference prompts", () => {
 		);
 	});
 
-	it("uses the GitLab dialect in the create-pr prompt when forge is GitLab", () => {
-		const prompt = resolveRepoPreferencePrompt({
-			key: "createPr",
-			repoPreferences: {},
-			targetBranch: "develop",
-			forge: GITLAB_FORGE,
-		});
-		expect(prompt).toContain("Create a merge request");
-		expect(prompt).toContain(
-			"Open a merge request against `develop` using `glab mr create --target-branch develop`.",
-		);
-	});
-
 	it("throws instead of falling back when create-pr has no target branch", () => {
 		expect(() =>
 			resolveRepoPreferencePrompt({
@@ -82,13 +69,13 @@ describe("repo preference prompts", () => {
 		).toThrow("Missing workspace target branch for createPr prompt.");
 	});
 
-	it("uses the GitLab dialect in the fix-errors prompt when forge is GitLab", () => {
+	it("uses the GitHub dialect in the fix-errors prompt when forge is GitHub", () => {
 		const prompt = resolveRepoPreferencePrompt({
 			key: "fixErrors",
 			repoPreferences: {},
-			forge: GITLAB_FORGE,
+			forge: GITHUB_FORGE,
 		});
-		expect(prompt).toContain("`glab ci list` / `glab ci view`");
+		expect(prompt).toContain("`gh run list` / `gh run view`");
 	});
 
 	it("renders the intent-only resolve-conflicts prompt for merge conflicts", () => {
@@ -177,11 +164,9 @@ describe("repo preference prompts", () => {
 		expect(prompt).toContain("relative to `origin/main`");
 		expect(prompt).toContain("IN THIS CHAT ONLY");
 		expect(prompt).toContain("git diff origin/main...HEAD");
-		// Forge-agnostic — no PR / MR machinery.
+		// Forge-agnostic — no PR machinery.
 		expect(prompt).not.toContain("pull request");
-		expect(prompt).not.toContain("merge request");
 		expect(prompt).not.toContain("gh pr");
-		expect(prompt).not.toContain("glab mr");
 		// Side-effect ban must be explicit.
 		expect(prompt).toContain("Do NOT modify files");
 		expect(prompt).not.toContain("### User Preferences");
@@ -200,21 +185,21 @@ describe("repo preference prompts", () => {
 		);
 	});
 
-	it("is forge-agnostic — same prompt regardless of GitLab vs GitHub", () => {
+	it("is forge-agnostic — same prompt with or without forge context", () => {
+		const noForgePrompt = resolveRepoPreferencePrompt({
+			key: "review",
+			repoPreferences: {},
+			targetBranch: "main",
+			remote: "origin",
+		});
 		const githubPrompt = resolveRepoPreferencePrompt({
 			key: "review",
 			repoPreferences: {},
 			targetBranch: "main",
 			remote: "origin",
+			forge: GITHUB_FORGE,
 		});
-		const gitlabPrompt = resolveRepoPreferencePrompt({
-			key: "review",
-			repoPreferences: {},
-			targetBranch: "main",
-			remote: "origin",
-			forge: GITLAB_FORGE,
-		});
-		expect(gitlabPrompt).toBe(githubPrompt);
+		expect(githubPrompt).toBe(noForgePrompt);
 	});
 
 	it("throws when the review prompt is built without a target branch", () => {

@@ -1,6 +1,6 @@
 //! Serde DTOs for the GitHub GraphQL responses + REST check-run detail
 //! shape. Kept in one file so the JSON contracts the higher-level
-//! modules consume live next to each other (mirrors gitlab/types.rs).
+//! modules consume live next to each other.
 
 use serde::Deserialize;
 

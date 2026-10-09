@@ -47,7 +47,6 @@ pub fn run_workspace_ship_action(
                     repo_preferences: &repo_preferences,
                     target_branch,
                     remote: detail.remote.as_deref(),
-                    forge_provider: detail.forge_provider.as_deref(),
                 },
             )?;
             let overrides = action_session_overrides(action)?;

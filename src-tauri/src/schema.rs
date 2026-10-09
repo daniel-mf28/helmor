@@ -509,7 +509,8 @@ fn run_migrations(connection: &Connection) -> Result<()> {
     }
 
     // Migration: forge_provider — cached classification of the repo's
-    // remote ("github" / "gitlab" / "unknown"). Set once at repo-creation
+    // remote ("github" / "unknown"; pre-removal rows may still hold
+    // "gitlab", which parses to no provider). Set once at repo-creation
     // time by the layered detector in `crate::forge`. Legacy rows stay
     // NULL and the loader re-runs detection on demand.
     if has_table(connection, "repos") && !has_column(connection, "repos", "forge_provider") {
@@ -518,7 +519,7 @@ fn run_migrations(connection: &Connection) -> Result<()> {
             .context("Failed to add forge_provider column")?;
     }
 
-    // Migration: forge_login — the gh/glab account login bound to this
+    // Migration: forge_login — the gh account login bound to this
     // repo. Auto-detected on add-repo by probing each logged-in account
     // for access; NULL means no account had access (or detection hasn't
     // run yet). Used to set GH_TOKEN per-spawn so multi-account users

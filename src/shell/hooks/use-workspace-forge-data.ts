@@ -56,8 +56,7 @@ export function useWorkspaceForgeData({
 	const workspaceForgeQueriesEnabled =
 		selectedWorkspaceId !== null &&
 		selectedWorkspaceDetail?.state !== "archived" &&
-		(workspaceForgeProvider === "gitlab" ||
-			workspaceForgeProvider === "github");
+		workspaceForgeProvider === "github";
 
 	// Seed the change-request query with whatever PR snapshot is already
 	// persisted on the workspace row. Lets the inspector render the PR badge

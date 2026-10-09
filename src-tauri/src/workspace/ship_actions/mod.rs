@@ -157,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn create_pr_prompt_uses_gitlab_dialect_and_custom_preferences() {
+    fn create_pr_prompt_uses_github_dialect_and_custom_preferences() {
         let repo_preferences = RepoPreferences {
             create_pr: Some("Prefer squashable commits.".to_string()),
             ..prefs()
@@ -168,13 +168,12 @@ mod tests {
                 repo_preferences: &repo_preferences,
                 target_branch: Some("main"),
                 remote: Some("upstream"),
-                forge_provider: Some("gitlab"),
             },
         )
         .unwrap();
 
-        assert!(prompt.contains("Create a merge request"));
-        assert!(prompt.contains("glab mr create --target-branch main"));
+        assert!(prompt.contains("Create a pull request"));
+        assert!(prompt.contains("gh pr create --base main"));
         assert!(prompt.contains("git push -u upstream HEAD"));
         assert!(prompt.contains("Prefer squashable commits."));
     }
@@ -188,7 +187,6 @@ mod tests {
                 repo_preferences: &repo_preferences,
                 target_branch: None,
                 remote: None,
-                forge_provider: None,
             },
         )
         .unwrap_err();
@@ -205,13 +203,12 @@ mod tests {
                 repo_preferences: &repo_preferences,
                 target_branch: None,
                 remote: None,
-                forge_provider: Some("gitlab"),
             },
         )
         .unwrap();
 
-        assert!(prompt.contains("GitLab CI is failing"));
-        assert!(prompt.contains("glab ci list"));
-        assert!(prompt.contains("pipeline"));
+        assert!(prompt.contains("CI is failing"));
+        assert!(prompt.contains("gh run list"));
+        assert!(prompt.contains("failing run"));
     }
 }

@@ -1,5 +1,5 @@
-//! Forge abstraction — unifies GitHub and GitLab (pull requests / merge
-//! requests, CI status, CLI install + auth).
+//! Forge abstraction — GitHub pull requests, CI status, CLI install +
+//! auth. Non-GitHub remotes classify as `ForgeProvider::Unknown`.
 //!
 //! Layout:
 //!
@@ -17,7 +17,6 @@
 //! - [`workspace`] — per-workspace router that dispatches change-request
 //!   calls to the right backend once a provider is resolved.
 //! - [`github`] — GitHub SDK (CLI helpers, GraphQL).
-//! - [`gitlab`] — GitLab REST client using `glab api`.
 
 pub(crate) mod accounts;
 pub(crate) mod avatar_cache;
@@ -27,7 +26,6 @@ mod cli_status;
 pub(crate) mod command;
 mod detect;
 pub mod github;
-pub mod gitlab;
 mod provider;
 pub(crate) mod remote;
 mod types;

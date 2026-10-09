@@ -833,7 +833,7 @@ pub fn run_script(
 /// - The Inspector Terminal tab — user gets a `$SHELL` prompt at `working_dir`
 ///   and types commands directly; the PTY stays open until the user types
 ///   `exit` (or the caller invokes `kill` via `stop_terminal`).
-/// - Onboarding embedded auth terminals (`gh auth login`, `glab auth login`,
+/// - Onboarding embedded auth terminals (`gh auth login`,
 ///   `claude /login`, `codex login`) — the caller drives input programmatically
 ///   via `ScriptProcessManager::write_stdin`.
 ///

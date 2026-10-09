@@ -7,8 +7,6 @@ export type ContextCardSource =
 	| "github_issue"
 	| "github_pr"
 	| "github_discussion"
-	| "gitlab_issue"
-	| "gitlab_mr"
 	| "slack_thread";
 
 export type ContextCardStateTone =
