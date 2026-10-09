@@ -12,7 +12,6 @@ import {
 	ClipboardList,
 	Clock3,
 	Info,
-	Layers,
 	MessageSquareMore,
 	Plus,
 	Square,
@@ -220,13 +219,9 @@ type WorkspaceComposerProps = {
 	/** Hotkey that submits the current draft with the opposite follow-up
 	 *  behavior (queue ↔ steer) for one message. */
 	toggleFollowUpShortcut?: string | null;
-	toggleContextPanelShortcut?: string | null;
-	contextPanelOpen?: boolean;
-	onToggleContextPanel?: () => void;
 	/** Custom placeholder string. When omitted, falls back to the default
-	 *  "Ask to make changes…" copy. The start surface supplies a hint
-	 *  that nudges the user toward composing inbox sources for new
-	 *  workspaces. */
+	 *  "Ask to make changes…" copy. The start surface supplies its own
+	 *  hint for new workspaces. */
 	placeholder?: string;
 	startSubmitMenu?: boolean;
 	startSubmitMode?: StartSubmitMode;
@@ -350,9 +345,6 @@ export const WorkspaceComposer = memo(function WorkspaceComposer({
 	togglePlanShortcut = null,
 	toggleTerminalShortcut = null,
 	toggleFollowUpShortcut = null,
-	toggleContextPanelShortcut = null,
-	contextPanelOpen = false,
-	onToggleContextPanel,
 	startSubmitMenu = false,
 	startSubmitMode = "startNow",
 	onStartSubmitModeChange,
@@ -1327,42 +1319,6 @@ export const WorkspaceComposer = memo(function WorkspaceComposer({
 												</TooltipContent>
 											</Tooltip>
 										)}
-										{onToggleContextPanel ? (
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<ComposerButton
-														aria-label="addContext"
-														aria-pressed={contextPanelOpen}
-														disabled={toolbarDisabled}
-														className={cn(
-															`size-7 justify-center px-0 ${composerToolbarTriggerClassName}`,
-															contextPanelOpen
-																? composerToolbarActiveClassName
-																: "text-muted-foreground/70 hover:text-muted-foreground/70",
-															toolbarDisabled
-																? "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground"
-																: null,
-														)}
-														onClick={onToggleContextPanel}
-													>
-														<Layers className="size-[14px]" strokeWidth={1.8} />
-													</ComposerButton>
-												</TooltipTrigger>
-												<TooltipContent
-													side="top"
-													sideOffset={4}
-													className="flex h-[24px] items-center gap-2 rounded-md px-2 text-small leading-none"
-												>
-													<span>{t("addContext")}</span>
-													{toggleContextPanelShortcut ? (
-														<InlineShortcutDisplay
-															hotkey={toggleContextPanelShortcut}
-															className="text-background/60"
-														/>
-													) : null}
-												</TooltipContent>
-											</Tooltip>
-										) : null}
 									</>
 								)}
 							</div>

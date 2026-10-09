@@ -139,27 +139,6 @@ export function AppShell({
 				collapsed: inspectorCollapsed,
 				resizing: panels.isInspectorResizing,
 				width: panels.inspectorWidth,
-				rightSidebarMode: sel.contextPanel.rightSidebarMode,
-				startRepository: sel.startSurface.startRepository,
-				selectedWorkspaceRepository: s.selectedWorkspaceRepository,
-				startInboxProviderTab: sel.startSurface.startInboxProviderTab,
-				onStartInboxProviderTabChange:
-					sel.startSurfaceActions.setInboxProviderTab,
-				startInboxProviderSourceTab:
-					sel.startSurface.startInboxProviderSourceTab,
-				onStartInboxProviderSourceTabChange:
-					sel.startSurfaceActions.setInboxProviderSourceTab,
-				startInboxStateFilterBySource:
-					sel.startSurface.startInboxStateFilterBySource,
-				onStartInboxStateFilterBySourceChange:
-					sel.startSurfaceActions.setInboxStateFilterBySource,
-				startComposerInsertTarget: sel.startSurface.startComposerInsertTarget,
-				startPreviewCardId: sel.contextPanel.startPreviewCard?.id ?? null,
-				workspacePreviewCardId:
-					sel.contextPanel.workspacePreviewCard?.id ?? null,
-				onOpenStartContextCard: sel.contextPanelActions.openStartContextCard,
-				onOpenWorkspaceContextCard:
-					sel.contextPanelActions.openWorkspaceContextCard,
 				// Settle-gated id for the inspector's git-diff. Matches the settled
 				// `selectedWorkspaceDetail` / `workspaceRootPath` below so the diff
 				// query key stays internally consistent during a rapid-switch burst.
@@ -197,7 +176,6 @@ export function AppShell({
 				theme: s.appSettings.theme,
 				onOpenChangelog: chrome.handleOpenReleaseChangelog,
 				onOpenAnnouncementSettings: data.handleOpenAnnouncementSettings,
-				onSetRightSidebarMode: sel.contextPanelActions.setMode,
 				onOpenStartPage: () => s.handleOpenWorkspaceStart({ persist: false }),
 				quickSwitch: data.quickSwitch,
 				liveWorkspaceRowMap: data.liveWorkspaceRowMap,

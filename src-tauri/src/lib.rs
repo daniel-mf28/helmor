@@ -2,7 +2,6 @@ pub mod agents;
 pub mod cli;
 pub(crate) mod codex_config;
 pub(crate) mod commands;
-pub mod companion;
 pub mod data_dir;
 pub mod downloads;
 pub mod error;
@@ -27,7 +26,6 @@ pub mod schema;
 pub mod service;
 mod shell_env;
 pub mod sidecar;
-pub mod slack;
 mod system_limits;
 pub mod terminal;
 pub mod ui_sync;
@@ -55,16 +53,6 @@ pub use workspace::workspaces;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
-/// Fallback `404 Not Found` response with an empty body. Used by the
-/// custom-protocol handlers when the upstream fetch fails — the
-/// webview falls back to the `<img alt="">` text gracefully.
-fn empty_404() -> tauri::http::Response<Vec<u8>> {
-    tauri::http::Response::builder()
-        .status(404)
-        .body(Vec::new())
-        .expect("404 response builder is infallible")
-}
-
 /// Initialise the database schema (call once at startup).
 pub fn schema_init(conn: &rusqlite::Connection) {
     db::init_connection(conn, true).expect("Failed to apply PRAGMA init");
@@ -88,35 +76,7 @@ pub fn run() {
             tauri_plugin_window_state::Builder::default()
                 .with_denylist(&[quick_panel::QUICK_PANEL_LABEL])
                 .build(),
-        )
-        // Inline Slack file previews. The webview hits
-        // `slack-file://files-tmb/T…-F…/image.png`, we proxy the request
-        // through the workspace cookie, and stream the bytes back as a
-        // normal HTTP response. Cached on disk after the first fetch.
-        .register_asynchronous_uri_scheme_protocol("slack-file", |_app, request, responder| {
-            let uri = request.uri().to_string();
-            std::thread::spawn(move || {
-                let response = match slack::files::resolve(&uri) {
-                    Ok(file) => tauri::http::Response::builder()
-                        .header("Content-Type", file.content_type)
-                        // Slack file URLs are content-stable — bytes
-                        // never change for a given URL — so let the
-                        // webview cache them aggressively.
-                        .header("Cache-Control", "public, max-age=2592000, immutable")
-                        .body(file.bytes)
-                        .unwrap_or_else(|_| empty_404()),
-                    Err(error) => {
-                        tracing::warn!(
-                            uri = %uri,
-                            error = %format!("{error:#}"),
-                            "slack-file protocol fetch failed",
-                        );
-                        empty_404()
-                    }
-                };
-                responder.respond(response);
-            });
-        });
+        );
 
     #[cfg(debug_assertions)]
     let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
@@ -139,8 +99,6 @@ pub fn run() {
         .manage(ui_sync::UiSyncManager::new())
         .manage(global_hotkey::GlobalHotkeyState::default())
         .manage(commands::forge_commands::ForgeAuthEdgeStore::default())
-        .manage(companion::CompanionState::new())
-        .manage(companion::TunnelState::new())
         .setup(|app| {
             // Ensure data directory structure exists
             data_dir::ensure_directory_structure()?;
@@ -380,73 +338,6 @@ pub fn run() {
                 tracing::error!(error = %error, "Failed to start UI sync listener");
             }
 
-            // Mobile browser companion (experimental, opt-in via env). Starts a
-            // loopback-bound HTTP/SSE server that mirrors the IPC surface so the
-            // same frontend can be served to a phone browser. Default app
-            // behaviour is unchanged unless `HELMOR_COMPANION` is set.
-            if std::env::var_os("HELMOR_COMPANION").is_some() {
-                let companion_handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    let streamer = companion::build_stream_starter(companion_handle.clone());
-                    let dispatcher = companion::build_dispatcher(companion_handle.clone());
-                    let verifier = companion::paired_device_verifier();
-                    let state = companion_handle.state::<companion::CompanionState>();
-                    match state
-                        .start(companion_handle.clone(), streamer, dispatcher, verifier)
-                        .await
-                    {
-                        // Loopback-only, opt-in dev gate: logging the token here
-                        // is what lets a same-machine `curl` / browser pair in
-                        // Slice 0. The public-tunnel slice replaces this with QR
-                        // pairing and never logs the token.
-                        Ok(info) => tracing::info!(
-                            addr = %info.addr,
-                            token = %info.token,
-                            "companion enabled (HELMOR_COMPANION) — listening on loopback",
-                        ),
-                        Err(error) => {
-                            tracing::error!(error = %format!("{error:#}"), "companion start failed")
-                        }
-                    }
-                });
-            }
-
-            // Auto-start the companion when a stable URL has been provisioned,
-            // so a paired phone reconnects at its permanent hostname after a
-            // desktop restart. No-op when the user never allocated one.
-            {
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    match companion::stable_url::load() {
-                        Ok(Some(record)) => {
-                            let companion_state = handle.state::<companion::CompanionState>();
-                            let tunnel_state = handle.state::<companion::TunnelState>();
-                            match companion::start_with_tunnel(
-                                handle.clone(),
-                                &companion_state,
-                                &tunnel_state,
-                            )
-                            .await
-                            {
-                                Ok(()) => tracing::info!(
-                                    host = %record.hostname,
-                                    "companion stable URL auto-started",
-                                ),
-                                Err(error) => tracing::error!(
-                                    error = %format!("{error:#}"),
-                                    host = %record.hostname,
-                                    "companion stable-url auto-start failed",
-                                ),
-                            }
-                        }
-                        Ok(None) => {}
-                        Err(error) => {
-                            tracing::warn!(error = %error, "failed to read companion stable url")
-                        }
-                    }
-                });
-            }
-
             // On macOS, the default app-menu Quit item goes straight to
             // NSApplication.terminate:, which bypasses our event loop.
             // Install a custom menu so Cmd+Q flows through the same
@@ -543,10 +434,6 @@ pub fn run() {
             commands::forge_commands::get_workspace_forge,
             commands::forge_commands::list_forge_accounts,
             commands::forge_commands::check_workspace_forge_auth,
-            commands::forge_commands::list_inbox_items,
-            commands::forge_commands::list_inbox_kind_labels,
-            commands::forge_commands::list_forge_labels,
-            commands::forge_commands::get_inbox_item_detail,
             commands::forge_commands::get_workspace_account_profile,
             commands::forge_commands::cache_forge_avatar,
             commands::forge_commands::list_forge_logins,
@@ -678,24 +565,7 @@ pub fn run() {
             commands::updater_commands::get_app_update_status,
             commands::updater_commands::check_for_app_update,
             commands::updater_commands::install_downloaded_app_update,
-            commands::editor_commands::write_editor_file,
-            commands::slack_commands::slack_import_from_desktop,
-            commands::slack_commands::slack_list_workspaces,
-            commands::slack_commands::slack_disconnect_workspace,
-            commands::slack_commands::slack_list_inbox_items,
-            commands::slack_commands::slack_search_messages,
-            commands::slack_commands::slack_get_thread_detail,
-            commands::slack_commands::slack_list_emoji,
-            commands::slack_commands::slack_prepare_thread_context,
-            commands::companion_commands::companion_status,
-            commands::companion_commands::companion_enable,
-            commands::companion_commands::companion_disable,
-            commands::companion_commands::companion_pair_device,
-            commands::companion_commands::companion_list_devices,
-            commands::companion_commands::companion_revoke_device,
-            commands::companion_commands::companion_sign_in_cloudflare,
-            commands::companion_commands::companion_allocate_stable_url,
-            commands::companion_commands::companion_destroy_stable_url
+            commands::editor_commands::write_editor_file
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -785,11 +655,6 @@ pub fn run() {
         // new version. By this point `request_quit` has stopped watchers
         // and torn down the sidecar, so blocking briefly here is safe.
         tauri::RunEvent::Exit => {
-            // Best-effort graceful shutdown of the companion server + tunnel
-            // (no-op when never started). The tasks also die with the process.
-            app_handle.state::<companion::TunnelState>().shutdown();
-            let companion = app_handle.state::<companion::CompanionState>();
-            tauri::async_runtime::block_on(companion.shutdown());
             updater::install_pending_on_exit_blocking();
         }
         _ => {}

@@ -20,9 +20,7 @@ function makeProps(overrides: Partial<Props> = {}): Props {
 		workspaceViewMode: "conversation",
 		selectedWorkspaceId: null,
 		displayedWorkspaceId: null,
-		startRepositoryId: undefined,
 		openWorkspaceStart: vi.fn(),
-		closeStartContextPreview: vi.fn(),
 		...overrides,
 	};
 }

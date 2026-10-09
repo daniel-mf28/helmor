@@ -327,10 +327,9 @@ pub async fn list_active_streams(
 
 /// Attach a *watcher* to a session's live agent stream. The initiating client
 /// renders the turn from its own `send_agent_message_stream` channel; this lets
-/// ANY other connected client (a second desktop window, or the mobile
-/// companion over HTTP/NDJSON) mirror the same turn in real time. Events arrive
-/// on `on_event` exactly like the send path — the frontend feeds them through
-/// the same render pipeline. Symmetric across desktop and mobile.
+/// ANY other connected client (e.g. a second desktop window) mirror the same
+/// turn in real time. Events arrive on `on_event` exactly like the send path —
+/// the frontend feeds them through the same render pipeline.
 #[tauri::command]
 pub async fn subscribe_session_stream(
     hub: tauri::State<'_, SessionStreamHub>,
@@ -342,9 +341,8 @@ pub async fn subscribe_session_stream(
     Ok(())
 }
 
-/// Detach a watcher previously attached via [`subscribe_session_stream`]. Over
-/// the companion HTTP bridge this is redundant (the SSE drop auto-unsubscribes)
-/// but native clients call it explicitly on teardown.
+/// Detach a watcher previously attached via [`subscribe_session_stream`].
+/// Clients call it explicitly on teardown.
 #[tauri::command]
 pub async fn unsubscribe_session_stream(
     hub: tauri::State<'_, SessionStreamHub>,

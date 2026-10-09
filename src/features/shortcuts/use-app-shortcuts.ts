@@ -13,7 +13,9 @@ import type { ShortcutId, ShortcutMap, ShortcutScope } from "./types";
 export type ShortcutHandler = {
 	id: ShortcutId;
 	callback: () => void;
-	enabled?: boolean;
+	// A function is evaluated at keydown time — use it when "enabled" depends
+	// on state the handler table isn't rebuilt for (e.g. a ref-backed getter).
+	enabled?: boolean | (() => boolean);
 	// When true, holding the key auto-repeats the action one step per frame-tick
 	// via a rAF loop instead of letting the OS key-repeat fire a backlog of
 	// keydown callbacks. Releasing the key stops immediately. Single taps are
@@ -25,7 +27,7 @@ export type ShortcutHandler = {
 
 type Registration = {
 	callback: () => void;
-	enabled: boolean;
+	enabled: boolean | (() => boolean);
 	hotkey: string | null;
 	id: ShortcutId;
 	scopes: readonly ShortcutScope[];
@@ -119,8 +121,10 @@ export function useAppShortcuts({ overrides, handlers }: UseAppShortcutsArgs) {
 
 			const match = registrationsRef.current.find(
 				(registration) =>
-					registration.enabled &&
 					registration.hotkey === hotkey &&
+					(typeof registration.enabled === "function"
+						? registration.enabled()
+						: registration.enabled) &&
 					(registration.scopes.includes("app") ||
 						registration.scopes.some((scope) => activeScopes.includes(scope))),
 			);

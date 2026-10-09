@@ -69,17 +69,12 @@ export function useAppShellState({
 		workspaceGroups,
 		archivedRows,
 	});
-	const { selection, contextPanel, startSurface } = sel;
-	const startRepository = startSurface.startRepository;
+	const { selection, contextPanel } = sel;
 	const handleStartComposerPrepare = sel.startSurfaceActions.prepareComposer;
 	const inspectorCollapsed = contextPanel.inspectorCollapsed;
 	const panels = useShellPanels();
 	const { sidebarCollapsed, setSidebarCollapsed } = panels;
-	const workspacePreviewCard = contextPanel.workspacePreviewCard;
-	const workspacePreviewActive = contextPanel.workspacePreviewActive;
 	const setInspectorCollapsed = sel.contextPanelActions.setInspectorCollapsed;
-	const handleStartContextPreviewClose =
-		sel.contextPanelActions.closeStartContextPreview;
 	// `selected*` + `viewMode` are now router-owned (Stage 3b); read them as
 	// structurally-shared primitives so an unrelated location field doesn't
 	// re-render AppShell. `displayed*` + `reselectTick` stay store-driven.
@@ -198,7 +193,6 @@ export function useAppShellState({
 	useGlobalShortcutHandlers({
 		appSettings,
 		updateSettings,
-		contextPanelActions: sel.contextPanelActions,
 		canEditEditorSession: data.canEditEditorSession,
 		getCloseableCurrentSession: data.getCloseableCurrentSession,
 		handleCloseSelectedSession: data.handleCloseSelectedSession,
@@ -225,8 +219,6 @@ export function useAppShellState({
 		setInspectorCollapsed,
 		setSidebarCollapsed,
 		workspaceRootPath: data.workspaceRootPath,
-		workspacePreviewActive,
-		workspacePreviewCard,
 		workspaceViewMode,
 	});
 
@@ -258,10 +250,6 @@ export function useAppShellState({
 	// Close-confirmation is handled by <QuitConfirmDialog /> which registers
 	// its own onCloseRequested listener.  No need for a separate hook here.
 
-	const selectedWorkspaceRepository =
-		repositories.find(
-			(repository) => repository.id === data.selectedWorkspaceDetail?.repoId,
-		) ?? null;
 	const handleOpenWorkspaceStart = sel.selectionActions.openStart;
 	useShellStartupEffects({
 		lastSurface: appSettings.lastSurface,
@@ -269,9 +257,7 @@ export function useAppShellState({
 		workspaceViewMode,
 		selectedWorkspaceId,
 		displayedWorkspaceId,
-		startRepositoryId: startRepository?.id,
 		openWorkspaceStart: handleOpenWorkspaceStart,
-		closeStartContextPreview: handleStartContextPreviewClose,
 	});
 
 	const startCreateContext = useMemo<ComposerCreateContext | null>(
@@ -304,7 +290,6 @@ export function useAppShellState({
 		setFeedbackOpen,
 		appUpdateStatus,
 		sessionSelectionHistory,
-		selectedWorkspaceRepository,
 		handleOpenWorkspaceStart,
 		startCreateContext,
 		workspaceSidebarAutoSelectSettingsGate,

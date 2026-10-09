@@ -5,8 +5,6 @@ import {
 	isAppLanguage,
 } from "@/lib/i18n/types";
 import type { WorkspaceBranchIntent } from "./api";
-// Routed through the transport shim so settings load works in the mobile
-// browser companion too (not just the Tauri webview).
 import { invoke } from "./ipc";
 
 export type ThemeMode = "system" | "light" | "dark";
@@ -35,7 +33,6 @@ export type FollowUpBehavior = "steer" | "queue";
  *    response begins streaming sooner. */
 export type ClaudeThinkingDisplay = "summarized" | "omitted";
 export type AppSurface = "workspace" | "workspace-start";
-export type WorkspaceRightSidebarMode = "inspector" | "context";
 /** A global model preference (default / review / action). Carries its
  *  provider so a slug-based model (opencode) is never re-derived
  *  ambiguously from the bare id. `provider` is null only for legacy rows
@@ -78,40 +75,6 @@ export const VALID_NOTIFICATION_SOUNDS: readonly NotificationSound[] = [
 ];
 
 export type ShortcutOverrides = Record<string, string | null>;
-
-export type InboxIssueScope =
-	| "involves"
-	| "assigned"
-	| "mentioned"
-	| "created"
-	| "all";
-export type InboxPullRequestScope =
-	| "involves"
-	| "author"
-	| "assignee"
-	| "mentions"
-	| "reviewRequested"
-	| "reviewedBy"
-	| "all";
-export type InboxSort = "updated" | "created" | "comments";
-export type InboxDraftFilter = "exclude" | "include" | "only";
-export type InboxIssueState = "open" | "closed" | "all";
-export type InboxPullRequestState = "open" | "closed" | "merged" | "all";
-export type InboxDiscussionState = "unanswered" | "answered" | "all";
-
-export type InboxKindDefaults = {
-	issueScopes: InboxIssueScope[];
-	prScopes: InboxPullRequestScope[];
-	issueState: InboxIssueState;
-	prState: InboxPullRequestState;
-	discussionState: InboxDiscussionState;
-	issueSort: InboxSort;
-	prSort: InboxSort;
-	discussionSort: InboxSort;
-	draftPrs: InboxDraftFilter;
-	issueLabels: string;
-	prLabels: string;
-};
 
 /** Mirrors SDK `ModelParameterDefinition` shape. */
 export type CursorCachedModelParameterValue = {
@@ -188,63 +151,6 @@ export type LocalLlmSettings = {
 	contextOverrides?: Record<string, number>;
 };
 
-/** Per-account toggles for which item kinds the inbox should pull from
- * a given forge login. Keyed externally by `<provider>:<login>` (e.g.
- * `github:octocat`). Missing keys default to all `true` — newly added
- * accounts opt into everything until the user changes their mind. */
-export type InboxAccountSourceToggles = InboxKindDefaults & {
-	issues: boolean;
-	prs: boolean;
-	discussions: boolean;
-	repos?: Record<string, InboxRepoSourceConfig>;
-};
-
-export type InboxRepoSourceConfig = InboxKindDefaults & {
-	enabled: boolean;
-	issues: boolean;
-	prs: boolean;
-	discussions: boolean;
-};
-
-export type InboxSourceConfig = {
-	accounts: Record<string, InboxAccountSourceToggles>;
-};
-
-export const DEFAULT_INBOX_ACCOUNT_TOGGLES: InboxAccountSourceToggles = {
-	issues: true,
-	prs: true,
-	discussions: true,
-	issueScopes: ["involves"],
-	prScopes: ["involves"],
-	issueState: "open",
-	prState: "open",
-	discussionState: "unanswered",
-	issueSort: "updated",
-	prSort: "updated",
-	discussionSort: "updated",
-	draftPrs: "exclude",
-	issueLabels: "",
-	prLabels: "",
-};
-
-export const DEFAULT_INBOX_REPO_CONFIG: InboxRepoSourceConfig = {
-	enabled: false,
-	issues: true,
-	prs: true,
-	discussions: true,
-	issueScopes: ["all"],
-	prScopes: ["all"],
-	issueState: "open",
-	prState: "open",
-	discussionState: "unanswered",
-	issueSort: "updated",
-	prSort: "updated",
-	discussionSort: "updated",
-	draftPrs: "exclude",
-	issueLabels: "",
-	prLabels: "",
-};
-
 /** Per-repo work mode on the start surface. `chat` is a top-level toggle
  *  (`chatModeActive`) because it doesn't belong to any repo. */
 export type StartSurfaceWorkMode = "worktree" | "local";
@@ -306,8 +212,6 @@ export type AppSettings = {
 	lastWorkspaceId: string | null;
 	lastSessionId: string | null;
 	lastSurface: AppSurface;
-	startContextPanelOpen: boolean;
-	workspaceRightSidebarMode: WorkspaceRightSidebarMode;
 	defaultModel: ModelRef | null;
 	/** Model used when the inspector "Review changes" helper creates a session.
 	 *  When null, falls back to `defaultModel`. */
@@ -358,7 +262,6 @@ export type AppSettings = {
 	kimiProvider: KimiProviderSettings;
 	agentProxy: AgentProxySettings;
 	localLlm: LocalLlmSettings;
-	inboxSourceConfig: InboxSourceConfig;
 	startSurfacePreferences: StartSurfacePreferences;
 	/** Sidebar grouping mode. Persisted to localStorage (sync read on boot
 	 *  to avoid the sidebar flashing the wrong grouping while SQLite-backed
@@ -434,8 +337,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
 	lastWorkspaceId: null,
 	lastSessionId: null,
 	lastSurface: "workspace",
-	startContextPanelOpen: false,
-	workspaceRightSidebarMode: "inspector",
 	defaultModel: null,
 	reviewModel: null,
 	reviewEffort: null,
@@ -480,7 +381,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
 		autoStart: true,
 		contextOverrides: {},
 	},
-	inboxSourceConfig: { accounts: {} },
 	startSurfacePreferences: DEFAULT_START_SURFACE_PREFERENCES,
 	sidebarGrouping: "status",
 	sidebarRepoFilterIds: [],
@@ -626,8 +526,6 @@ const SETTINGS_KEY_MAP: Record<
 	lastWorkspaceId: "app.last_workspace_id",
 	lastSessionId: "app.last_session_id",
 	lastSurface: "app.last_surface",
-	startContextPanelOpen: "app.start_context_panel_open",
-	workspaceRightSidebarMode: "app.workspace_right_sidebar_mode",
 	defaultModel: "app.default_model_id",
 	reviewModel: "app.review_model_id",
 	reviewEffort: "app.review_effort",
@@ -652,7 +550,6 @@ const SETTINGS_KEY_MAP: Record<
 	kimiProvider: "app.kimi_provider",
 	agentProxy: "app.agent_proxy",
 	localLlm: "app.local_llm",
-	inboxSourceConfig: "app.inbox_source_config",
 	startSurfacePreferences: "app.start_surface_preferences",
 };
 
@@ -717,190 +614,6 @@ function parseShortcutOverrides(raw: string | undefined): ShortcutOverrides {
 	} catch {
 		return DEFAULT_SETTINGS.shortcuts;
 	}
-}
-
-function parseInboxToggles(
-	value: unknown,
-	defaults: InboxKindDefaults & {
-		issues: boolean;
-		prs: boolean;
-		discussions: boolean;
-	},
-): InboxKindDefaults & { issues: boolean; prs: boolean; discussions: boolean } {
-	const v = (value ?? {}) as Partial<InboxAccountSourceToggles> & {
-		labels?: unknown;
-		sort?: unknown;
-		issueScope?: unknown;
-		prScope?: unknown;
-	};
-	const legacySort = isInboxSort(v.sort) ? v.sort : defaults.issueSort;
-	const legacyLabels = typeof v.labels === "string" ? v.labels : "";
-	return {
-		issues: typeof v.issues === "boolean" ? v.issues : defaults.issues,
-		prs: typeof v.prs === "boolean" ? v.prs : defaults.prs,
-		discussions:
-			typeof v.discussions === "boolean" ? v.discussions : defaults.discussions,
-		issueScopes: parseInboxIssueScopes(
-			v.issueScopes,
-			v.issueScope,
-			defaults.issueScopes,
-		),
-		prScopes: parseInboxPullRequestScopes(
-			v.prScopes,
-			v.prScope,
-			defaults.prScopes,
-		),
-		issueState: isInboxIssueState(v.issueState)
-			? v.issueState
-			: defaults.issueState,
-		prState: isInboxPullRequestState(v.prState) ? v.prState : defaults.prState,
-		discussionState: isInboxDiscussionState(v.discussionState)
-			? v.discussionState
-			: defaults.discussionState,
-		issueSort: isInboxSort(v.issueSort) ? v.issueSort : legacySort,
-		prSort: isInboxSort(v.prSort) ? v.prSort : legacySort,
-		discussionSort: isInboxSort(v.discussionSort)
-			? v.discussionSort
-			: legacySort,
-		draftPrs: isInboxDraftFilter(v.draftPrs) ? v.draftPrs : defaults.draftPrs,
-		issueLabels:
-			typeof v.issueLabels === "string" ? v.issueLabels : legacyLabels,
-		prLabels: typeof v.prLabels === "string" ? v.prLabels : legacyLabels,
-	};
-}
-
-function parseInboxSourceConfig(raw: string | undefined): InboxSourceConfig {
-	if (!raw) return DEFAULT_SETTINGS.inboxSourceConfig;
-	try {
-		const parsed = JSON.parse(raw) as unknown;
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-			return DEFAULT_SETTINGS.inboxSourceConfig;
-		}
-		const accountsRaw = (parsed as { accounts?: unknown }).accounts;
-		if (
-			!accountsRaw ||
-			typeof accountsRaw !== "object" ||
-			Array.isArray(accountsRaw)
-		) {
-			return { accounts: {} };
-		}
-		const accounts: Record<string, InboxAccountSourceToggles> = {};
-		for (const [key, value] of Object.entries(accountsRaw)) {
-			if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-			const v = value as Partial<InboxAccountSourceToggles>;
-			const reposRaw = v.repos;
-			const repos: Record<string, InboxRepoSourceConfig> = {};
-			if (
-				reposRaw &&
-				typeof reposRaw === "object" &&
-				!Array.isArray(reposRaw)
-			) {
-				for (const [repo, repoValue] of Object.entries(reposRaw)) {
-					if (
-						!repoValue ||
-						typeof repoValue !== "object" ||
-						Array.isArray(repoValue)
-					) {
-						continue;
-					}
-					const repoConfig = repoValue as Partial<InboxRepoSourceConfig>;
-					repos[repo] = {
-						...parseInboxToggles(repoValue, DEFAULT_INBOX_REPO_CONFIG),
-						enabled:
-							typeof repoConfig.enabled === "boolean"
-								? repoConfig.enabled
-								: DEFAULT_INBOX_REPO_CONFIG.enabled,
-					};
-				}
-			}
-			accounts[key] = {
-				...parseInboxToggles(value, DEFAULT_INBOX_ACCOUNT_TOGGLES),
-				repos,
-			};
-		}
-		return { accounts };
-	} catch {
-		return DEFAULT_SETTINGS.inboxSourceConfig;
-	}
-}
-
-function oneOf<T extends string>(
-	value: unknown,
-	values: readonly T[],
-): value is T {
-	return typeof value === "string" && values.includes(value as T);
-}
-
-function isInboxIssueScope(value: unknown): value is InboxIssueScope {
-	return oneOf(value, [
-		"involves",
-		"assigned",
-		"mentioned",
-		"created",
-		"all",
-	] as const);
-}
-
-function parseInboxIssueScopes(
-	value: unknown,
-	legacyValue: unknown,
-	fallback = DEFAULT_INBOX_ACCOUNT_TOGGLES.issueScopes,
-): InboxIssueScope[] {
-	if (Array.isArray(value)) {
-		const scopes = value.filter(isInboxIssueScope);
-		if (scopes.length > 0) return scopes;
-	}
-	if (isInboxIssueScope(legacyValue)) return [legacyValue];
-	return fallback;
-}
-
-function isInboxPullRequestScope(
-	value: unknown,
-): value is InboxPullRequestScope {
-	return oneOf(value, [
-		"involves",
-		"author",
-		"assignee",
-		"mentions",
-		"reviewRequested",
-		"reviewedBy",
-		"all",
-	] as const);
-}
-
-function parseInboxPullRequestScopes(
-	value: unknown,
-	legacyValue: unknown,
-	fallback = DEFAULT_INBOX_ACCOUNT_TOGGLES.prScopes,
-): InboxPullRequestScope[] {
-	if (Array.isArray(value)) {
-		const scopes = value.filter(isInboxPullRequestScope);
-		if (scopes.length > 0) return scopes;
-	}
-	if (isInboxPullRequestScope(legacyValue)) return [legacyValue];
-	return fallback;
-}
-
-function isInboxIssueState(value: unknown): value is InboxIssueState {
-	return oneOf(value, ["open", "closed", "all"] as const);
-}
-
-function isInboxPullRequestState(
-	value: unknown,
-): value is InboxPullRequestState {
-	return oneOf(value, ["open", "closed", "merged", "all"] as const);
-}
-
-function isInboxDiscussionState(value: unknown): value is InboxDiscussionState {
-	return oneOf(value, ["unanswered", "answered", "all"] as const);
-}
-
-function isInboxSort(value: unknown): value is InboxSort {
-	return oneOf(value, ["updated", "created", "comments"] as const);
-}
-
-function isInboxDraftFilter(value: unknown): value is InboxDraftFilter {
-	return oneOf(value, ["exclude", "include", "only"] as const);
 }
 
 function parseStringRecord(value: unknown): Record<string, string> {
@@ -1383,14 +1096,6 @@ export async function loadSettings(): Promise<AppSettings> {
 				raw[SETTINGS_KEY_MAP.lastSurface] === "workspace-start"
 					? "workspace-start"
 					: DEFAULT_SETTINGS.lastSurface,
-			startContextPanelOpen:
-				raw[SETTINGS_KEY_MAP.startContextPanelOpen] !== undefined
-					? raw[SETTINGS_KEY_MAP.startContextPanelOpen] === "true"
-					: DEFAULT_SETTINGS.startContextPanelOpen,
-			workspaceRightSidebarMode:
-				raw[SETTINGS_KEY_MAP.workspaceRightSidebarMode] === "context"
-					? "context"
-					: DEFAULT_SETTINGS.workspaceRightSidebarMode,
 			defaultModel: parseModelRef(rawDefaultModelId),
 			reviewModel: parseModelRef(rawReviewModelId),
 			reviewEffort:
@@ -1470,9 +1175,6 @@ export async function loadSettings(): Promise<AppSettings> {
 			),
 			agentProxy: parseAgentProxySettings(raw[SETTINGS_KEY_MAP.agentProxy]),
 			localLlm: parseLocalLlmSettings(raw[SETTINGS_KEY_MAP.localLlm]),
-			inboxSourceConfig: parseInboxSourceConfig(
-				raw[SETTINGS_KEY_MAP.inboxSourceConfig],
-			),
 			startSurfacePreferences: parseStartSurfacePreferences(
 				raw[SETTINGS_KEY_MAP.startSurfacePreferences],
 			),
@@ -1520,7 +1222,6 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<void> {
 				key === "kimiProvider" ||
 				key === "agentProxy" ||
 				key === "localLlm" ||
-				key === "inboxSourceConfig" ||
 				key === "startSurfacePreferences" ||
 				key === "defaultModel" ||
 				key === "reviewModel" ||

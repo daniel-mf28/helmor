@@ -12,8 +12,6 @@ import {
 import { Tag } from "lucide-react";
 import type { ReactNode } from "react";
 import { InlineBadge } from "@/components/inline-badge";
-import { SourceIcon } from "@/features/inbox/source-icon";
-import { STATE_TONE_CLASS } from "@/features/inbox/state-tone";
 import {
 	buildComposerPreviewLabel,
 	type ComposerCustomTag,
@@ -25,6 +23,8 @@ import type {
 	ContextCardStateTone,
 } from "@/lib/sources/types";
 import { cn } from "@/lib/utils";
+import { SourceIcon } from "./source-icon";
+import { STATE_TONE_CLASS } from "./state-tone";
 
 type SerializedCustomTagBadgeNode = Spread<
 	ComposerCustomTag,

@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { hydrateDraftCache } from "@/features/composer/draft-storage";
-import type { ContextProviderTab, SettingsSection } from "@/features/settings";
+import type { SettingsSection } from "@/features/settings";
 import { exitOnboardingWindowMode } from "@/lib/api";
 import { setCurrentLanguage } from "@/lib/i18n";
 import { createHelmorQueryClient } from "@/lib/query-client";
@@ -26,7 +26,6 @@ export interface AppBootstrap {
 	settingsWorkspaceId: string | null;
 	settingsWorkspaceRepoId: string | null;
 	settingsInitialSection: SettingsSection | undefined;
-	settingsInitialInboxProvider: ContextProviderTab | undefined;
 	queryClient: QueryClient;
 	settingsContextValue: {
 		settings: AppSettings;
@@ -53,8 +52,6 @@ export function useAppBootstrap(): AppBootstrap {
 	>(null);
 	const [settingsInitialSection, setSettingsInitialSection] =
 		useState<SettingsSection>();
-	const [settingsInitialInboxProvider, setSettingsInitialInboxProvider] =
-		useState<ContextProviderTab | undefined>();
 	const [queryClient] = useState(() => createHelmorQueryClient());
 	const preloadSettings = useMemo<AppSettings>(
 		() => getPreloadedSettings(),
@@ -80,7 +77,6 @@ export function useAppBootstrap(): AppBootstrap {
 	}, [settingsContextValue.settings.language]);
 	useShellEvent("open-settings", (event) => {
 		setSettingsInitialSection(event.section);
-		setSettingsInitialInboxProvider(event.inboxProvider);
 		setSettingsWorkspaceId(null);
 		setSettingsWorkspaceRepoId(null);
 		setSettingsOpen(true);
@@ -157,7 +153,6 @@ export function useAppBootstrap(): AppBootstrap {
 		settingsWorkspaceId,
 		settingsWorkspaceRepoId,
 		settingsInitialSection,
-		settingsInitialInboxProvider,
 		queryClient,
 		settingsContextValue,
 		splashVisible,

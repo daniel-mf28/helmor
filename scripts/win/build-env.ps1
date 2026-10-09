@@ -19,7 +19,7 @@ $env:Path = ($toolDirs -join ';') + ';' + $env:Path + ';' + $perlDir
 # The installed CMake predates the "Visual Studio 18 2026" generator that the
 # cmake crate auto-detects (VS 2026 is installed). Pin to the VS 2022 generator,
 # which this CMake supports and which self-locates MSVC without a dev shell.
-# Needed to build boring-sys2 (BoringSSL, via wreq -> Slack TLS emulation).
+# Used by any crate that builds native code through the cmake crate.
 $env:CMAKE_GENERATOR = 'Visual Studio 17 2022'
 
 # Verify the critical tools resolve.

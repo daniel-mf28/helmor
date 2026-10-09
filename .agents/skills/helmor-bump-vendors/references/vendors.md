@@ -11,7 +11,7 @@ All paths are relative to the repo root. Line numbers drift — grep the named c
 - [OpenCode (@opencode-ai/sdk + opencode-ai)](#opencode) — class A+B, SDK/CLI lockstep
 - [Kimi](#kimi) — class C, GitHub release, ACP protocol
 - [Pi (@earendil-works/pi-*)](#pi) — class A, **dead code → prefer delete**
-- [gh / glab / cloudflared / llama.cpp / node](#supporting-tools) — class C, supporting binaries
+- [gh / glab / llama.cpp / node](#supporting-tools) — class C, supporting binaries
 
 ---
 
@@ -150,7 +150,7 @@ required, `getApiKeyAndHeaders` removed).
 ## Supporting tools
 
 All class C, all in `vendor-platform.ts`, none in `package.json`. macOS SHA is strict; Windows is
-soft-verified (empty `""` SHA tolerated). arch naming for gh/glab/cloudflared is `arm64`/`amd64`.
+soft-verified (empty `""` SHA tolerated). arch naming for gh/glab is `arm64`/`amd64`.
 
 ### gh (`GH_VERSION` + `GH_SHA256{arm64,amd64}`)
 Repo `cli/cli`. SHA from `gh_<ver>_checksums.txt` at the release — pick the macOS zip rows
@@ -159,13 +159,6 @@ Repo `cli/cli`. SHA from `gh_<ver>_checksums.txt` at the release — pick the ma
 ### glab (`GLAB_VERSION` + `GLAB_SHA256{arm64,amd64}`)
 GitLab `gitlab-org/cli`. SHA from `checksums.txt` at the release — the
 `glab_<ver>_darwin_{arm64,amd64}.tar.gz` rows.
-
-### cloudflared (`CLOUDFLARED_VERSION` + `CLOUDFLARED_SHA256{arm64,amd64}`)
-Repo `cloudflare/cloudflared`. SHA = `shasum -a 256` of the release asset
-`cloudflared-darwin-{arm64,amd64}.tgz` (no upstream checksums file):
-```bash
-curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/<ver>/cloudflared-darwin-arm64.tgz" | shasum -a 256
-```
 
 ### llama.cpp (`LLAMA_VERSION` + `LLAMA_SHA256{arm64,x64}`)
 Repo `ggml-org/llama.cpp`, version is a build tag (e.g. `b9763`). Asset

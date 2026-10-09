@@ -3,7 +3,7 @@
 //! The client that calls `send_agent_message_stream` renders the turn from
 //! its own per-invocation `Channel` (the direct, point-to-point path — left
 //! untouched). This hub is the SECOND path: any other connected client
-//! (a second desktop window, or the mobile companion over HTTP/NDJSON) can
+//! (e.g. a second desktop window) can
 //! `subscribe_session_stream` and receive the SAME `AgentStreamEvent`s, so it
 //! mirrors the live turn in real time instead of only seeing it after reload.
 //!
@@ -37,10 +37,8 @@ struct SessionEntry {
     last_task_state: Option<AgentStreamEvent>,
 }
 
-/// Tauri-managed registry of session watchers. Shared by the native
-/// `subscribe_session_stream` command and the companion HTTP bridge — both go
-/// through the same instance, which is what makes mirroring symmetric across
-/// desktop and mobile.
+/// Tauri-managed registry of session watchers, used by the
+/// `subscribe_session_stream` command.
 #[derive(Default)]
 pub struct SessionStreamHub {
     inner: Mutex<HashMap<String, SessionEntry>>,

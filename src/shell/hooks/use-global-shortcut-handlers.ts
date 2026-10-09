@@ -8,21 +8,17 @@ import {
 import { closeMainWindow, hideQuickPanel } from "@/lib/api";
 import type { AppSettings } from "@/lib/settings";
 import { isQuickPanelWindow } from "@/lib/window-role";
-import type { ContextPanelActions } from "@/shell/controllers/use-context-panel-controller";
 import { publishShellEvent } from "@/shell/event-bus";
 import { clampZoom, ZOOM_STEP } from "@/shell/use-zoom";
 
 /**
  * Assembles the full `ShortcutHandler[]` table AppShell feeds to
  * `useAppShortcuts`, then registers the global keydown listener. Extracted
- * verbatim from AppShell. The memo body and its dependency array are preserved
- * exactly (including the deliberate omission of the stable `contextPanelActions`
- * identity from deps); every `enabled` predicate and callback is unchanged.
+ * verbatim from AppShell.
  */
 export function useGlobalShortcutHandlers({
 	appSettings,
 	updateSettings,
-	contextPanelActions,
 	canEditEditorSession,
 	getCloseableCurrentSession,
 	handleCloseSelectedSession,
@@ -49,13 +45,10 @@ export function useGlobalShortcutHandlers({
 	setInspectorCollapsed,
 	setSidebarCollapsed,
 	workspaceRootPath,
-	workspacePreviewActive,
-	workspacePreviewCard,
 	workspaceViewMode,
 }: {
 	appSettings: AppSettings;
 	updateSettings: (patch: Partial<AppSettings>) => void | Promise<void>;
-	contextPanelActions: ContextPanelActions;
 	canEditEditorSession: boolean;
 	getCloseableCurrentSession: () => unknown;
 	handleCloseSelectedSession: () => Promise<void>;
@@ -89,8 +82,6 @@ export function useGlobalShortcutHandlers({
 	setInspectorCollapsed: Dispatch<SetStateAction<boolean>>;
 	setSidebarCollapsed: Dispatch<SetStateAction<boolean>>;
 	workspaceRootPath: string | null;
-	workspacePreviewActive: boolean;
-	workspacePreviewCard: unknown;
 	workspaceViewMode: string;
 }): void {
 	const globalShortcutHandlers = useMemo<ShortcutHandler[]>(
@@ -163,17 +154,14 @@ export function useGlobalShortcutHandlers({
 			{
 				id: "session.close" as const,
 				callback: () => {
-					if (workspacePreviewActive && workspacePreviewCard) {
-						contextPanelActions.closeWorkspaceContextPreview();
-						return;
-					}
 					if (!getCloseableCurrentSession()) return;
 					void handleCloseSelectedSession();
 				},
-				enabled:
+				// Evaluated at keydown: the closeable session comes from a
+				// snapshot getter, so a memo-time boolean would go stale.
+				enabled: () =>
 					workspaceViewMode === "conversation" &&
-					(Boolean(workspacePreviewCard) ||
-						Boolean(getCloseableCurrentSession())),
+					Boolean(getCloseableCurrentSession()),
 			},
 			{
 				id: "session.new" as const,
@@ -270,12 +258,6 @@ export function useGlobalShortcutHandlers({
 				enabled: workspaceViewMode === "editor" && canEditEditorSession,
 			},
 			{
-				id: "composer.toggleContextPanel" as const,
-				callback: () => publishShellEvent({ type: "toggle-context-panel" }),
-				enabled:
-					workspaceViewMode === "conversation" || workspaceViewMode === "start",
-			},
-			{
 				id: "zoom.in" as const,
 				callback: () =>
 					updateSettings({
@@ -323,8 +305,6 @@ export function useGlobalShortcutHandlers({
 			setSidebarCollapsed,
 			updateSettings,
 			workspaceRootPath,
-			workspacePreviewActive,
-			workspacePreviewCard,
 			workspaceViewMode,
 			canEditEditorSession,
 		],

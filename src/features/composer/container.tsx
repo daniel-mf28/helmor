@@ -267,8 +267,6 @@ type WorkspaceComposerContainerProps = {
 	contextSessionCandidates?: readonly SessionContextCandidate[];
 	selectedContextSessionIds?: readonly string[];
 	onToggleContextSession?: (sessionId: string) => void;
-	contextPanelOpen?: boolean;
-	onToggleContextPanel?: () => void;
 	startSubmitMenu?: boolean;
 	/** External owner of the linked-directories list. When provided, the
 	 *  composer reads from `directories` and writes via `onChange` instead of
@@ -340,8 +338,6 @@ export const WorkspaceComposerContainer = memo(
 		contextSessionCandidates = EMPTY_CONTEXT_SESSION_CANDIDATES,
 		selectedContextSessionIds = EMPTY_SELECTED_CONTEXT_SESSION_IDS,
 		onToggleContextSession,
-		contextPanelOpen = false,
-		onToggleContextPanel,
 		startSubmitMenu = false,
 		linkedDirectoriesController = null,
 		focusScope = "workspace-composer",
@@ -603,11 +599,6 @@ export const WorkspaceComposerContainer = memo(
 		]
 			? null
 			: getShortcut(settings.shortcuts, "composer.toggleFollowUpBehavior");
-		const toggleContextPanelShortcut = shortcutConflicts.conflictById[
-			"composer.toggleContextPanel"
-		]
-			? null
-			: getShortcut(settings.shortcuts, "composer.toggleContextPanel");
 		const effectiveModel = selectedModel;
 		const effectiveSelectedModelId =
 			effectiveModel?.id ?? selectedRef?.modelId ?? null;
@@ -1355,7 +1346,6 @@ export const WorkspaceComposerContainer = memo(
 						togglePlanShortcut={togglePlanShortcut}
 						toggleTerminalShortcut={toggleTerminalShortcut}
 						toggleFollowUpShortcut={toggleFollowUpShortcut}
-						toggleContextPanelShortcut={toggleContextPanelShortcut}
 						alwaysShowContextUsage={settings.alwaysShowContextUsage}
 						onSubmit={handleComposerSubmit}
 						disabled={composerUnavailable}
@@ -1425,8 +1415,6 @@ export const WorkspaceComposerContainer = memo(
 						addDirCandidates={candidateDirectories}
 						onPickAddDir={handlePickAddDir}
 						onOpenWorkflows={() => setWorkflowsPanelOpen(true)}
-						contextPanelOpen={contextPanelOpen}
-						onToggleContextPanel={onToggleContextPanel}
 						startSubmitMenu={startSubmitMenu}
 						startSubmitMode={startSubmitMode}
 						onStartSubmitModeChange={handleStartSubmitModeChange}

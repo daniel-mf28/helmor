@@ -1,10 +1,8 @@
 pub mod db;
-pub mod paired_devices;
 pub mod repos;
 pub mod session_inspection;
 pub mod sessions;
 pub mod settings;
-pub mod slack_workspaces;
 pub mod workspaces;
 
 // Keep the models namespace focused on persistence-facing code. Workflow and

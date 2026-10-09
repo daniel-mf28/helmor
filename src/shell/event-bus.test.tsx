@@ -41,10 +41,10 @@ describe("shell event bus", () => {
 	it("useShellEvent decodes payload fields from CustomEvent.detail", () => {
 		const onEvent = vi.fn();
 		render(<Harness type="open-settings" onEvent={onEvent} />);
-		publishShellEvent({ type: "open-settings", section: "inbox" });
+		publishShellEvent({ type: "open-settings", section: "account" });
 		expect(onEvent).toHaveBeenCalledWith({
 			type: "open-settings",
-			section: "inbox",
+			section: "account",
 		});
 	});
 
@@ -66,7 +66,7 @@ describe("shell event bus", () => {
 	it("publishShellEvent + legacy CustomEvent dispatcher are interoperable", () => {
 		const onEvent = vi.fn();
 		render(<Harness type="open-settings" onEvent={onEvent} />);
-		// Simulate a legacy emitter (e.g. features/settings/panels/inbox.tsx).
+		// Simulate a legacy emitter dispatching the raw CustomEvent.
 		window.dispatchEvent(
 			new CustomEvent("helmor:open-settings", {
 				detail: { section: "account" },

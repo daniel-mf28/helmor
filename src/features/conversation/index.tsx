@@ -30,7 +30,6 @@ import {
 	workspaceSessionsQueryOptions,
 } from "@/lib/query-client";
 import { type ModelRef, useSettings } from "@/lib/settings";
-import type { ContextCard } from "@/lib/sources/types";
 import {
 	useSubmitQueueApi,
 	useSubmitQueueForSession,
@@ -145,10 +144,6 @@ export type WorkspaceConversationContainerProps = {
 	onSessionAborted?: (sessionId: string, workspaceId: string) => void;
 	headerActions?: React.ReactNode;
 	headerLeading?: React.ReactNode;
-	contextPreviewCard?: ContextCard | null;
-	contextPreviewActive?: boolean;
-	onSelectContextPreview?: () => void;
-	onCloseContextPreview?: () => void;
 	/** Prompt queued by an external caller (e.g. the inspector Git commit
 	 *  button or a drained CLI send) to be auto-submitted once the displayed
 	 *  session matches. Per-session config (model / effort / fast-mode /
@@ -197,8 +192,6 @@ export type WorkspaceConversationContainerProps = {
 	 *  `composerCreateContext.prepare` first and only fires the agent stream
 	 *  if the prepare step says so. */
 	composerCreateContext?: ComposerCreateContext | null;
-	contextPanelOpen?: boolean;
-	onToggleContextPanel?: () => void;
 	composerStartSubmitMenu?: boolean;
 	/** Surface-specific focus scope forwarded to the composer. `start-composer`
 	 *  on the workspace-start page, `workspace-composer` everywhere else.
@@ -241,10 +234,6 @@ export const WorkspaceConversationContainer = memo(
 		onSessionAborted,
 		headerActions,
 		headerLeading,
-		contextPreviewCard = null,
-		contextPreviewActive = false,
-		onSelectContextPreview,
-		onCloseContextPreview,
 		pendingPromptForSession = null,
 		pendingCreatedWorkspaceSubmit = null,
 		onPendingCreatedWorkspaceSubmitConsumed,
@@ -261,8 +250,6 @@ export const WorkspaceConversationContainer = memo(
 		composerForceAvailable = false,
 		composerContextKeyOverride,
 		composerCreateContext = null,
-		contextPanelOpen = false,
-		onToggleContextPanel,
 		composerStartSubmitMenu = false,
 		composerFocusScope = "workspace-composer",
 		composerTerminalModeAvailable = true,
@@ -452,8 +439,8 @@ export const WorkspaceConversationContainer = memo(
 			onSessionAborted,
 		});
 
-		// Mirror live turns this client didn't start (driven by another window
-		// or the phone via the mobile companion) into the shared thread cache,
+		// Mirror live turns this client didn't start (driven by another window)
+		// into the shared thread cache,
 		// so the desktop streams in real time instead of needing a reload.
 		useWatchSessionStream({ sessionId: displayedSessionId, activeStreams });
 
@@ -810,10 +797,6 @@ export const WorkspaceConversationContainer = memo(
 						onResolveDisplayedSession={onResolveDisplayedSession}
 						onQueuePendingPromptForSession={onQueuePendingPromptForSession}
 						onRequestCloseSession={onRequestCloseSession}
-						contextPreviewCard={contextPreviewCard}
-						contextPreviewActive={contextPreviewActive}
-						onSelectContextPreview={onSelectContextPreview}
-						onCloseContextPreview={onCloseContextPreview}
 						headerActions={headerActions}
 						headerLeading={headerLeading}
 						optimisticPendingSubmit={
@@ -881,8 +864,6 @@ export const WorkspaceConversationContainer = memo(
 						contextSessionCandidates={sessionContextCandidates}
 						selectedContextSessionIds={selectedContextSessionIds}
 						onToggleContextSession={handleToggleContextSession}
-						contextPanelOpen={contextPanelOpen}
-						onToggleContextPanel={onToggleContextPanel}
 						startSubmitMenu={composerStartSubmitMenu}
 						focusScope={composerFocusScope}
 						terminalModeAvailable={composerTerminalModeAvailable}

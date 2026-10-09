@@ -4,8 +4,8 @@
 // downstream data hook) share, and the optimistic `pendingCreatedWorkspaceSubmit`
 // marker that startSurface forward-references. These MUST stay co-located in a
 // single hook body: the forward references between them only resolve because
-// they live in the same closure (see the `onWorkspaceSwitched` / `onStartOpened`
-// callbacks reaching forward to `contextPanelActions` / `startSurfaceActions`,
+// they live in the same closure (see the `onStartOpened`
+// callback reaching forward to `startSurfaceActions`,
 // startSurface reaching forward to the pivots + the pending-created setter, and
 // the pivots reaching back into the controller actions). Extracted verbatim out
 // of AppShell — text order between the three controllers and the pivots is
@@ -88,20 +88,12 @@ export function useSelectionControllers({
 		appSettings,
 		areSettingsLoaded,
 		updateSettings,
-		onWorkspaceSwitched: () => {
-			contextPanelActions.clearWorkspacePreview();
-		},
 		onStartOpened: () => {
-			contextPanelActions.clearWorkspacePreview();
 			startSurfaceActions.resetScratchOnReentry();
-			contextPanelActions.syncToStartMode();
 		},
 	});
 	const { state: contextPanel, actions: contextPanelActions } =
 		useContextPanelController({
-			appSettings,
-			areSettingsLoaded,
-			updateSettings,
 			getViewMode: () => selectionActions.getSnapshot().viewMode,
 		});
 	const { state: startSurface, actions: startSurfaceActions } =
@@ -129,18 +121,13 @@ export function useSelectionControllers({
 
 	const handleSelectWorkspace = useCallback(
 		(workspaceId: string | null) => {
-			// Align the right sidebar with the user's persisted preference on
-			// every workspace switch (and on reselect too — keeps behaviour
-			// identical to the pre-extraction handler).
-			contextPanelActions.syncToWorkspaceMode();
 			selectionActions.selectWorkspace(workspaceId);
 		},
-		[contextPanelActions, selectionActions],
+		[selectionActions],
 	);
 
 	const handleSelectSession = useCallback(
 		(sessionId: string | null) => {
-			contextPanelActions.deactivateWorkspaceContextPreview();
 			selectionActions.selectSession(sessionId);
 		},
 		[selectionActions],

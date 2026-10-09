@@ -211,10 +211,6 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # boring-sys2 (transitive native dep) assembles with NASM on Windows.
-      - name: Setup NASM
-        uses: ilammy/setup-nasm@v1
-
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
         with:

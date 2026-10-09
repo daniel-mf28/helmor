@@ -15,7 +15,7 @@ const LazyStreamdown = lazy(async () => {
 		React.ComponentProps<typeof Streamdown>["rehypePlugins"]
 	>[number];
 
-	// Default sanitize schema only allows http(s) for img src — opt in our Tauri schemes (helmor-attachment, slack-file, asset).
+	// Default sanitize schema only allows http(s) for img src — opt in our Tauri schemes (helmor-attachment, asset).
 	const helmorSanitizeSchema = {
 		...defaultSchema,
 		protocols: {
@@ -23,7 +23,6 @@ const LazyStreamdown = lazy(async () => {
 			src: [
 				...(defaultSchema.protocols?.src ?? []),
 				"helmor-attachment",
-				"slack-file",
 				"asset",
 			],
 		},

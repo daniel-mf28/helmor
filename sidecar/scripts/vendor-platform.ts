@@ -25,8 +25,6 @@ export interface TargetInfo {
 	ghArch: ReleaseArch;
 	/** `glab` release naming: `arm64` / `amd64`. */
 	glabArch: ReleaseArch;
-	/** `cloudflared` release naming: `arm64` / `amd64`. */
-	cloudflaredArch: ReleaseArch;
 }
 
 export interface ArchivePlan {
@@ -46,12 +44,6 @@ export const GLAB_VERSION = "1.103.0";
 export const GLAB_SHA256 = {
 	arm64: "fea5a07e6b41dfd04585c1ba08deaf95cd7e9b320a86d056f65415e254732fe3",
 	amd64: "c32fb1df724bc3cee2da828b24e19a3f518f4b4d382410984eb4a415498284da",
-} as const;
-
-export const CLOUDFLARED_VERSION = "2026.6.1";
-export const CLOUDFLARED_SHA256 = {
-	arm64: "f6d4c439c6c782b83264951d327989ce5e23373acc5942b872411601fedb020d",
-	amd64: "d7a66b525fe76820da6e5406611b61e48b40de682368ac00454d9158f085be4b",
 } as const;
 
 export const CODEX_SHA256: Readonly<
@@ -364,7 +356,6 @@ const TARGETS: Readonly<Record<DarwinArch, TargetInfo>> = {
 		opencodeNpmSuffix: "darwin-arm64",
 		ghArch: "arm64",
 		glabArch: "arm64",
-		cloudflaredArch: "arm64",
 	},
 	x64: {
 		os: "darwin",
@@ -378,7 +369,6 @@ const TARGETS: Readonly<Record<DarwinArch, TargetInfo>> = {
 		opencodeNpmSuffix: "darwin-x64",
 		ghArch: "amd64",
 		glabArch: "amd64",
-		cloudflaredArch: "amd64",
 	},
 };
 
@@ -398,7 +388,6 @@ const WINDOWS_X64_TARGET: TargetInfo = {
 	opencodeNpmSuffix: "windows-x64",
 	ghArch: "amd64",
 	glabArch: "amd64",
-	cloudflaredArch: "amd64",
 };
 
 export function targetInfoForArch(arch: DarwinArch): TargetInfo {
@@ -487,29 +476,6 @@ export function glabArchivePlan(target: TargetInfo): ArchivePlan {
 		archiveName: `${slug}.tar.gz`,
 		url: `https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/${slug}.tar.gz`,
 		sha256: GLAB_SHA256[arch],
-	};
-}
-
-export function cloudflaredArchivePlan(target: TargetInfo): ArchivePlan {
-	const arch = target.cloudflaredArch;
-	// Windows: upstream publishes a bare `cloudflared-windows-<arch>.exe` (no
-	// archive). The slug is the bare `.exe` filename; the staging executor
-	// downloads it straight to the destination (no extraction).
-	if (target.os === "windows") {
-		const slug = `cloudflared-windows-${arch}`;
-		return {
-			slug,
-			archiveName: `cloudflared-${CLOUDFLARED_VERSION}-windows-${arch}.exe`,
-			url: `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/${slug}.exe`,
-			sha256: "",
-		};
-	}
-	const slug = `cloudflared-darwin-${arch}`;
-	return {
-		slug,
-		archiveName: `cloudflared-${CLOUDFLARED_VERSION}-darwin-${arch}.tgz`,
-		url: `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/${slug}.tgz`,
-		sha256: CLOUDFLARED_SHA256[arch],
 	};
 }
 

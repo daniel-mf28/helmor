@@ -11,8 +11,6 @@ import {
 } from "@/features/conversation";
 import { WorkspaceStartPage } from "@/features/workspace-start";
 import type { RepositoryCreateOption } from "@/lib/api";
-import type { ContextCard } from "@/lib/sources/types";
-import type { ContextPanelActions } from "@/shell/controllers/use-context-panel-controller";
 import type { EditorSessionActions } from "@/shell/controllers/use-editor-session-controller";
 import type { PendingQueueActions } from "@/shell/controllers/use-pending-queue-controller";
 import type { ReadStateActions } from "@/shell/controllers/use-read-state-controller";
@@ -29,20 +27,15 @@ type Props = {
 	startBranchesLoading: boolean;
 	startMode: Parameters<typeof WorkspaceStartPage>[0]["mode"];
 	startBranchIntent: Parameters<typeof WorkspaceStartPage>[0]["branchIntent"];
-	startPreviewCard: ContextCard | null;
-	startComposerInsertTarget: { contextKey: string };
 	startComposerContextKey: string;
 	startCreateContext: ComposerCreateContext | null;
 	startLinkedDirectoriesController: ConversationProps["composerLinkedDirectoriesController"];
 	startComposerSettingsController: ConversationProps["composerSettingsController"];
-	sidebarCollapsed: boolean;
-	contextPanelOpen: boolean;
 	startSurfaceActions: StartSurfaceActions;
 	selectionActions: SelectionActions;
 	readStateActions: ReadStateActions;
 	editorSessionActions: EditorSessionActions;
 	pendingQueueActions: PendingQueueActions;
-	contextPanelActions: ContextPanelActions;
 	activeStreams: ConversationProps["activeStreams"];
 	effectiveBusySessionIds: Set<string>;
 	effectiveStoppableSessionIds: Set<string>;
@@ -65,20 +58,15 @@ export function StartSurfacePane({
 	startBranchesLoading,
 	startMode,
 	startBranchIntent,
-	startPreviewCard,
-	startComposerInsertTarget,
 	startComposerContextKey,
 	startCreateContext,
 	startLinkedDirectoriesController,
 	startComposerSettingsController,
-	sidebarCollapsed,
-	contextPanelOpen,
 	startSurfaceActions,
 	selectionActions,
 	readStateActions,
 	editorSessionActions,
 	pendingQueueActions,
-	contextPanelActions,
 	activeStreams,
 	effectiveBusySessionIds,
 	effectiveStoppableSessionIds,
@@ -112,11 +100,7 @@ export function StartSurfacePane({
 				// `startSurfaceActions.prepareComposer`.
 				startSurfaceActions.stashPendingNewBranch(branch);
 			}}
-			previewCard={startPreviewCard}
-			previewAppendContextTarget={startComposerInsertTarget}
 			headerLeading={headerLeading}
-			showWindowSafeTop={sidebarCollapsed}
-			onClosePreview={contextPanelActions.closeStartContextPreview}
 			composerAtBottom={composerAtBottom}
 		>
 			<WorkspaceConversationContainer
@@ -158,8 +142,6 @@ export function StartSurfacePane({
 				composerCreateContext={startCreateContext}
 				composerFocusScope="start-composer"
 				composerTerminalModeAvailable={startMode !== "chat"}
-				contextPanelOpen={contextPanelOpen}
-				onToggleContextPanel={contextPanelActions.toggleContextPanel}
 				composerStartSubmitMenu
 				composerLinkedDirectoriesController={startLinkedDirectoriesController}
 				composerSettingsController={startComposerSettingsController}

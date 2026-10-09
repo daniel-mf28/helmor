@@ -72,11 +72,9 @@ Use this map to decide which recipe or selector to use. It is not a substitute f
   - Effort menu text such as `high`
   - `Plan mode`
   - `Terminal mode` when enabled
-  - `Add context`
   - `Context usage`
   - `Usage Stats` when enabled
   - Terminal mode enabled class includes `text-emerald-500`; disabled class includes `text-muted-foreground/70`.
-  - `Add context` toggles the right inspector between normal Git and `Contexts` mode in repo-backed workspaces.
   - `Context usage` and `Usage Stats` may require hover or another precondition; click/long-press did not open stable pickers in observed states.
 - Submit states:
   - `Send`
@@ -150,16 +148,10 @@ Sections observed:
   - `Mint invite`
   - Cloud identity authorization for Codex and Claude.
   - Do not copy token values into skill output.
-- Contexts:
-  - Provider tabs `GitHub`, `GitLab`, `Slack`, `Linear`, `Mobile`
-  - Repository selector
-  - Issue/PR feed switches, sort dropdowns, selected labels, and `Remove All`
-  - Treat switches and remove actions as configuration mutations.
 - Experimental:
   - `Local LLM`
-  - `Mobile companion`
   - `Smart triage`
-  - Triage source connections, model add/delete/apply controls, mobile pair/revoke controls
+  - Triage source connections, model add/delete/apply controls
   - Treat connect, delete, run, pair, revoke, and apply actions as high-impact.
 - Developer:
   - `Show Onboarding Again`

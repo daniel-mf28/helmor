@@ -114,8 +114,8 @@ pub(super) enum Action {
 pub(super) struct ApplyContext<'a> {
     pub on_event: &'a Channel<AgentStreamEvent>,
     pub app: &'a AppHandle,
-    /// Per-session fan-out to *watcher* clients (a second desktop window or
-    /// the mobile companion). The hot path is gated on a single atomic load,
+    /// Per-session fan-out to *watcher* clients (e.g. a second desktop
+    /// window). The hot path is gated on a single atomic load,
     /// so this costs nothing when nobody is watching.
     pub hub: &'a super::stream_hub::SessionStreamHub,
     /// Helmor session id this stream belongs to; `None` ⇒ no fan-out target.

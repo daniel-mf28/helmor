@@ -1,6 +1,6 @@
 name: Cache Bundle Archives
 description: >-
-  Restore/save stage-vendor's downloaded vendor archives (gh, glab, cloudflared,
+  Restore/save stage-vendor's downloaded vendor archives (gh, glab,
   llama-cpp, node, and any cross-arch claude/codex/opencode tarballs) so CI jobs
   don't re-download them on every run. Points HELMOR_BUNDLE_CACHE at a stable
   per-workspace path and caches it via actions/cache, keyed on the version pins.

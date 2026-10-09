@@ -11,14 +11,4 @@ export type SettingsSection =
 	| "experimental"
 	| "developer"
 	| "account"
-	| "inbox"
 	| `repo:${string}`;
-
-// Tab inside the Inbox/Contexts panel. Exported so the shell event bus
-// can carry it as a sub-route on `open-settings`.
-export type ContextProviderTab =
-	| "github"
-	| "gitlab"
-	| "linear"
-	| "slack"
-	| "mobile";

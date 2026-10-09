@@ -78,13 +78,7 @@ export function QuickShell({
 							<QuickPanelCloseButton />
 						</div>
 					) : null}
-					{/* The panel never shows the context sidebar; keep the
-					    composer's toggle visually inert. */}
-					<WorkspacePaneSurface
-						{...paneProps}
-						contextPanelOpen={false}
-						startComposerAtBottom
-					/>
+					<WorkspacePaneSurface {...paneProps} startComposerAtBottom />
 				</div>
 			</main>
 		</AppShellProviderStack>

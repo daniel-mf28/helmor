@@ -1,5 +1,4 @@
 import { memo, type ReactNode, useEffect, useState } from "react";
-import { SourceDetailView } from "@/features/source-detail";
 import { TerminalSessionPanel } from "@/features/terminal/terminal-session-panel";
 import type {
 	AgentProvider,
@@ -8,7 +7,6 @@ import type {
 	WorkspaceSessionSummary,
 } from "@/lib/api";
 import { HelmorProfiler } from "@/lib/dev-react-profiler";
-import type { ContextCard } from "@/lib/sources/types";
 import { cn } from "@/lib/utils";
 import type { WorkspaceScriptType } from "@/lib/workspace-script-actions";
 import { WorkspacePanelHeader } from "./header";
@@ -40,12 +38,8 @@ type WorkspacePanelProps = {
 	sending?: boolean;
 	busySessionIds?: Set<string>;
 	interactionRequiredSessionIds?: Set<string>;
-	contextPreviewCard?: ContextCard | null;
-	contextPreviewActive?: boolean;
 	onSelectSession?: (sessionId: string) => void;
 	onSelectWorkspace?: (workspaceId: string) => void;
-	onSelectContextPreview?: () => void;
-	onCloseContextPreview?: () => void;
 	onPrefetchSession?: (sessionId: string) => void;
 	onSessionsChanged?: () => void;
 	onSessionRenamed?: (sessionId: string, title: string) => void;
@@ -72,12 +66,8 @@ export const WorkspacePanel = memo(function WorkspacePanel({
 	sending = false,
 	busySessionIds,
 	interactionRequiredSessionIds,
-	contextPreviewCard = null,
-	contextPreviewActive = false,
 	onSelectSession,
 	onSelectWorkspace,
-	onSelectContextPreview,
-	onCloseContextPreview,
 	onPrefetchSession,
 	onSessionsChanged,
 	onSessionRenamed,
@@ -102,9 +92,7 @@ export const WorkspacePanel = memo(function WorkspacePanel({
 	// fresh screen / different size corrupt the layout. Track every terminal
 	// session the user has visited; it unmounts only when its session closes.
 	const visibleTerminalId =
-		!contextPreviewActive && selectedSession?.sessionKind === "terminal"
-			? selectedSession.id
-			: null;
+		selectedSession?.sessionKind === "terminal" ? selectedSession.id : null;
 	const [visitedTerminalIds, setVisitedTerminalIds] = useState<
 		ReadonlySet<string>
 	>(new Set());
@@ -159,14 +147,10 @@ export const WorkspacePanel = memo(function WorkspacePanel({
 					busySessionIds={busySessionIds}
 					interactionRequiredSessionIds={interactionRequiredSessionIds}
 					loadingWorkspace={loadingWorkspace}
-					contextPreviewCard={contextPreviewCard}
-					contextPreviewActive={contextPreviewActive}
 					headerActions={headerActions}
 					headerLeading={headerLeading}
 					onSelectSession={onSelectSession}
 					onSelectWorkspace={onSelectWorkspace}
-					onSelectContextPreview={onSelectContextPreview}
-					onCloseContextPreview={onCloseContextPreview}
 					onPrefetchSession={onPrefetchSession}
 					onSessionsChanged={onSessionsChanged}
 					onSessionRenamed={onSessionRenamed}
@@ -197,11 +181,7 @@ export const WorkspacePanel = memo(function WorkspacePanel({
 							/>
 						</div>
 					))}
-					{contextPreviewActive && contextPreviewCard ? (
-						<div className="min-h-0 flex-1 overflow-hidden px-0 pt-4 pb-3">
-							<SourceDetailView card={contextPreviewCard} />
-						</div>
-					) : visibleTerminalId ? null : activePane?.hasLoaded ? (
+					{visibleTerminalId ? null : activePane?.hasLoaded ? (
 						<ActiveThreadViewport
 							hasSession={!!selectedSession}
 							workspaceName={workspace?.directoryName ?? null}

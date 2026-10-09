@@ -90,8 +90,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
 		id: "workspace.copyPath",
 		title: "copyWorkspacePath",
 		group: "workspace",
-		// Unbound by default — Mod+Shift+C is reserved for the composer
-		// context panel. Users can rebind from settings if they want.
+		// Unbound by default. Users can bind it from settings if they want.
 		defaultHotkey: null,
 		scopes: ["app"],
 		editable: true,
@@ -335,14 +334,6 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
 		defaultHotkey: "Alt+R",
 		// start-composer only: opens the repository search list.
 		scopes: ["start-composer"],
-		editable: true,
-	},
-	{
-		id: "composer.toggleContextPanel",
-		title: "toggleContextPanel",
-		group: "miscComposer",
-		defaultHotkey: "Mod+Shift+C",
-		scopes: ["app"],
 		editable: true,
 	},
 	{
