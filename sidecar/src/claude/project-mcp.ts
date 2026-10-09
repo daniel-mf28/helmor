@@ -8,7 +8,9 @@
  * source repo `root_path` separately and we pull `projects[<root>]
  * .mcpServers` here, then inject via `options.mcpServers`.
  *
- * `CLAUDE_CONFIG_DIR` env override is honored to mirror SDK behavior.
+ * The session's account config dir (per-request `claudeConfigDir`) wins; the
+ * process-level `CLAUDE_CONFIG_DIR` env override is the fallback, mirroring
+ * SDK behavior.
  */
 
 import { readFileSync } from "node:fs";
@@ -24,8 +26,8 @@ function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function resolveClaudeConfigPath(): string {
-	const dir = process.env.CLAUDE_CONFIG_DIR ?? homedir();
+function resolveClaudeConfigPath(configDir: string | undefined): string {
+	const dir = configDir ?? process.env.CLAUDE_CONFIG_DIR ?? homedir();
 	return join(dir, ".claude.json");
 }
 
@@ -34,12 +36,16 @@ function resolveClaudeConfigPath(): string {
  * Returns `undefined` when the file is missing/unreadable, when the
  * project key isn't registered, or when no MCPs are configured for it.
  * Malformed JSON logs a warning then returns `undefined` — best-effort.
+ *
+ * `configDir` is the already-expanded absolute account dir for the session
+ * (`undefined` = default account).
  */
 export function loadProjectMcpServers(
 	sourceRepoPath: string | undefined,
+	configDir?: string,
 ): ProjectMcpServers | undefined {
 	if (!sourceRepoPath) return undefined;
-	const configPath = resolveClaudeConfigPath();
+	const configPath = resolveClaudeConfigPath(configDir);
 
 	let raw: string;
 	try {

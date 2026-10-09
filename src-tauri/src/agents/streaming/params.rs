@@ -36,6 +36,10 @@ pub struct BuildSendMessageParamsInput<'a> {
     pub images: &'a [String],
     /// Custom Codex provider to inject; `Some` only for `codex:<id>`.
     pub codex_provider: Option<&'a crate::agents::CodexProviderConfig>,
+    /// The session's Claude account (`CLAUDE_CONFIG_DIR`); `None` = default
+    /// account. Forwarded as `claudeConfigDir` only for Claude *subscription*
+    /// turns — custom base-URL / Vertex models and other providers ignore it.
+    pub claude_config_dir: Option<&'a str>,
 }
 
 /// Build the `sendMessage` request params that the sidecar receives.
@@ -97,6 +101,11 @@ pub fn build_send_message_params(input: BuildSendMessageParamsInput<'_>) -> Valu
             insert_vertex_params(obj, vertex);
         }
     }
+    if let Some(config_dir) = claude_account_dir_for_turn(&input) {
+        if let Some(obj) = params.as_object_mut() {
+            obj.insert("claudeConfigDir".to_string(), Value::from(config_dir));
+        }
+    }
     if let Some(proxy) = input.agent_proxy {
         if let Some(obj) = params.as_object_mut() {
             obj.insert("agentProxy".to_string(), proxy.clone());
@@ -117,6 +126,22 @@ pub fn build_send_message_params(input: BuildSendMessageParamsInput<'_>) -> Valu
         }
     }
     params
+}
+
+/// The Claude account applies only to a plain Claude subscription turn:
+/// provider `claude`, no custom base URL / auth token, no Vertex gateway.
+fn claude_account_dir_for_turn<'a>(input: &BuildSendMessageParamsInput<'a>) -> Option<&'a str> {
+    let is_subscription_turn = input.provider == "claude"
+        && input.claude_base_url.is_none()
+        && input.claude_auth_token.is_none()
+        && input.claude_vertex.is_none();
+    if !is_subscription_turn {
+        return None;
+    }
+    input
+        .claude_config_dir
+        .map(str::trim)
+        .filter(|dir| !dir.is_empty())
 }
 
 /// Vertex-type providers: the gateway holds the GCP credentials

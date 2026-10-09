@@ -33,6 +33,9 @@ pub struct WorkspaceSessionSummary {
     pub action_kind: Option<ActionKind>,
     /// "gui" (SDK chat session) or "terminal" (live PTY in the message area).
     pub session_kind: String,
+    /// Absolute `CLAUDE_CONFIG_DIR` the session runs under; `None` = the
+    /// default Claude account. Fixed once the session has messages.
+    pub claude_config_dir: Option<String>,
     pub active: bool,
 }
 
@@ -70,7 +73,8 @@ pub fn list_workspace_sessions_with_connection(
               s.last_user_message_at,
               s.is_hidden,
               s.action_kind,
-              s.session_kind
+              s.session_kind,
+              s.claude_config_dir
             FROM sessions s
             WHERE s.workspace_id = ?1
               AND (
@@ -120,6 +124,7 @@ pub fn list_workspace_sessions_with_connection(
             is_hidden: row.get::<_, i64>(14)? != 0,
             action_kind: row.get(15)?,
             session_kind: row.get(16)?,
+            claude_config_dir: row.get(17)?,
         })
     })?;
 
@@ -166,6 +171,47 @@ pub fn list_claude_provider_session_ids(workspace_id: &str) -> Result<Vec<String
     )?;
     let rows = statement.query_map([workspace_id], |row| row.get::<_, String>(0))?;
     Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
+/// Like [`list_claude_provider_session_ids`], grouped by each session's
+/// `claude_config_dir` (`None` = default account; blank is treated as
+/// default). Each Claude account keeps its transcripts under its own
+/// `<config dir>/projects`, so cwd migrators must handle groups separately.
+pub fn list_claude_provider_session_ids_by_account(
+    workspace_id: &str,
+) -> Result<Vec<(Option<String>, Vec<String>)>> {
+    let connection = db::read_conn()?;
+    list_claude_provider_session_ids_by_account_with_connection(&connection, workspace_id)
+}
+
+fn list_claude_provider_session_ids_by_account_with_connection(
+    connection: &Connection,
+    workspace_id: &str,
+) -> Result<Vec<(Option<String>, Vec<String>)>> {
+    let mut statement = connection.prepare(
+        r#"
+            SELECT provider_session_id, claude_config_dir
+            FROM sessions
+            WHERE workspace_id = ?1
+              AND agent_type = 'claude'
+              AND provider_session_id IS NOT NULL
+            ORDER BY rowid
+            "#,
+    )?;
+    let rows = statement.query_map([workspace_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+    })?;
+    let mut groups: std::collections::BTreeMap<Option<String>, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for row in rows {
+        let (provider_session_id, config_dir) = row?;
+        let config_dir = config_dir.filter(|dir| !dir.trim().is_empty());
+        groups
+            .entry(config_dir)
+            .or_default()
+            .push(provider_session_id);
+    }
+    Ok(groups.into_iter().collect())
 }
 
 fn adjacent_visible_session_id(
@@ -599,6 +645,8 @@ pub fn create_session(
     };
     let model = overrides.model.filter(|s| !s.is_empty());
     let fast_mode = overrides.fast_mode.unwrap_or(false);
+    // New sessions start on the account the user last picked (None = default).
+    let claude_config_dir = crate::claude_accounts::session::last_used_config_dir();
 
     let transaction = connection
         .transaction()
@@ -632,8 +680,8 @@ pub fn create_session(
     transaction
         .execute(
             r#"
-            INSERT INTO sessions (id, workspace_id, status, title, permission_mode, action_kind, model, effort_level, fast_mode, session_kind, agent_type)
-            VALUES (?1, ?2, 'idle', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            INSERT INTO sessions (id, workspace_id, status, title, permission_mode, action_kind, model, effort_level, fast_mode, session_kind, agent_type, claude_config_dir)
+            VALUES (?1, ?2, 'idle', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             "#,
             (
                 &session_id,
@@ -646,6 +694,7 @@ pub fn create_session(
                 fast_mode as i64,
                 session_kind,
                 overrides.agent_type,
+                claude_config_dir,
             ),
         )
         .context("Failed to create session")?;
@@ -962,7 +1011,8 @@ pub fn list_hidden_sessions(workspace_id: &str) -> Result<Vec<WorkspaceSessionSu
               s.id, s.workspace_id, s.title, s.agent_type, s.status, s.model,
               s.permission_mode, s.provider_session_id, s.effort_level,
               s.unread_count, s.fast_mode, s.created_at, s.updated_at,
-              s.last_user_message_at, s.is_hidden, s.action_kind, s.session_kind
+              s.last_user_message_at, s.is_hidden, s.action_kind, s.session_kind,
+              s.claude_config_dir
             FROM sessions s
             WHERE s.workspace_id = ?1 AND s.is_hidden = 1
             ORDER BY datetime(s.created_at) ASC
@@ -992,6 +1042,7 @@ pub fn list_hidden_sessions(workspace_id: &str) -> Result<Vec<WorkspaceSessionSu
                 is_hidden: row.get::<_, i64>(14)? != 0,
                 action_kind: row.get(15)?,
                 session_kind: row.get(16)?,
+                claude_config_dir: row.get(17)?,
             })
         })
         .context("Failed to query hidden sessions")?;
@@ -1048,6 +1099,57 @@ mod tests {
             })
             .unwrap();
         assert_eq!(title, "Test Session");
+    }
+
+    #[test]
+    fn claude_provider_session_ids_are_grouped_by_account() {
+        let (conn, _dir) = test_db();
+        seed(&conn); // workspace w1 + session s1 (no provider id: excluded)
+        let insert = |id: &str, agent: &str, provider: Option<&str>, dir: Option<&str>| {
+            conn.execute(
+                "INSERT INTO sessions (id, workspace_id, status, title, agent_type, provider_session_id, claude_config_dir)
+                 VALUES (?1, 'w1', 'idle', 't', ?2, ?3, ?4)",
+                rusqlite::params![id, agent, provider, dir],
+            )
+            .unwrap();
+        };
+        insert("a", "claude", Some("p-default-1"), None);
+        insert(
+            "b",
+            "claude",
+            Some("p-personal"),
+            Some("/Users/me/.claude-personal"),
+        );
+        insert("c", "claude", Some("p-default-2"), Some("  "));
+        insert(
+            "d",
+            "claude",
+            Some("p-personal-2"),
+            Some("/Users/me/.claude-personal"),
+        );
+        insert("e", "codex", Some("p-codex"), None);
+        insert("f", "claude", None, Some("/Users/me/.claude-work"));
+
+        let groups =
+            list_claude_provider_session_ids_by_account_with_connection(&conn, "w1").unwrap();
+        assert_eq!(
+            groups,
+            vec![
+                (
+                    None,
+                    vec!["p-default-1".to_string(), "p-default-2".to_string()]
+                ),
+                (
+                    Some("/Users/me/.claude-personal".to_string()),
+                    vec!["p-personal".to_string(), "p-personal-2".to_string()]
+                ),
+            ]
+        );
+        assert!(
+            list_claude_provider_session_ids_by_account_with_connection(&conn, "nope")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

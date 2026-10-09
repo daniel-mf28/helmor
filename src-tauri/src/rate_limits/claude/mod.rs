@@ -1,5 +1,6 @@
-//! Claude OAuth rate-limit fetcher (macOS only — non-macOS targets
-//! short-circuit and never produce usage data).
+//! Claude OAuth rate-limit fetcher, per account (config dir; `None` = the
+//! default account). Credentials, cache and refresh are all scoped to the
+//! account's keychain service so two subscriptions never mix.
 //!
 //! ```text
 //! fetch_claude_rate_limits   <- public entrypoint
@@ -46,8 +47,8 @@ const CLAUDE_OAUTH_BETA: &str = "oauth-2025-04-20";
 /// parsed on the frontend — no shape-mapping happens in Rust on purpose,
 /// so changes to Anthropic's (undocumented) field set don't require a DB
 /// migration.
-pub fn fetch_claude_rate_limits() -> Result<String> {
-    let credentials = obtain_credentials()?;
+pub fn fetch_claude_rate_limits(config_dir: Option<&str>) -> Result<String> {
+    let credentials = obtain_credentials(config_dir)?;
 
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
@@ -68,7 +69,7 @@ pub fn fetch_claude_rate_limits() -> Result<String> {
         // Cached token was rejected. Drop the cache so the next call
         // re-reads the keychain (or refreshes) instead of looping on
         // the dead token.
-        CREDENTIALS_CACHE.invalidate();
+        CREDENTIALS_CACHE.invalidate(&crate::claude_accounts::keychain_service_name(config_dir));
     }
     if !status.is_success() {
         let body = response.text().unwrap_or_default();
@@ -91,23 +92,24 @@ pub fn fetch_claude_rate_limits() -> Result<String> {
 /// path fails for any reason, we surface the error rather than fall
 /// back; "no usage data this tick" is fine, "Claude CLI is now broken"
 /// is not.
-fn obtain_credentials() -> Result<ClaudeOAuthCredentials> {
+fn obtain_credentials(config_dir: Option<&str>) -> Result<ClaudeOAuthCredentials> {
     let now = now_ms();
-    if let Some(cached) = CREDENTIALS_CACHE.get(now) {
+    let cache_key = crate::claude_accounts::keychain_service_name(config_dir);
+    if let Some(cached) = CREDENTIALS_CACHE.get(&cache_key, now) {
         tracing::debug!("Claude OAuth cache hit");
         return Ok(cached);
     }
 
-    let credentials = load_best_credentials()?;
+    let credentials = load_best_credentials(config_dir)?;
     let credentials = if credentials.is_expired(now) {
-        refresh_and_reload_keychain()?
+        refresh_and_reload_keychain(config_dir)?
     } else {
         credentials
     };
     if !credentials.has_required_scope() {
         return Err(anyhow!("Claude OAuth token missing user:profile scope"));
     }
-    CREDENTIALS_CACHE.store(&credentials);
+    CREDENTIALS_CACHE.store(&cache_key, &credentials);
     Ok(credentials)
 }
 
@@ -115,14 +117,14 @@ fn obtain_credentials() -> Result<ClaudeOAuthCredentials> {
 /// writes the new tokens back to its own item), then re-read the
 /// keychain to pick them up. Errors out cleanly if anything goes
 /// wrong — we deliberately do not fall back to direct refresh.
-fn refresh_and_reload_keychain() -> Result<ClaudeOAuthCredentials> {
-    run_claude_auth_status()
+fn refresh_and_reload_keychain(config_dir: Option<&str>) -> Result<ClaudeOAuthCredentials> {
+    run_claude_auth_status(config_dir)
         .context("Claude OAuth token expired and `claude auth status` could not refresh it")?;
     // Claude CLI just wrote new credentials to the keychain. Re-read
     // silently — `/usr/bin/security` is fast (~ms) and the user's
     // "Always Allow" grant covers it.
-    let refreshed =
-        load_best_credentials().context("Failed to re-read keychain after delegated refresh")?;
+    let refreshed = load_best_credentials(config_dir)
+        .context("Failed to re-read keychain after delegated refresh")?;
     if refreshed.is_expired(now_ms()) {
         return Err(anyhow!(
             "`claude auth status` ran but keychain still holds an expired token"

@@ -114,6 +114,7 @@ fn base_input<'a>(session_id: Option<&'a str>) -> BuildSendMessageParamsInput<'a
         claude_thinking_display: None,
         images: &[],
         codex_provider: None,
+        claude_config_dir: None,
     }
 }
 
@@ -269,4 +270,45 @@ fn includes_source_repo_path_when_repo_has_root_path() {
 
     let params = build(base_input(Some("s-5")));
     assert_yaml_snapshot!("params_with_source_repo_path", &params);
+}
+
+#[test]
+fn includes_claude_config_dir_for_subscription_turn() {
+    let env = TestEnv::new();
+    seed_workspace_session(&env.connection(), "w-6", "s-6", None);
+
+    let mut input = base_input(Some("s-6"));
+    input.claude_config_dir = Some("/Users/me/.claude-personal");
+
+    let params = build(input);
+    assert_yaml_snapshot!("params_with_claude_config_dir", &params);
+}
+
+#[test]
+fn omits_claude_config_dir_for_default_account_and_non_subscription_turns() {
+    let env = TestEnv::new();
+    seed_workspace_session(&env.connection(), "w-7", "s-7", None);
+
+    // Default account (no config dir) -> no field.
+    assert!(build(base_input(Some("s-7")))
+        .get("claudeConfigDir")
+        .is_none());
+
+    // Custom base-URL provider ignores the account.
+    let mut input = base_input(Some("s-7"));
+    input.claude_config_dir = Some("/Users/me/.claude-personal");
+    input.claude_base_url = Some("https://api.example.com/anthropic");
+    input.claude_auth_token = Some("sk-test");
+    assert!(build(input).get("claudeConfigDir").is_none());
+
+    // Other providers ignore it too.
+    let mut input = base_input(Some("s-7"));
+    input.claude_config_dir = Some("/Users/me/.claude-personal");
+    input.provider = "codex";
+    assert!(build(input).get("claudeConfigDir").is_none());
+
+    // Blank string behaves like the default account.
+    let mut input = base_input(Some("s-7"));
+    input.claude_config_dir = Some("  ");
+    assert!(build(input).get("claudeConfigDir").is_none());
 }

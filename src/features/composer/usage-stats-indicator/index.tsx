@@ -26,6 +26,10 @@ import { LimitRow } from "../context-usage-ring/popover-parts";
 type Props = {
 	// Custom Codex providers fall through the `=== "codex"` checks: no rate limits.
 	agentType: AgentProvider | null;
+	/** Claude account whose usage to show (`null` = the default account). */
+	claudeConfigDir?: string | null;
+	/** Shown beside the Claude icon when the user has several accounts. */
+	claudeAccountLabel?: string | null;
 	disabled?: boolean;
 	className?: string;
 };
@@ -33,7 +37,13 @@ type Props = {
 const HOVER_OPEN_DELAY_MS = 180;
 const HOVER_CLOSE_DELAY_MS = 80;
 
-export function UsageStatsIndicator({ agentType, disabled, className }: Props) {
+export function UsageStatsIndicator({
+	agentType,
+	claudeConfigDir = null,
+	claudeAccountLabel = null,
+	disabled,
+	className,
+}: Props) {
 	const { t } = useI18n();
 	const { settings } = useSettings();
 	const [open, setOpen] = useState(false);
@@ -46,7 +56,10 @@ export function UsageStatsIndicator({ agentType, disabled, className }: Props) {
 		codexRateLimitsQueryOptions(show && !disabled && agentType === "codex"),
 	);
 	const { data: claudeRaw = null } = useQuery(
-		claudeRateLimitsQueryOptions(show && !disabled && agentType === "claude"),
+		claudeRateLimitsQueryOptions(
+			show && !disabled && agentType === "claude",
+			claudeConfigDir,
+		),
 	);
 
 	// Refresh on hover open. The Rust 30 s throttle keeps this from
@@ -59,7 +72,7 @@ export function UsageStatsIndicator({ agentType, disabled, className }: Props) {
 			if (!next || disabled) return;
 			const key =
 				agentType === "claude"
-					? helmorQueryKeys.claudeRateLimits
+					? helmorQueryKeys.claudeRateLimitsFor(claudeConfigDir)
 					: agentType === "codex"
 						? helmorQueryKeys.codexRateLimits
 						: null;
@@ -67,7 +80,7 @@ export function UsageStatsIndicator({ agentType, disabled, className }: Props) {
 				void queryClient.refetchQueries({ queryKey: key });
 			}
 		},
-		[agentType, disabled, queryClient],
+		[agentType, claudeConfigDir, disabled, queryClient],
 	);
 
 	const stats = useMemo(() => {
@@ -116,9 +129,14 @@ export function UsageStatsIndicator({ agentType, disabled, className }: Props) {
 							<I18nText source="usageStats" />
 						</div>
 						<span
-							className="text-muted-foreground"
+							className="flex items-center gap-1.5 text-muted-foreground"
 							aria-label={agentType === "claude" ? "Claude" : "Codex"}
 						>
+							{agentType === "claude" && claudeAccountLabel ? (
+								<span className="max-w-[120px] truncate text-small">
+									{claudeAccountLabel}
+								</span>
+							) : null}
 							{agentType === "claude" ? (
 								<ClaudeIcon className="size-[13px]" />
 							) : (

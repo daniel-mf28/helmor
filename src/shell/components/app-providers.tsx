@@ -3,6 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { type ComponentType, useCallback, useMemo } from "react";
 import { QuitConfirmDialog } from "@/components/quit-confirm-dialog";
 import { SplashScreen } from "@/components/splash-screen";
+import { ClaudeAccountsSeeder } from "@/features/claude-accounts/seeder";
 import { AppOnboarding } from "@/features/onboarding";
 import type { SettingsSection } from "@/features/settings";
 import { SettingsDialog } from "@/features/settings";
@@ -65,6 +66,7 @@ export function AppProviders({
 	);
 	return (
 		<SettingsContext.Provider value={settingsContextValue}>
+			<ClaudeAccountsSeeder />
 			<PersistQueryClientProvider
 				client={queryClient}
 				persistOptions={{

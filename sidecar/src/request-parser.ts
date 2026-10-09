@@ -112,6 +112,7 @@ export function parseSendMessageParams(
 			params.claudeThinkingDisplay,
 		),
 		claudeEnvironment: parseOptionalStringRecord(params, "claudeEnvironment"),
+		claudeConfigDir: optionalString(params, "claudeConfigDir"),
 		claudeSettings: parseOptionalStringRecord(params, "claudeSettings"),
 		codexProvider: parseCodexProvider(params, "codexProvider"),
 		agentProxy: parseAgentProxySettings(params, "agentProxy"),
@@ -219,6 +220,7 @@ export function parseListSlashCommandsParams(
 			params,
 			"additionalDirectories",
 		),
+		claudeConfigDir: optionalString(params, "claudeConfigDir"),
 	};
 }
 
@@ -231,6 +233,7 @@ export function parseGetContextUsageParams(
 		model: requireString(params, "model"),
 		cwd: optionalString(params, "cwd"),
 		agentProxy: parseAgentProxySettings(params, "agentProxy"),
+		claudeConfigDir: optionalString(params, "claudeConfigDir"),
 	};
 }
 
