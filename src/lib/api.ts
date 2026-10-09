@@ -3309,6 +3309,7 @@ export async function generateSessionTitle(
 	sessionId: string,
 	userMessage: string,
 	titleSeed?: string | null,
+	modelId?: string | null,
 ): Promise<GenerateSessionTitleResponse | null> {
 	try {
 		return await invoke<GenerateSessionTitleResponse>(
@@ -3318,6 +3319,8 @@ export async function generateSessionTitle(
 					sessionId,
 					userMessage,
 					titleSeed: titleSeed ?? null,
+					// Lets the backend keep local sessions off the cloud title chain.
+					modelId: modelId ?? null,
 				},
 			},
 		);

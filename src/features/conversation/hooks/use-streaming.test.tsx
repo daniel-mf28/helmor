@@ -973,6 +973,8 @@ describe("useConversationStreaming", () => {
 			"session-1",
 			"Investigate reconnect failures after restarting the session",
 			"Investigate reconnect failures af...",
+			// The sent model rides along so a local session never gets a cloud title.
+			MODEL.id,
 		);
 		expect(
 			queryClient.getQueryData<Array<{ title: string }>>(

@@ -3,6 +3,7 @@ import type {
 	AgentModelSection,
 	WorkspaceSessionSummary,
 } from "@/lib/api";
+import { LOCAL_MODEL_ID } from "@/lib/workspace-helpers";
 
 const HIDDEN_MODELS: Record<string, AgentModelOption> = {
 	"claude-opus-4-8[1m]": {
@@ -96,4 +97,50 @@ export function includePinnedHiddenModel(
 			? { ...section, options: [...section.options, hiddenModel] }
 			: section,
 	);
+}
+
+/** Placeholder for the on-device model when the catalog doesn't list it. */
+const PINNED_LOCAL_MODEL: AgentModelOption = {
+	id: LOCAL_MODEL_ID,
+	provider: "claude",
+	label: "Local model",
+	cliModel: LOCAL_MODEL_ID,
+	providerKey: "local",
+	effortLevels: [],
+	supportsFastMode: false,
+	supportsContextUsage: true,
+};
+
+/**
+ * The backend lists the local model only while Local LLM is on with a model
+ * selected. A session pinned to it, or a composer pick of it, must keep that
+ * option whatever happens (turned off, model removed, catalog loading):
+ * otherwise the picker silently falls back to a cloud default and the next
+ * send leaves the machine. The backend reports "local model unavailable" at
+ * send time instead.
+ */
+export function includeLocalModel(
+	sections: AgentModelSection[],
+	session: Pick<WorkspaceSessionSummary, "model"> | null,
+	selection?: { modelId: string } | null,
+): AgentModelSection[] {
+	const wantsLocal =
+		session?.model === LOCAL_MODEL_ID || selection?.modelId === LOCAL_MODEL_ID;
+	if (!wantsLocal) return sections;
+	if (
+		sections.some((section) =>
+			section.options.some((option) => option.id === LOCAL_MODEL_ID),
+		)
+	) {
+		return sections;
+	}
+	return [
+		...sections,
+		{
+			id: "local",
+			label: "On this Mac",
+			status: "ready",
+			options: [PINNED_LOCAL_MODEL],
+		},
+	];
 }

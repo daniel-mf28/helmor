@@ -36,6 +36,7 @@ pub(crate) use cleanup::cleanup_abnormal_stream_exit;
 use cleanup::finalize_aborted_exchange;
 pub use params::{
     build_send_message_params, lookup_workspace_linked_directories, BuildSendMessageParamsInput,
+    LocalTurn,
 };
 use session_id::should_adopt_provider_session_id;
 pub use stream_hub::SessionStreamHub;
@@ -66,6 +67,7 @@ pub(super) fn stream_via_sidecar(
     prompt: &str,
     request: &AgentSendRequest,
     working_directory: &Path,
+    local: Option<LocalTurn<'_>>,
 ) -> CmdResult<()> {
     let request_id = stream_id.to_string();
 
@@ -91,11 +93,15 @@ pub(super) fn stream_via_sidecar(
             )
             .ok()
         });
-
+    // Local turns keep their Claude history in an isolated config dir, so a
+    // conversation id minted on the other side (cloud <-> local) can't be
+    // resumed; such a switch starts a fresh agent conversation instead.
     let resume_session_id = request.session_id.clone().or_else(|| {
         let (stored_sid, stored_provider, _) = session_row.as_ref()?;
         let sid = stored_sid.clone()?;
-        if stored_provider.clone().unwrap_or_default() == model.provider {
+        if stored_provider.clone().unwrap_or_default() == model.provider
+            && super::local_turn::local_history_has(&sid) == model.local
+        {
             Some(sid)
         } else {
             None
@@ -179,7 +185,14 @@ pub(super) fn stream_via_sidecar(
         images: &images_for_wire,
         codex_provider: model.codex_provider.as_ref(),
         claude_config_dir: claude_config_dir.as_deref(),
+        local,
     });
+    if model.local && local.is_none() {
+        // Defensive: the command layer always resolves the endpoint first.
+        return Err(
+            anyhow::anyhow!("Local model unavailable: no local endpoint for this turn.").into(),
+        );
+    }
 
     // Surface the `/add-dir` decision in logs — we often debug linked-
     // directory issues by asking "did the path actually make it to the

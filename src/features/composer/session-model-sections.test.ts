@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AgentModelSection } from "@/lib/api";
-import { includePinnedHiddenModel } from "./session-model-sections";
+import { resolveSessionSelectedModelId } from "@/lib/workspace-helpers";
+import {
+	includeLocalModel,
+	includePinnedHiddenModel,
+} from "./session-model-sections";
 
 const SECTIONS: AgentModelSection[] = [
 	{
@@ -100,5 +104,61 @@ describe("includePinnedHiddenModel", () => {
 				model: "gpt-5.5",
 			}),
 		).toBe(withLegacy);
+	});
+});
+
+// Regression: a local session or pick must never silently fall back to a cloud
+// model when the catalog stops listing the local model (Local LLM turned off,
+// model file removed, catalog still loading).
+describe("includeLocalModel", () => {
+	const localIds = (sections: AgentModelSection[]) =>
+		sections.flatMap((s) => s.options).filter((o) => o.id === "helmor-local");
+
+	it("keeps the local option for a session pinned to it", () => {
+		const result = includeLocalModel(SECTIONS, { model: "helmor-local" });
+		expect(localIds(result)).toHaveLength(1);
+		expect(localIds(result)[0].provider).toBe("claude");
+	});
+
+	it("keeps the local option for an unsent local pick", () => {
+		const result = includeLocalModel(SECTIONS, null, {
+			modelId: "helmor-local",
+		});
+		expect(localIds(result)).toHaveLength(1);
+	});
+
+	it("keeps it while the catalog is still empty", () => {
+		const result = includeLocalModel([], { model: "helmor-local" });
+		expect(localIds(result)).toHaveLength(1);
+	});
+
+	it("doesn't duplicate a listed local option", () => {
+		const listed = includeLocalModel(SECTIONS, { model: "helmor-local" });
+		expect(
+			localIds(includeLocalModel(listed, { model: "helmor-local" })),
+		).toHaveLength(1);
+	});
+
+	it("leaves cloud sessions untouched", () => {
+		expect(includeLocalModel(SECTIONS, { model: "gpt-5.6-sol" })).toBe(
+			SECTIONS,
+		);
+	});
+
+	it("never resolves a local pick to a cloud default", () => {
+		const sections = includeLocalModel(SECTIONS, null, {
+			modelId: "helmor-local",
+		});
+		const selected = resolveSessionSelectedModelId({
+			session: null,
+			modelSelections: {
+				ctx: { provider: "claude", modelId: "helmor-local" },
+			},
+			modelSections: SECTIONS,
+			settingsDefaultModel: { provider: "codex", modelId: "gpt-5.6-sol" },
+			contextKey: "ctx",
+		});
+		expect(selected?.modelId).toBe("helmor-local");
+		expect(localIds(sections)).toHaveLength(1);
 	});
 });

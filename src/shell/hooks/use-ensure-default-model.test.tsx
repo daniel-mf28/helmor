@@ -245,4 +245,44 @@ describe("useEnsureDefaultModel", () => {
 
 		expect(updateSettings).not.toHaveBeenCalled();
 	});
+	// Regression: turning Local LLM off (or removing its model) drops the
+	// local option from the catalog. A saved local pick must survive instead of
+	// being swapped for a cloud model; the send then fails with "local model
+	// unavailable".
+	describe("saved local picks", () => {
+		const LOCAL = { provider: "claude" as const, modelId: "helmor-local" };
+		const CLOUD_ONLY = [
+			{
+				id: "claude" as const,
+				label: "Claude Code",
+				status: "ready" as const,
+				options: [
+					{
+						id: "opus-1m",
+						provider: "claude" as const,
+						label: "Opus",
+						cliModel: "opus-1m",
+					},
+				],
+			},
+		];
+
+		it("never repairs a local default model to a cloud model", () => {
+			const { updateSettings } = renderUseEnsureDefaultModel({
+				defaultModelId: null,
+				sections: CLOUD_ONLY,
+				settingsOverrides: { defaultModel: LOCAL },
+			});
+			expect(updateSettings).not.toHaveBeenCalled();
+		});
+
+		it("never unsets local review/pr models missing from the catalog", () => {
+			const { updateSettings } = renderUseEnsureDefaultModel({
+				defaultModelId: "opus-1m",
+				sections: CLOUD_ONLY,
+				settingsOverrides: { reviewModel: LOCAL, prModel: LOCAL },
+			});
+			expect(updateSettings).not.toHaveBeenCalled();
+		});
+	});
 });

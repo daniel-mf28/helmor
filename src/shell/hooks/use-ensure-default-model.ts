@@ -4,7 +4,14 @@ import type { AgentModelSection } from "@/lib/api";
 import { agentModelSectionsQueryOptions } from "@/lib/query-client";
 import { type AppSettings, type ModelRef, useSettings } from "@/lib/settings";
 import { isQuickPanelWindow } from "@/lib/window-role";
-import { findModelOption } from "@/lib/workspace-helpers";
+import { findModelOption, isLocalModelId } from "@/lib/workspace-helpers";
+
+/** A saved local pick is never repaired away: Local being off or missing
+ *  from the catalog must not silently swap it for a cloud model. The send
+ *  then fails with "local model unavailable" instead. */
+function isLocalPick(ref: ModelRef | null | undefined) {
+	return isLocalModelId(ref?.modelId);
+}
 
 function isModelCatalogSettled(sections: AgentModelSection[]) {
 	// Don't require any specific provider: users can hide a provider entirely.
@@ -40,12 +47,14 @@ export function useEnsureDefaultModel() {
 		if (settled) {
 			if (
 				settings.reviewModel &&
+				!isLocalPick(settings.reviewModel) &&
 				!findModelOption(sections, settings.reviewModel.modelId)
 			) {
 				patch.reviewModel = null;
 			}
 			if (
 				settings.prModel &&
+				!isLocalPick(settings.prModel) &&
 				!findModelOption(sections, settings.prModel.modelId)
 			) {
 				patch.prModel = null;
@@ -58,7 +67,11 @@ export function useEnsureDefaultModel() {
 
 		// Repair the default when it's never been set, or was set but is now
 		// definitively gone (wait for every provider to settle first).
-		if (!defaultOption && (settled || !settings.defaultModel)) {
+		if (
+			!isLocalPick(settings.defaultModel) &&
+			!defaultOption &&
+			(settled || !settings.defaultModel)
+		) {
 			// GPT-5.6 Sol is the recommended cross-provider default. Opus 5.5
 			// remains the fallback when Codex is unavailable or fully disabled.
 			const claudeOptions =

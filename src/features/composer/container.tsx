@@ -75,7 +75,10 @@ import {
 } from "./input-history";
 import type { PermissionPanelProps } from "./permission-panel";
 import { SessionContextInjector } from "./session-context-injector";
-import { includePinnedHiddenModel } from "./session-model-sections";
+import {
+	includeLocalModel,
+	includePinnedHiddenModel,
+} from "./session-model-sections";
 import type { StartSubmitMode } from "./start-submit-mode";
 import { SubmitQueueList } from "./submit-queue-list";
 import { TaskProgressPanel } from "./task-progress";
@@ -536,13 +539,23 @@ export const WorkspaceComposerContainer = memo(
 			(sessionsQuery.data ?? []).find(
 				(session) => session.id === displayedSessionId,
 			) ?? null;
-		const modelSections = useMemo(
-			() => includePinnedHiddenModel(availableModelSections, currentSession),
-			[availableModelSections, currentSession],
-		);
 		const composerContextKey =
 			contextKeyOverride ??
 			getComposerContextKey(displayedWorkspaceId, displayedSessionId);
+		const composerSelection =
+			modelSelections[composerContextKey] ??
+			(currentSession
+				? modelSelections[getComposerContextKey(null, currentSession.id)]
+				: undefined);
+		const modelSections = useMemo(
+			() =>
+				includeLocalModel(
+					includePinnedHiddenModel(availableModelSections, currentSession),
+					currentSession,
+					composerSelection,
+				),
+			[availableModelSections, currentSession, composerSelection],
+		);
 		const selectedRef = resolveSessionSelectedModelId({
 			session: currentSession,
 			modelSelections,

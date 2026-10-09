@@ -19,6 +19,27 @@ use super::{
     API_MODEL, GPU_LAYERS, LOG_TAG, REASONING_MODE, WARMUP_TIMEOUT,
 };
 
+/// Loopback endpoint of a loaded local model, ready for an agent turn.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentEndpoint {
+    pub url: String,
+    pub token: String,
+    /// The server's `-c` window, so the agent compacts before overflowing.
+    pub context_tokens: u32,
+}
+
+/// The agent's own instructions and tools need ~20K tokens; refuse
+/// windows that can't hold them plus a real conversation.
+fn check_agent_context(context_tokens: u32) -> Result<()> {
+    if context_tokens < super::MIN_AGENT_CONTEXT_TOKENS {
+        anyhow::bail!(
+            "The local model's context window is {context_tokens} tokens; coding needs at least {}. Raise it in Settings > Local LLM.",
+            super::MIN_AGENT_CONTEXT_TOKENS
+        );
+    }
+    Ok(())
+}
+
 #[derive(Default)]
 pub struct Manager {
     /// Serializes `ensure_started` / `stop` so two concurrent starts
@@ -94,6 +115,67 @@ impl Manager {
             token: s.token.clone(),
             api_model: API_MODEL.to_string(),
         })
+    }
+
+    /// Start (or reuse) the server for the selected GGUF, wait (bounded,
+    /// cancellable) until the weights are loaded, and return what a
+    /// coding-agent turn needs. Every error is user-facing: disabled, no
+    /// model, window too small, missing runtime/model, failed load,
+    /// timeout. Stop while loading surfaces as [`super::StartCancelled`].
+    pub fn ensure_agent_endpoint(
+        &self,
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> Result<AgentEndpoint> {
+        use std::sync::atomic::Ordering;
+        let settings = load_settings();
+        let model = normalize_model(&settings.model);
+        if !settings.enabled {
+            anyhow::bail!("Local LLM is turned off. Turn it on in Settings > Local LLM.");
+        }
+        if model.is_empty() {
+            anyhow::bail!("No local model selected. Choose one in Settings > Local LLM.");
+        }
+        let context_tokens = resolve_context_for_path(&model);
+        check_agent_context(context_tokens)?;
+        self.ensure_started(&model)?;
+        if cancel.load(Ordering::SeqCst) {
+            return Err(super::StartCancelled.into());
+        }
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(2))
+            .no_proxy()
+            .build()?;
+        super::ready::wait_until_ready(
+            || self.probe_ready(&client),
+            cancel,
+            super::ready::READY_TIMEOUT,
+            super::ready::READY_POLL_INTERVAL,
+        )?;
+        let (url, token) = self
+            .current_endpoint_and_token()
+            .ok_or_else(|| anyhow::anyhow!("The local model stopped while starting."))?;
+        Ok(AgentEndpoint {
+            url,
+            token,
+            context_tokens,
+        })
+    }
+
+    /// llama-server answers `/health` with 503 until the weights are loaded.
+    fn probe_ready(&self, client: &reqwest::blocking::Client) -> super::ready::Probe {
+        use super::ready::Probe;
+        let Some((url, token)) = self.current_endpoint_and_token() else {
+            return Probe::Dead("process exited".to_string());
+        };
+        match client
+            .get(format!("{url}/health"))
+            .bearer_auth(&token)
+            .send()
+        {
+            Ok(response) if response.status().is_success() => Probe::Ready,
+            Ok(response) => Probe::Loading(format!("HTTP {}", response.status())),
+            Err(error) => Probe::Loading(error.to_string()),
+        }
     }
 
     /// Active model's runtime `-c` value (token count). `0` when no
@@ -342,18 +424,7 @@ fn spawn_healthcheck(endpoint: String, token: String, last_error: Arc<Mutex<Opti
 /// reasoning off, log-disable) in one place.
 fn spawn_llm_server(model: &str) -> Result<server::ServerInstance> {
     let context_size = resolve_context_for_path(model);
-    let mut args = llama_model_args(model)?;
-    args.extend([
-        "--alias".to_string(),
-        API_MODEL.to_string(),
-        "-c".to_string(),
-        context_size.to_string(),
-        "-ngl".to_string(),
-        GPU_LAYERS.to_string(),
-        "--reasoning".to_string(),
-        REASONING_MODE.to_string(),
-        "--log-disable".to_string(),
-    ]);
+    let args = llm_server_args(llama_model_args(model)?, context_size);
 
     let data_dir = crate::data_dir::data_dir()?.join("local-llm");
     server::spawn(server::SpawnArgs {
@@ -364,6 +435,29 @@ fn spawn_llm_server(model: &str) -> Result<server::ServerInstance> {
         logs_dir: data_dir.join("logs"),
         log_tag: LOG_TAG,
     })
+}
+
+/// Append the fixed LLM-brain flags to the model args.
+fn llm_server_args(mut args: Vec<String>, context_size: u32) -> Vec<String> {
+    args.extend([
+        "--alias".to_string(),
+        API_MODEL.to_string(),
+        "-c".to_string(),
+        context_size.to_string(),
+        "-ngl".to_string(),
+        GPU_LAYERS.to_string(),
+        // Keeps hidden reasoning out of visible replies (titles + agent).
+        "--reasoning".to_string(),
+        REASONING_MODE.to_string(),
+        // One slot keeps the whole window for one request; the server's
+        // automatic slot count would split `-c` between requests.
+        "--parallel".to_string(),
+        "1".to_string(),
+        // Chat-template rendering is required for tool calling.
+        "--jinja".to_string(),
+        "--log-disable".to_string(),
+    ]);
+    args
 }
 
 /// Resolve `--model` (and `--mmproj` when a projector sits beside the weights).
@@ -433,4 +527,29 @@ fn find_sibling_mmproj(parent: &std::path::Path) -> Option<PathBuf> {
         }
     });
     candidates.into_iter().next()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_args_enable_tool_calling_and_single_slot() {
+        let args = llm_server_args(vec!["--model".into(), "/m/a.gguf".into()], 65_536);
+        let pos = |flag: &str| args.iter().position(|a| a == flag).unwrap();
+        assert_eq!(args[0], "--model");
+        assert!(args.iter().any(|a| a == "--jinja"));
+        assert_eq!(args[pos("--alias") + 1], "helmor-local");
+        assert_eq!(args[pos("-c") + 1], "65536");
+        assert_eq!(args[pos("--reasoning") + 1], "off");
+        assert_eq!(args[pos("--parallel") + 1], "1");
+    }
+
+    #[test]
+    fn agent_context_floor() {
+        assert!(check_agent_context(super::super::MIN_AGENT_CONTEXT_TOKENS).is_ok());
+        let error = check_agent_context(16_384).unwrap_err().to_string();
+        assert!(error.contains("16384"), "{error}");
+        assert!(error.contains("Settings > Local LLM"), "{error}");
+    }
 }

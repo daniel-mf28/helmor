@@ -11,7 +11,7 @@
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 
 use helmor_lib::agents::{
-    build_send_message_params, BuildSendMessageParamsInput, CodexProviderConfig,
+    build_send_message_params, BuildSendMessageParamsInput, CodexProviderConfig, LocalTurn,
 };
 use helmor_lib::data_dir;
 use helmor_lib::db;
@@ -114,6 +114,7 @@ fn base_input<'a>(session_id: Option<&'a str>) -> BuildSendMessageParamsInput<'a
         images: &[],
         codex_provider: None,
         claude_config_dir: None,
+        local: None,
     }
 }
 
@@ -294,4 +295,35 @@ fn omits_claude_config_dir_for_default_account_and_non_subscription_turns() {
     let mut input = base_input(Some("s-7"));
     input.claude_config_dir = Some("  ");
     assert!(build(input).get("claudeConfigDir").is_none());
+}
+
+#[test]
+fn local_turn_points_claude_agent_at_the_local_server_only() {
+    let env = TestEnv::new();
+    seed_workspace_session(&env.connection(), "w-l", "s-l", None);
+
+    let endpoint = helmor_lib::local_llm::AgentEndpoint {
+        url: "http://127.0.0.1:18777".to_string(),
+        token: "helmor-local-token".to_string(),
+        context_tokens: 65_536,
+    };
+    let mut input = base_input(Some("s-l"));
+    input.cli_model = "helmor-local";
+    input.effort_level = None;
+    // A stray account dir must not leak into a local turn.
+    input.claude_config_dir = Some("/Users/me/.claude-work");
+    input.local = Some(LocalTurn {
+        endpoint: &endpoint,
+        config_dir: "/data/local-llm/claude-home",
+    });
+
+    let mut params = build(input);
+    // NO_PROXY merges the host env; checked separately so the snapshot is stable.
+    let env_obj = params["claudeEnvironment"].as_object_mut().unwrap();
+    let no_proxy = env_obj.remove("NO_PROXY").unwrap();
+    env_obj.remove("no_proxy");
+    let no_proxy = no_proxy.as_str().unwrap();
+    assert!(no_proxy.contains("127.0.0.1") && no_proxy.contains("localhost"));
+    assert_eq!(params["claudeConfigDir"], "/data/local-llm/claude-home");
+    assert_yaml_snapshot!("params_with_local_model", &params);
 }
