@@ -509,8 +509,7 @@ export const WorkspaceConversationContainer = memo(
 			Boolean(displayedSessionId) &&
 			!isTerminalSession &&
 			!sendingForComposer &&
-			threadQuery.data !== undefined &&
-			threadQuery.data.noUserMessage &&
+			Boolean(threadQuery.data?.noUserMessage) &&
 			currentSessionForContext?.sessionKind !== "terminal";
 		const sessionContextCandidates = useMemo(
 			() =>

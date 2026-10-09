@@ -27,7 +27,10 @@ describe("createUiMutationCoalescer", () => {
 		c.push(files("w1"));
 		c.push(files("w2"));
 		expect(run).toHaveBeenCalledTimes(2);
-		const settings = { type: "settingsChanged", key: "app.x" } as UiMutationEvent;
+		const settings = {
+			type: "settingsChanged",
+			key: "app.x",
+		} as UiMutationEvent;
 		c.push(settings);
 		c.push(settings);
 		expect(run).toHaveBeenCalledTimes(4);

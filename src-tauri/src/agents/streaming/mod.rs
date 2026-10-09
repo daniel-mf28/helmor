@@ -1488,14 +1488,15 @@ pub(super) fn stream_via_sidecar(
             }
         }
 
-        // Every exit from the loop above follows a terminal emit (Done /
-        // Aborted / Error) routed through `apply_action`, which resolves
-        // any parked streaming partial first — nothing may be left over
-        // (and nothing may be sent after the terminal event).
-        debug_assert!(
-            !apply_ctx.partials.borrow().has_pending(),
-            "streaming partial still parked after terminal event"
-        );
+        // Normally every exit from the loop above follows a terminal emit
+        // (Done / Aborted / Error) routed through `apply_action`, which
+        // resolves any parked streaming partial first. A rejected
+        // terminal transition (logged above) can skip that emit; never
+        // send a partial after the loop, and never panic the stream
+        // thread over it — just drop the stale frame.
+        if apply_ctx.partials.borrow_mut().discard_pending() {
+            tracing::warn!(rid = %rid, "dropping streaming partial still parked at stream end");
+        }
 
         tracing::info!(
             rid = %rid,

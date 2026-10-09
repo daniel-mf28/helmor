@@ -145,6 +145,12 @@ impl PartialCoalescer {
         self.pending.is_some()
     }
 
+    /// Drop the parked partial without sending it. Returns whether one was
+    /// parked. Only for stream teardown, after which nothing may be sent.
+    pub fn discard_pending(&mut self) -> bool {
+        self.pending.take().is_some()
+    }
+
     fn is_due(&self, now: Instant) -> bool {
         match self.last_partial_sent {
             Some(last) => now.saturating_duration_since(last) >= self.interval,
@@ -162,5 +168,240 @@ impl PartialCoalescer {
 impl Default for PartialCoalescer {
     fn default() -> Self {
         Self::new(PARTIAL_FLUSH_INTERVAL)
+    }
+}
+
+#[cfg(test)]
+mod ordering_property_tests {
+    //! Randomized check of the ordering contract in the module docs.
+    //!
+    //! Thousands of seeded sequences mixing partials, full `Update`s and
+    //! other events (`PlanCaptured`, `Error`) are routed through the
+    //! coalescer with random inter-arrival gaps, servicing the
+    //! trailing-edge timer exactly like the event loop does. Every run must
+    //! satisfy:
+    //!
+    //! 1. The wire is a subsequence of the input (no reordering, nothing
+    //!    invented).
+    //! 2. Every non-partial event reaches the wire.
+    //! 3. A partial is only dropped when a newer partial or an `Update`
+    //!    supersedes it before any other event.
+    //! 4. The newest partial preceding a non-`Update` event (with no
+    //!    `Update` in between) reaches the wire before that event.
+    //! 5. A trailing partial (nothing after it) is eventually flushed.
+    //! 6. Partials sent on the leading edge / timer are spaced at least one
+    //!    interval apart (only rule-3 flushes may come early).
+    use super::*;
+    use crate::pipeline::types::{MessageRole, ThreadMessageLike};
+
+    const INTERVAL: Duration = Duration::from_millis(24);
+
+    #[derive(Clone, Copy, PartialEq, Debug)]
+    enum Kind {
+        Partial,
+        Update,
+        Other,
+    }
+
+    fn msg(tag: usize) -> ThreadMessageLike {
+        ThreadMessageLike {
+            role: MessageRole::Assistant,
+            id: Some(tag.to_string()),
+            created_at: None,
+            content: Vec::new(),
+            status: None,
+            streaming: Some(true),
+        }
+    }
+
+    fn make(kind: Kind, tag: usize) -> AgentStreamEvent {
+        match kind {
+            Kind::Partial => AgentStreamEvent::StreamingPartial { message: msg(tag) },
+            Kind::Update => AgentStreamEvent::Update {
+                messages: vec![msg(tag)],
+            },
+            Kind::Other => AgentStreamEvent::Error {
+                message: tag.to_string(),
+                persisted: false,
+                internal: false,
+            },
+        }
+    }
+
+    fn tag_of(event: &AgentStreamEvent) -> usize {
+        let raw = match event {
+            AgentStreamEvent::StreamingPartial { message } => message.id.clone(),
+            AgentStreamEvent::Update { messages } => messages[0].id.clone(),
+            AgentStreamEvent::Error { message, .. } => Some(message.clone()),
+            other => panic!("unexpected event {other:?}"),
+        };
+        raw.unwrap().parse().unwrap()
+    }
+
+    /// Tiny deterministic LCG — no extra dev-dependency needed.
+    struct Lcg(u64);
+    impl Lcg {
+        fn next(&mut self, bound: u64) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (self.0 >> 33) % bound
+        }
+    }
+
+    /// `(tag, sent_at, via_flush_ahead_of_other)` for every wire event.
+    type Wire = Vec<(usize, Instant, bool)>;
+
+    fn run(seed: u64, len: usize) -> (Vec<Kind>, Wire) {
+        let mut rng = Lcg(seed);
+        let start = Instant::now();
+        let mut now = start;
+        let mut c = PartialCoalescer::new(INTERVAL);
+        let mut kinds = Vec::with_capacity(len);
+        let mut wire: Wire = Vec::new();
+
+        // Advance the clock, firing the trailing-edge timer like the loop.
+        let advance =
+            |c: &mut PartialCoalescer, now: &mut Instant, to: Instant, wire: &mut Wire| {
+                while let Some(deadline) = c.deadline() {
+                    if deadline > to {
+                        break;
+                    }
+                    *now = (*now).max(deadline);
+                    if let Some(ev) = c.flush_due(*now) {
+                        wire.push((tag_of(&ev), *now, false));
+                    }
+                }
+                *now = to;
+            };
+
+        for tag in 0..len {
+            // Mostly partials (token stream), some updates, rare others.
+            let kind = match rng.next(10) {
+                0..=6 => Kind::Partial,
+                7 | 8 => Kind::Update,
+                _ => Kind::Other,
+            };
+            kinds.push(kind);
+            // Gaps cluster below the interval (bursts) with occasional pauses.
+            let gap = match rng.next(4) {
+                0 => rng.next(80),
+                _ => rng.next(12),
+            };
+            let to = now + Duration::from_millis(gap);
+            advance(&mut c, &mut now, to, &mut wire);
+            let out = c.route(make(kind, tag), now);
+            let n = out.len();
+            for (i, ev) in out.into_iter().enumerate() {
+                // A partial returned ahead of another event is a rule-3 flush.
+                let flushed_ahead = n == 2 && i == 0;
+                wire.push((tag_of(&ev), now, flushed_ahead));
+            }
+        }
+        // Let any trailing partial flush.
+        let to = now + INTERVAL * 4;
+        advance(&mut c, &mut now, to, &mut wire);
+        assert!(!c.has_pending(), "seed {seed}: partial left parked");
+        (kinds, wire)
+    }
+
+    fn check(seed: u64, kinds: &[Kind], wire: &Wire) {
+        let tags: Vec<usize> = wire.iter().map(|w| w.0).collect();
+        // 1. Strictly increasing tags == subsequence of input, no dupes.
+        assert!(
+            tags.windows(2).all(|w| w[0] < w[1]),
+            "seed {seed}: reordered or duplicated wire {tags:?}"
+        );
+        let sent: std::collections::HashSet<usize> = tags.iter().copied().collect();
+        for (i, kind) in kinds.iter().enumerate() {
+            match kind {
+                // 2. Non-partials always go out.
+                Kind::Update | Kind::Other => {
+                    assert!(sent.contains(&i), "seed {seed}: lost {kind:?} #{i}")
+                }
+                Kind::Partial if !sent.contains(&i) => {
+                    // 3. Dropped ⇒ superseded by a later partial/Update
+                    //    before any Other.
+                    let superseded = kinds[i + 1..]
+                        .iter()
+                        .take_while(|k| **k != Kind::Other)
+                        .any(|k| matches!(k, Kind::Partial | Kind::Update));
+                    assert!(
+                        superseded,
+                        "seed {seed}: partial #{i} dropped without supersession"
+                    );
+                }
+                Kind::Partial => {}
+            }
+        }
+        // 4. Newest partial before each Other (no Update between) is sent,
+        //    and earlier on the wire than the Other.
+        for (i, kind) in kinds.iter().enumerate() {
+            if *kind != Kind::Other {
+                continue;
+            }
+            let prev = kinds[..i]
+                .iter()
+                .rposition(|k| matches!(k, Kind::Partial | Kind::Update | Kind::Other));
+            if let Some(p) = prev {
+                if kinds[p] == Kind::Partial {
+                    let pos_p = tags.iter().position(|t| *t == p);
+                    let pos_o = tags.iter().position(|t| *t == i);
+                    assert!(
+                        matches!((pos_p, pos_o), (Some(a), Some(b)) if a < b),
+                        "seed {seed}: partial #{p} not flushed ahead of other #{i}"
+                    );
+                }
+            }
+        }
+        // 5. Trailing partial is delivered.
+        if kinds.last() == Some(&Kind::Partial) {
+            assert!(
+                sent.contains(&(kinds.len() - 1)),
+                "seed {seed}: trailing partial lost"
+            );
+        }
+        // 6. Rate limit: leading-edge / timer partials are >= INTERVAL apart.
+        let mut last_any: Option<Instant> = None;
+        for w in wire.iter().filter(|(t, _, _)| kinds[*t] == Kind::Partial) {
+            if !w.2 {
+                if let Some(prev) = last_any {
+                    assert!(
+                        w.1.duration_since(prev) >= INTERVAL,
+                        "seed {seed}: partials sent closer than the interval"
+                    );
+                }
+            }
+            last_any = Some(w.1);
+        }
+    }
+
+    #[test]
+    fn random_sequences_preserve_ordering_contract() {
+        for seed in 0..5_000u64 {
+            let len = 1 + (seed as usize % 60);
+            let (kinds, wire) = run(seed, len);
+            check(seed, &kinds, &wire);
+        }
+    }
+
+    #[test]
+    fn partial_is_never_sent_after_a_later_event() {
+        // Directed: park a partial, then each non-partial kind in turn.
+        for other in [Kind::Update, Kind::Other] {
+            let t0 = Instant::now();
+            let mut c = PartialCoalescer::new(INTERVAL);
+            assert_eq!(c.route(make(Kind::Partial, 0), t0).len(), 1);
+            assert!(c.route(make(Kind::Partial, 1), t0).is_empty());
+            let out: Vec<usize> = c.route(make(other, 2), t0).iter().map(tag_of).collect();
+            match other {
+                Kind::Update => assert_eq!(out, [2]),
+                _ => assert_eq!(out, [1, 2]),
+            }
+            // Nothing may surface afterwards, however long we wait.
+            assert!(c.flush_due(t0 + INTERVAL * 10).is_none());
+            assert!(c.deadline().is_none());
+        }
     }
 }

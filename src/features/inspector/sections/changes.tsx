@@ -48,18 +48,18 @@ import {
 } from "@/lib/api";
 import { getMergeBlockedReason } from "@/lib/commit-button-logic";
 import {
-	areFileIconsLoaded,
-	getFileIconSrc,
-	getFolderIconSrc,
-	useFileIconsReady,
-} from "@/lib/file-icons";
-import {
 	type ActiveEditorTarget,
 	type DiffOpenOptions,
 	INDEX_REF,
 	type InspectorFileItem,
 	isActiveEditorTarget,
 } from "@/lib/editor-session";
+import {
+	areFileIconsLoaded,
+	getFileIconSrc,
+	getFolderIconSrc,
+	useFileIconsReady,
+} from "@/lib/file-icons";
 import { formatSource, I18nText, translateSource, useI18n } from "@/lib/i18n";
 import { openUrl } from "@/lib/platform-bridge";
 import {

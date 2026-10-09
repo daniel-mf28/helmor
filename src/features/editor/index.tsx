@@ -34,8 +34,8 @@ import {
 	type InspectorFileItem,
 	isMarkdownPath,
 } from "@/lib/editor-session";
-import { useI18n } from "@/lib/i18n";
 import { getFileIconSrc, useFileIconsReady } from "@/lib/file-icons";
+import { useI18n } from "@/lib/i18n";
 import {
 	helmorQueryKeys,
 	workspaceChangesQueryOptions,
