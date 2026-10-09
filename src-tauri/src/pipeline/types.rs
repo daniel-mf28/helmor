@@ -238,14 +238,14 @@ pub enum MessagePart {
     },
 
     /// Normalized agent→user question card. One shape for Claude
-    /// AskUserQuestion, Codex `requestUserInput` and Kimi permission questions
-    /// — provider raw shapes are normalized by `pipeline::user_question`
+    /// AskUserQuestion, Codex `requestUserInput`
+    /// questions — provider raw shapes are normalized by `pipeline::user_question`
     /// so the frontend renders a single component.
     #[serde(rename = "user-question", rename_all = "camelCase")]
     UserQuestion {
         /// `userInputId` round-trip key (Claude: the tool_use id).
         id: String,
-        /// Badge string: `"Claude"`, `"Codex"`, `"Kimi"`.
+        /// Badge string: `"Claude"`, `"Codex"`.
         source: String,
         questions: Vec<UserQuestionItem>,
         /// `{ [question text]: answer string }` — multi-select answers are

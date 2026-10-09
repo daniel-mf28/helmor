@@ -208,7 +208,7 @@ type WorkspaceComposerProps = {
 	providerSessionId?: string | null;
 	/** Agent provider for this session — gates the Claude-only rich fetch
 	 *  and selects which rate-limits API to query. Providers without
-	 *  rate-limit / context-usage endpoints (e.g. kimi) just hide the
+	 *  rate-limit / context-usage endpoints just hide the
 	 *  indicators. */
 	agentType?: AgentProvider | null;
 	focusShortcut?: string | null;

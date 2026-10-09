@@ -155,7 +155,7 @@ const CODEX_SPEC: TerminalAgentSpec = {
 const TERMINAL_AGENTS: readonly TerminalAgentSpec[] = [CLAUDE_SPEC, CODEX_SPEC];
 
 /** Spec for an agent key / composer provider; null = no terminal support
- * (e.g. kimi has no spec — the composer toggle hides itself). */
+ * (an unknown agent has no spec — the composer toggle hides itself). */
 export function findTerminalAgent(
 	key: string | null | undefined,
 ): TerminalAgentSpec | null {

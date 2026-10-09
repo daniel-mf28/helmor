@@ -120,7 +120,7 @@ export type UserInputPayload =
 	| {
 			readonly kind: "ask-user-question";
 			/** PROVIDER-RAW question array (Claude AUQ / Codex requestUserInput
-			 *  / Kimi question shapes). Rust's `pipeline::user_question`
+			 *  question shapes). Rust's `pipeline::user_question`
 			 *  normalizes it into the one canonical shape the frontend renders. */
 			readonly questions: ReadonlyArray<Record<string, unknown>>;
 			readonly metadata?: Record<string, unknown>;

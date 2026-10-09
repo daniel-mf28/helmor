@@ -3,7 +3,7 @@
 //! Question-capable providers ride the same `userInputRequest` wire event
 //! but with their native question arrays:
 //!
-//! - Claude AskUserQuestion (and Kimi, which reuses the Claude field names):
+//! - Claude AskUserQuestion:
 //!   `{question, header, multiSelect, options:[{label, description, preview?}]}`
 //! - Codex `requestUserInput`: `{id?, header?, question?, isOther?, options:[{label?, description?}]}`
 //!

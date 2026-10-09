@@ -111,7 +111,7 @@ then squash-merge it. Delete merged branches.
 OpenCode and Cursor were fully removed from this fork (agents, settings rows,
 onboarding logins, pipeline support, and their bundled binaries: the OpenCode
 CLI, the Cursor Node worker, and the Node runtime that only Cursor used — about
-290 MB off the `.app`). The supported agents are Claude Code, Codex, and Kimi.
+290 MB off the `.app`). The supported agents are Claude Code and Codex (Kimi was removed later).
 Old leftovers are harmless and can be cleaned by hand: the
 `app.opencode_provider` settings row and the `~/helmor/opencode/` folder. When
 bumping vendors, ignore any OpenCode / Cursor / Node steps you find in old notes.

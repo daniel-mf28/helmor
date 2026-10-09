@@ -191,65 +191,6 @@ export const CLAUDE_CODE_SHA256: Readonly<
 	},
 };
 
-// Kimi Code CLI ships per-platform native binaries (Node SEA) as zip release
-// assets on GitHub — NOT npm sub-packages — so it's staged like gh/glab from a
-// release URL rather than from node_modules. Bumping: pull each platform's
-// SHA256 from the release's `*.zip.sha256` sidecar (or the GitHub asset
-// `digest`) and wipe sidecar/.bundle-cache. Keyed `version → platformSlug`.
-export const KIMI_VERSION = "0.29.1";
-export const KIMI_SHA256: Readonly<Record<string, Record<string, string>>> = {
-	"0.19.1": {
-		"darwin-arm64":
-			"8661832e04cd7dbfb81ed8dff02bb39c35cf38378cc8aedb0a912903b99bfae0",
-		"darwin-x64":
-			"eb967963d080b4744873517e9348f59ecc2db44eabc98c7a5fc3b3ed46a1e669",
-		"win32-arm64":
-			"28cf285e41c8131458accdcf85928dc7ae4e0b1bcfb3d721d038de878ab8fc48",
-		"win32-x64":
-			"ab494beb5f168bcdc0f66552ad4d6fef68566a655452262ac7800fef550319fe",
-	},
-	"0.19.2": {
-		"darwin-arm64":
-			"449d32d4010c57cfaa5987961840b36bc21c84314489bc602e38766dcc3d22cc",
-		"darwin-x64":
-			"f9f872544dd7a7de8b2a6a89068e3cf13da47fecfd668782a5cda3a78033a85d",
-		"win32-arm64":
-			"58c947886ad4aacf7604bf5f35abf161d77dcbd050900170c4fd49da9234865c",
-		"win32-x64":
-			"6967aca6daa7a61ea1601e1bc0a64cc22512a6f449b4cabd5a08fa1f1ffb4dda",
-	},
-	"0.20.3": {
-		"darwin-arm64":
-			"8d49227050498a23f11ce660c622e4be94d2a07f22950bb277269f951530ed87",
-		"darwin-x64":
-			"8152a43d7a2208b5ee9a1aab7b1344082df6df49ed4ed66156a2fa356b9ea396",
-		"win32-arm64":
-			"270e44215fb89112135dfb8bbbbe54beb1269031ca20311b4cc4d9a5b267b35a",
-		"win32-x64":
-			"fbd2c89b61cfd48474f99aeaee536b3f34c1da3879588dbd1150f80b34064535",
-	},
-	"0.21.0": {
-		"darwin-arm64":
-			"9a20e6680de77cacdeacd768877e0ddf2e04553d305f82fb989719389c243beb",
-		"darwin-x64":
-			"6559c2392f268bc1ad437cbbc20ab02a898f44bb6e8db970b6ff833eca2b64b7",
-		"win32-arm64":
-			"65c410c38e193c4c99da6b64a536440ea5896796995e7963fa7911cdcb2580d2",
-		"win32-x64":
-			"b6e875f1fcd7967713f0b99c040c72b853962d1e7f88377e6125478b79e5999d",
-	},
-	"0.29.1": {
-		"darwin-arm64":
-			"0f2ff623a88eab6edfef131c2663ca312de5af81c7e30a8830bd6d566bbe78cb",
-		"darwin-x64":
-			"f83e86d32c27370e5dedbb0a75fc4340d8da5cb8fbe5e4e06a51de66615284a0",
-		"win32-arm64":
-			"269559f980a0d64a14e58df00187ea5f6711312fb395335eaa01de2b9da11a22",
-		"win32-x64":
-			"f1447930a2d5422ae15bb0c73a7a5fba5fdb679beecf162cc460439785014310",
-	},
-};
-
 export const LLAMA_VERSION = "b9763";
 export const LLAMA_SHA256: Readonly<{ arm64: string; x64: string }> = {
 	arm64: "7706d1a7630218a3665d8c2d680bb54ab7f101896e9c45caaf5676ef4ce2e2d0",
@@ -421,41 +362,6 @@ export function codexArchivePlan(
 		archiveName: `${slug}.tgz`,
 		url: `https://registry.npmjs.org/@openai/codex/-/${slug}.tgz`,
 		sha256: shaTable[target.arch],
-	};
-}
-
-/** Platform slug in Kimi's release asset names: `darwin-arm64`, `win32-x64`, … */
-export function kimiPlatformSlug(target: TargetInfo): string {
-	const os = target.os === "windows" ? "win32" : "darwin";
-	return `${os}-${target.arch}`;
-}
-
-export function kimiArchivePlan(
-	target: TargetInfo,
-	version: string,
-): ArchivePlan {
-	const shaTable = KIMI_SHA256[version];
-	if (!shaTable) {
-		throw new Error(
-			`[stage-vendor] no pinned SHA256 for kimi ${version} — add it to KIMI_SHA256 in vendor-platform.ts`,
-		);
-	}
-	const platform = kimiPlatformSlug(target);
-	const sha256 = shaTable[platform];
-	if (!sha256) {
-		throw new Error(
-			`[stage-vendor] no pinned SHA256 for kimi ${version} ${platform}`,
-		);
-	}
-	// GitHub release tag is the scoped npm tag `@moonshot-ai/kimi-code@<ver>`,
-	// url-encoded in the download path (`@`→`%40`).
-	const tag = `%40moonshot-ai/kimi-code%40${version}`;
-	const slug = `kimi-code-${platform}-${version}`;
-	return {
-		slug,
-		archiveName: `${slug}.zip`,
-		url: `https://github.com/MoonshotAI/kimi-code/releases/download/${tag}/kimi-code-${platform}.zip`,
-		sha256,
 	};
 }
 

@@ -13,7 +13,6 @@ import { useI18n } from "@/lib/i18n";
 export const providerLabels: Record<AgentLoginProvider, string> = {
 	claude: "Claude Code",
 	codex: "Codex",
-	kimi: "Kimi",
 };
 
 export function LoginTerminalPreview({

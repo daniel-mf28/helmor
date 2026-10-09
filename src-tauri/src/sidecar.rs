@@ -80,8 +80,6 @@ struct SidecarProcess {
 pub struct BundledAgentPaths {
     pub claude_bin: Option<PathBuf>,
     pub codex_bin: Option<PathBuf>,
-    /// Kimi Code CLI binary, spawned by the sidecar as `kimi acp`.
-    pub kimi_bin: Option<PathBuf>,
 }
 
 /// Resolve the bundled Claude/Codex CLI binaries shipped inside the
@@ -117,7 +115,6 @@ fn resolve_bundled_agent_paths_for_exe(exe: &std::path::Path) -> Option<BundledA
         "claude"
     };
     let codex_bin_name = if cfg!(windows) { "codex.exe" } else { "codex" };
-    let kimi_bin_name = if cfg!(windows) { "kimi.exe" } else { "kimi" };
 
     let find = |relative: String| {
         resource_roots
@@ -129,7 +126,6 @@ fn resolve_bundled_agent_paths_for_exe(exe: &std::path::Path) -> Option<BundledA
     Some(BundledAgentPaths {
         claude_bin: find(format!("vendor/claude-code/{claude_bin_name}")),
         codex_bin: find(format!("vendor/codex/{codex_bin_name}")),
-        kimi_bin: find(format!("vendor/kimi/{kimi_bin_name}")),
     })
 }
 
@@ -163,7 +159,7 @@ impl SidecarProcess {
             .stderr(Stdio::inherit());
 
         // Put the sidecar in its own process tree so termination reaches
-        // Claude/Codex/Kimi children instead of only hitting Bun.
+        // Claude/Codex children instead of only hitting Bun.
         crate::platform::process::configure_tree_root(&mut cmd);
 
         // Pass log config to the sidecar process
@@ -183,7 +179,6 @@ impl SidecarProcess {
                 exe = ?exe,
                 claude_bin = ?bundled_paths.claude_bin,
                 codex_bin = ?bundled_paths.codex_bin,
-                kimi_bin = ?bundled_paths.kimi_bin,
                 "Resolved bundled agent paths"
             );
             if let Some(path) = bundled_paths.claude_bin {
@@ -191,9 +186,6 @@ impl SidecarProcess {
             }
             if let Some(path) = bundled_paths.codex_bin {
                 cmd.env("HELMOR_CODEX_BIN_PATH", &path);
-            }
-            if let Some(path) = bundled_paths.kimi_bin {
-                cmd.env("HELMOR_KIMI_BIN_PATH", &path);
             }
         }
 

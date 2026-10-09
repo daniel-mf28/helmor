@@ -130,7 +130,7 @@ function buildAskUserQuestionInput(
 
 	// Canonical answer payload, keyed by question text. The sidecar
 	// managers merge/translate it into each provider's reply shape
-	// (Claude `updatedInput`, Codex answers map, Kimi permission option).
+	// (Claude `updatedInput`, Codex answers map).
 	return {
 		answers,
 		...(Object.keys(annotations).length > 0 ? { annotations } : {}),

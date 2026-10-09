@@ -20,7 +20,6 @@ export function ModelIcon({
 }) {
 	if (isCodexProvider(model?.provider))
 		return <OpenAIColorIcon className={className} />;
-	if (model?.provider === "kimi") return <KimiIcon className={className} />;
 	if (model?.providerKey === "custom")
 		return <Box className={className} strokeWidth={1.8} />;
 	if (model?.providerKey === "minimax" || model?.providerKey === "minimax-cn")

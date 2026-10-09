@@ -65,7 +65,6 @@ pub fn static_model_sections() -> Vec<AgentModelSection> {
         model_sections_for_inputs(
             crate::provider::claude::configured_models(),
             Vec::new(),
-            load_kimi_prefs(),
         ),
         claude_enabled.as_deref(),
         codex_enabled.as_deref(),
@@ -94,7 +93,6 @@ pub fn full_catalog_sections() -> Vec<AgentModelSection> {
     model_sections_for_inputs(
         crate::provider::claude::configured_models(),
         codex_custom_catalog_options(crate::provider::codex::load_providers()),
-        load_kimi_prefs(),
     )
 }
 
@@ -273,7 +271,6 @@ fn codex_custom_model(
 fn model_sections_for_inputs(
     custom: Vec<crate::provider::claude::ClaudeProviderModel>,
     codex_custom: Vec<AgentModelOption>,
-    kimi_prefs: Option<KimiPrefs>,
 ) -> Vec<AgentModelSection> {
     let mut claude_section = official_claude_section();
     claude_section
@@ -283,7 +280,6 @@ fn model_sections_for_inputs(
     let mut codex = codex_section();
     codex.options.extend(codex_custom);
     sections.push(codex);
-    sections.push(kimi_section_from_prefs(kimi_prefs));
 
     sections
 }
@@ -413,76 +409,6 @@ fn codex_section() -> AgentModelSection {
     }
 }
 
-#[derive(Debug, Clone)]
-struct KimiPrefs {
-    /// `(alias, label)` of models discovered via `kimi provider list`, cached
-    /// by the Settings panel into `app.kimi_provider`.
-    cached_models: Vec<(String, String)>,
-    /// `null` ⟺ show all cached; explicit list ⟺ that subset; absent in JSON → null.
-    enabled_ids: Option<Vec<String>>,
-}
-
-fn load_kimi_prefs() -> Option<KimiPrefs> {
-    let raw = crate::models::settings::load_setting_value("app.kimi_provider")
-        .ok()
-        .flatten()?;
-    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let cached_models = match parsed.get("cachedModels") {
-        Some(serde_json::Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|item| {
-                let id = item.get("id").and_then(serde_json::Value::as_str)?;
-                let label = item
-                    .get("label")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or(id);
-                Some((id.to_string(), label.to_string()))
-            })
-            .collect(),
-        _ => Vec::new(),
-    };
-    let enabled_ids = match parsed.get("enabledModelIds") {
-        Some(serde_json::Value::Array(arr)) => Some(
-            arr.iter()
-                .filter_map(|item| item.as_str().map(str::to_string))
-                .collect(),
-        ),
-        _ => None,
-    };
-    Some(KimiPrefs {
-        cached_models,
-        enabled_ids,
-    })
-}
-
-// Kimi Code resolves models from the user's `~/.kimi-code` config (managed via
-// the Settings "Custom Providers" + "Models" panels). Like every other
-// provider, the composer shows ONLY the models the user enabled in the Settings
-// "Models" picker — there is no forced built-in seed. The selected model is
-// applied per session via ACP `session/set_model`. An empty section is dropped
-// by `drop_empty_sections` so an unconfigured Kimi never clutters the picker.
-fn kimi_section_from_prefs(prefs: Option<KimiPrefs>) -> AgentModelSection {
-    let mut options = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    if let Some(prefs) = prefs {
-        let show = |alias: &str| match &prefs.enabled_ids {
-            Some(ids) => ids.iter().any(|id| id == alias),
-            None => true, // null = first-sync default: show all cached models
-        };
-        for (alias, label) in &prefs.cached_models {
-            if show(alias) && seen.insert(alias.clone()) {
-                options.push(kimi_model(alias, label));
-            }
-        }
-    }
-    AgentModelSection {
-        id: "kimi".to_string(),
-        label: "Kimi".to_string(),
-        status: AgentModelSectionStatus::Ready,
-        options,
-    }
-}
-
 fn custom_provider_options(
     custom: Vec<crate::provider::claude::ClaudeProviderModel>,
 ) -> Vec<AgentModelOption> {
@@ -538,24 +464,6 @@ fn codex_model(id: &str, label: &str, effort_levels: &[&str]) -> AgentModelOptio
     }
 }
 
-// `alias` is the bare Kimi model alias (what `session/set_model` accepts). The
-// Helmor picker `id` is namespaced `kimi:<alias>` so it can't collide with a
-// claude/codex id (a custom provider's alias may be e.g. `gpt-4o`);
-// `cli_model` keeps the bare alias for the send round-trip. No effort tiers /
-// fast mode / context ring in v1 (see `provider_capabilities`).
-fn kimi_model(alias: &str, label: &str) -> AgentModelOption {
-    AgentModelOption {
-        id: format!("kimi:{alias}"),
-        provider: "kimi".to_string(),
-        label: label.to_string(),
-        cli_model: alias.to_string(),
-        provider_key: None,
-        effort_levels: Vec::new(),
-        supports_fast_mode: false,
-        supports_context_usage: false,
-    }
-}
-
 fn claude_effort_levels() -> Vec<String> {
     ["low", "medium", "high", "xhigh", "max"]
         .into_iter()
@@ -602,9 +510,8 @@ impl ResolvedModel {
 
 /// Resolve a Helmor model id to provider + cli_model. `provider_hint`
 /// is the inbound request's provider field (tie-breaker for ambiguous
-/// ids); falls back to prefix inference (`gpt-` → codex, `kimi` → kimi,
-/// else claude). For kimi, strips the `kimi:` picker namespace before
-/// handing `cli_model` to the SDK.
+/// ids); falls back to prefix inference (`gpt-` → codex, else
+/// claude).
 pub fn resolve_model(model_id: &str, provider_hint: Option<&str>) -> ResolvedModel {
     if let Some(model) = crate::provider::claude::resolve(model_id) {
         // Vertex providers authenticate via the vertex env block; plain
@@ -646,34 +553,17 @@ pub fn resolve_model(model_id: &str, provider_hint: Option<&str>) -> ResolvedMod
     let provider = match provider_hint {
         Some("codex") => "codex",
         Some("claude") => "claude",
-        Some("kimi") => "kimi",
-        // Namespaced kimi picker id — a custom-provider alias may contain `/`,
-        // so the namespace (not the alias shape) decides the route.
-        _ if model_id.starts_with("kimi:") => "kimi",
         // `codex:<id>` reaches here only when its settings were removed.
         Some(hint) if hint.starts_with(codex_prefix) => "codex",
         _ if model_id.starts_with(codex_prefix) => "codex",
         _ if model_id.starts_with("gpt-") => "codex",
-        // Bare kimi aliases (`kimi-for-coding`, `kimi-k2`).
-        _ if model_id.starts_with("kimi") => "kimi",
         _ => "claude",
-    };
-
-    // Strip the picker namespace so the bare alias reaches the SDK/CLI:
-    // `kimi:<alias>` for Kimi.
-    let cli_model = if provider == "kimi" {
-        model_id
-            .strip_prefix("kimi:")
-            .unwrap_or(model_id)
-            .to_string()
-    } else {
-        model_id.to_string()
     };
 
     ResolvedModel {
         id: model_id.to_string(),
         provider: provider.to_string(),
-        cli_model,
+        cli_model: model_id.to_string(),
         supports_effort: true,
         claude_base_url: None,
         claude_auth_token: None,
@@ -688,9 +578,9 @@ mod tests {
 
     #[test]
     fn static_model_sections_returns_hardcoded_catalog() {
-        let sections = model_sections_for_inputs(Vec::new(), Vec::new(), None);
+        let sections = model_sections_for_inputs(Vec::new(), Vec::new());
 
-        assert_eq!(sections.len(), 3);
+        assert_eq!(sections.len(), 2);
         assert_eq!(sections[0].id, "claude");
         assert_eq!(sections[0].status, AgentModelSectionStatus::Ready);
         assert_eq!(
@@ -766,10 +656,6 @@ mod tests {
             vec!["low", "medium", "high", "xhigh", "max"]
         );
 
-        // No kimi prefs row → no enabled models → empty section (dropped from
-        // the composer by `drop_empty_sections`; only the enabled picks show).
-        assert_eq!(sections[2].id, "kimi");
-        assert!(sections[2].options.is_empty());
         assert!(sections
             .iter()
             .all(|s| s.id != "cursor" && s.id != "opencode"));
@@ -788,10 +674,9 @@ mod tests {
                 vertex: None,
             }],
             Vec::new(),
-            None,
         );
 
-        assert_eq!(sections.len(), 3);
+        assert_eq!(sections.len(), 2);
         assert_eq!(sections[0].id, "claude");
         assert_eq!(sections[0].label, "Claude Code");
         assert_eq!(
@@ -955,7 +840,7 @@ mod tests {
 
     #[test]
     fn official_filter_keeps_enabled_subset() {
-        let base = model_sections_for_inputs(Vec::new(), Vec::new(), None);
+        let base = model_sections_for_inputs(Vec::new(), Vec::new());
         let filtered = apply_official_enabled_filter(base, None, Some(&["gpt-5.5".to_string()]));
         let codex = filtered.iter().find(|s| s.id == "codex").unwrap();
         assert_eq!(
@@ -973,7 +858,7 @@ mod tests {
     #[test]
     fn official_filter_uses_curated_defaults_and_keeps_custom_codex_models() {
         let custom = codex_custom_model("hundun", "codex:hundun", "custom-model", "Custom");
-        let base = model_sections_for_inputs(Vec::new(), vec![custom], None);
+        let base = model_sections_for_inputs(Vec::new(), vec![custom]);
         let filtered = apply_official_enabled_filter(base, None, None);
         let codex = filtered.iter().find(|s| s.id == "codex").unwrap();
         assert_eq!(
@@ -1012,7 +897,7 @@ mod tests {
 
     #[test]
     fn official_filter_can_reenable_hidden_opus_models() {
-        let base = model_sections_for_inputs(Vec::new(), Vec::new(), None);
+        let base = model_sections_for_inputs(Vec::new(), Vec::new());
         let filtered = apply_official_enabled_filter(
             base,
             // 4.8 dropped out of the default set when Opus 5 took its slot;
@@ -1036,7 +921,7 @@ mod tests {
 
     #[test]
     fn official_filter_empty_list_empties_options() {
-        let base = model_sections_for_inputs(Vec::new(), Vec::new(), None);
+        let base = model_sections_for_inputs(Vec::new(), Vec::new());
         let filtered = apply_official_enabled_filter(base, Some(&[]), None);
         // The filter only empties options; hiding the now-empty section is
         // `drop_empty_sections`' job (tested separately).
@@ -1102,84 +987,8 @@ mod tests {
     }
 
     #[test]
-    fn resolve_kimi_model_routes_to_kimi() {
-        let _env = crate::testkit::TestEnv::new("resolve-kimi-model-routes-to-kimi");
-        // Explicit hint, bare alias (no namespace) → cli_model unchanged.
-        let m = resolve_model("kimi-for-coding", Some("kimi"));
-        assert_eq!(m.provider, "kimi");
-        assert_eq!(m.cli_model, "kimi-for-coding");
-        assert_eq!(m.id, "kimi-for-coding");
-        // Prefix inference without a hint.
-        let m = resolve_model("kimi-k2-turbo", None);
-        assert_eq!(m.provider, "kimi");
-        assert_eq!(m.cli_model, "kimi-k2-turbo");
-        // Namespaced picker id → kimi, with the `kimi:` prefix stripped for the CLI.
-        let m = resolve_model("kimi:claude-opus-4-8", Some("kimi"));
-        assert_eq!(m.provider, "kimi");
-        assert_eq!(m.cli_model, "claude-opus-4-8");
-        // Namespaced alias that contains `/` must still route to kimi even
-        // without a hint.
-        let m = resolve_model("kimi:vendor/model", None);
-        assert_eq!(m.provider, "kimi");
-        assert_eq!(m.cli_model, "vendor/model");
-        // The built-in default seed is the managed `kimi-code/<modelId>` key —
-        // `/`-containing, so it depends on the namespace to reach kimi.
-        let m = resolve_model("kimi:kimi-code/kimi-for-coding", None);
-        assert_eq!(m.provider, "kimi");
-        assert_eq!(m.cli_model, "kimi-code/kimi-for-coding");
-    }
-
-    #[test]
-    fn kimi_section_shows_only_enabled_models() {
-        // No prefs → empty (no forced built-in seed; the composer drops it).
-        let none = kimi_section_from_prefs(None);
-        assert_eq!(none.id, "kimi");
-        assert!(none.options.is_empty());
-
-        // enabled_ids = null (first-sync default) → every cached model shows.
-        let all = kimi_section_from_prefs(Some(KimiPrefs {
-            cached_models: vec![
-                (
-                    "kimi-code/kimi-for-coding".to_string(),
-                    "Kimi for Coding".to_string(),
-                ),
-                ("claude-opus-4-8".to_string(), "Claude Opus 4.8".to_string()),
-            ],
-            enabled_ids: None,
-        }));
-        assert_eq!(
-            all.options
-                .iter()
-                .map(|o| o.id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["kimi:kimi-code/kimi-for-coding", "kimi:claude-opus-4-8"]
-        );
-        let opus = &all.options[1];
-        assert_eq!(opus.provider, "kimi");
-        assert_eq!(opus.cli_model, "claude-opus-4-8");
-        assert_eq!(opus.label, "Claude Opus 4.8");
-
-        // Explicit subset → ONLY the picked alias, nothing force-added.
-        let subset = kimi_section_from_prefs(Some(KimiPrefs {
-            cached_models: vec![
-                ("a".to_string(), "A".to_string()),
-                ("b".to_string(), "B".to_string()),
-            ],
-            enabled_ids: Some(vec!["b".to_string()]),
-        }));
-        assert_eq!(
-            subset
-                .options
-                .iter()
-                .map(|o| o.id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["kimi:b"]
-        );
-    }
-
-    #[test]
     fn official_claude_section_surfaces_fable_5_above_opus_lineage() {
-        let sections = model_sections_for_inputs(Vec::new(), Vec::new(), None);
+        let sections = model_sections_for_inputs(Vec::new(), Vec::new());
         let claude = sections.iter().find(|s| s.id == "claude").unwrap();
         let ids: Vec<&str> = claude.options.iter().map(|o| o.id.as_str()).collect();
         // User-facing ordering: Fable 5 on top, then 5.5 (default), 5, 4.8,

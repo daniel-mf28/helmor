@@ -762,7 +762,6 @@ function agentTypeToProvider(agentType?: string | null): AgentProvider | null {
 	switch (agentType) {
 		case "claude":
 		case "codex":
-		case "kimi":
 			return agentType;
 		default:
 			// Custom Codex providers persist as `codex:<id>`.

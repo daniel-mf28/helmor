@@ -54,9 +54,9 @@ mod tests {
     #[test]
     fn parses_json_form_with_provider() {
         let parsed =
-            parse_stored_model(r#"{"provider":"kimi","modelId":"kimi:acme/gpt-5.5"}"#).unwrap();
-        assert_eq!(parsed.provider.as_deref(), Some("kimi"));
-        assert_eq!(parsed.model_id, "kimi:acme/gpt-5.5");
+            parse_stored_model(r#"{"provider":"codex","modelId":"codex:acme/gpt-5.5"}"#).unwrap();
+        assert_eq!(parsed.provider.as_deref(), Some("codex"));
+        assert_eq!(parsed.model_id, "codex:acme/gpt-5.5");
     }
 
     #[test]

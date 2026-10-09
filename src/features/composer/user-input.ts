@@ -119,7 +119,7 @@ function normalizeQuestion(
  * malformed payload doesn't blank the panel.
  *
  * The payload questions arrive in the canonical shape (normalized on
- * the Rust side from Claude/Codex/Kimi raw questions); the renderer
+ * the Rust side from Claude/Codex raw questions); the renderer
  * submits `{ answers, annotations? }` keyed by question text and the
  * sidecar managers map that back to each provider's reply shape.
  */

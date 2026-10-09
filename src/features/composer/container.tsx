@@ -756,16 +756,11 @@ export const WorkspaceComposerContainer = memo(
 		// Narrow `provider` (which can be the loosely-typed agentType from a
 		// historical session) to a real AgentProvider before keying the
 		// query. Anything outside the known set degrades to claude so we
-		// never miss the popup. NOTE: the prior version of this branch
-		// collapsed everything except codex into claude, which masked
-		// other providers' sessions as claude — the Rust cache then served
-		// cached claude skills back to their popup. Keep kimi explicit.
+		// never miss the popup.
 		// Custom Codex providers (`codex:<id>`) collapse to "codex".
 		const slashProvider: AgentProvider = isCodexProvider(provider)
 			? "codex"
-			: provider === "kimi"
-				? provider
-				: "claude";
+			: "claude";
 		// Prefer the repoId from a real workspace; on the start page there's no
 		// workspace yet, so fall back to the caller-supplied repoId hint.
 		const effectiveRepoId =

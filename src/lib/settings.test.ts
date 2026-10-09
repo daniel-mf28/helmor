@@ -415,16 +415,16 @@ describe("settings", () => {
 	it("parses the JSON {provider, modelId} form", async () => {
 		invokeMock.mockResolvedValue({
 			"app.default_model_id": JSON.stringify({
-				provider: "kimi",
-				modelId: "kimi:acme/gpt-5.5",
+				provider: "codex",
+				modelId: "codex:acme/gpt-5.5",
 			}),
 		});
 
 		const settings = await loadSettings();
 
 		expect(settings.defaultModel).toEqual({
-			provider: "kimi",
-			modelId: "kimi:acme/gpt-5.5",
+			provider: "codex",
+			modelId: "codex:acme/gpt-5.5",
 		});
 		expect(settings.reviewModel).toBeNull();
 	});
@@ -433,7 +433,7 @@ describe("settings", () => {
 		invokeMock.mockResolvedValue({});
 
 		await saveSettings({
-			defaultModel: { provider: "kimi", modelId: "kimi:acme/gpt-5.5" },
+			defaultModel: { provider: "codex", modelId: "codex:acme/gpt-5.5" },
 			reviewModel: null,
 		});
 
@@ -444,7 +444,7 @@ describe("settings", () => {
 			writeCall?.[1] as { settingsMap: Record<string, string> } | undefined
 		)?.settingsMap;
 		expect(writtenMap?.["app.default_model_id"]).toBe(
-			JSON.stringify({ provider: "kimi", modelId: "kimi:acme/gpt-5.5" }),
+			JSON.stringify({ provider: "codex", modelId: "codex:acme/gpt-5.5" }),
 		);
 		expect(writtenMap?.["app.review_model_id"]).toBe("");
 	});

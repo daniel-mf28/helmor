@@ -29,7 +29,7 @@ export type FollowUpBehavior = "steer" | "queue";
 export type ClaudeThinkingDisplay = "summarized" | "omitted";
 export type AppSurface = "workspace" | "workspace-start";
 /** A global model preference (default / review / action). Carries its
- *  provider so a namespaced model (e.g. kimi) is never re-derived
+ *  provider so a namespaced model (e.g. a Codex custom provider) is never re-derived
  *  ambiguously from the bare id. `provider` is null only for legacy rows
  *  not yet re-saved. Persisted as JSON. */
 export type ModelRef = { provider: string | null; modelId: string };
@@ -70,16 +70,6 @@ export const VALID_NOTIFICATION_SOUNDS: readonly NotificationSound[] = [
 ];
 
 export type ShortcutOverrides = Record<string, string | null>;
-
-/** One Kimi model discovered via `kimi provider list`. `id` is the bare alias. */
-export type KimiCachedModel = { id: string; label: string };
-
-export type KimiProviderSettings = {
-	// `null` until the first sync; `[]` means "no Kimi providers configured".
-	cachedModels: KimiCachedModel[] | null;
-	// `null` = show all cached in the picker; explicit list = that subset.
-	enabledModelIds: string[] | null;
-};
 
 export type LocalLlmSettings = {
 	enabled: boolean;
@@ -196,7 +186,6 @@ export type AppSettings = {
 	/** Codex model ids in the picker. `null` = recommended official models plus
 	 *  all custom models; `[]` = none. */
 	codexEnabledModelIds: string[] | null;
-	kimiProvider: KimiProviderSettings;
 	localLlm: LocalLlmSettings;
 	startSurfacePreferences: StartSurfacePreferences;
 	/** Sidebar grouping mode. Persisted to localStorage (sync read on boot
@@ -291,10 +280,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
 	shortcuts: {},
 	claudeEnabledModelIds: null,
 	codexEnabledModelIds: null,
-	kimiProvider: {
-		cachedModels: null,
-		enabledModelIds: null,
-	},
 	localLlm: {
 		enabled: false,
 		model: "",
@@ -454,7 +439,6 @@ const SETTINGS_KEY_MAP: Record<
 	shortcuts: "app.shortcuts",
 	claudeEnabledModelIds: "app.claude_enabled_model_ids",
 	codexEnabledModelIds: "app.codex_enabled_model_ids",
-	kimiProvider: "app.kimi_provider",
 	localLlm: "app.local_llm",
 	startSurfacePreferences: "app.start_surface_preferences",
 };
@@ -667,36 +651,6 @@ function parseStartSurfacePreferences(
 	} catch {
 		return DEFAULT_START_SURFACE_PREFERENCES;
 	}
-}
-
-function parseKimiProviderSettings(
-	raw: string | undefined,
-): KimiProviderSettings {
-	if (!raw) return DEFAULT_SETTINGS.kimiProvider;
-	try {
-		const parsed = JSON.parse(raw) as Record<string, unknown>;
-		return {
-			cachedModels: parseKimiCachedModels(parsed.cachedModels),
-			enabledModelIds: parseEnabledModelIds(parsed.enabledModelIds),
-		};
-	} catch {
-		return DEFAULT_SETTINGS.kimiProvider;
-	}
-}
-
-function parseKimiCachedModels(value: unknown): KimiCachedModel[] | null {
-	if (!Array.isArray(value)) return null;
-	const models: KimiCachedModel[] = [];
-	for (const entry of value) {
-		if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-		const obj = entry as Record<string, unknown>;
-		if (typeof obj.id !== "string") continue;
-		models.push({
-			id: obj.id,
-			label: typeof obj.label === "string" ? obj.label : obj.id,
-		});
-	}
-	return models;
 }
 
 function parseEnabledModelIds(value: unknown): string[] | null {
@@ -937,9 +891,6 @@ export async function loadSettings(): Promise<AppSettings> {
 			codexEnabledModelIds: parseEnabledModelIdsSetting(
 				raw[SETTINGS_KEY_MAP.codexEnabledModelIds],
 			),
-			kimiProvider: parseKimiProviderSettings(
-				raw[SETTINGS_KEY_MAP.kimiProvider],
-			),
 			localLlm: parseLocalLlmSettings(raw[SETTINGS_KEY_MAP.localLlm]),
 			startSurfacePreferences: parseStartSurfacePreferences(
 				raw[SETTINGS_KEY_MAP.startSurfacePreferences],
@@ -983,7 +934,6 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<void> {
 				key === "shortcuts" ||
 				key === "claudeEnabledModelIds" ||
 				key === "codexEnabledModelIds" ||
-				key === "kimiProvider" ||
 				key === "localLlm" ||
 				key === "startSurfacePreferences" ||
 				key === "defaultModel" ||

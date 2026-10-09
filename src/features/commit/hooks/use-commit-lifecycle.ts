@@ -299,7 +299,7 @@ export function useWorkspaceCommitLifecycle({
 			overrides?: {
 				modelId?: string | null;
 				/** Provider of the override model — pinned as agent_type so a
-				 *  namespaced model (e.g. kimi) routes correctly. */
+				 *  namespaced model (e.g. a Codex custom provider) routes correctly. */
 				provider?: string | null;
 				effort?: string | null;
 				fastMode?: boolean | null;

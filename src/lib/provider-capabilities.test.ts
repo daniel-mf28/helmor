@@ -28,24 +28,12 @@ const codexCaps: ProviderCapabilities = {
 	requiresApiKey: false,
 };
 
-const kimiCaps: ProviderCapabilities = {
-	provider: "kimi",
-	displayName: "Kimi",
-	supportsPlanMode: false,
-	supportsActiveGoal: false,
-	supportsContextUsage: false,
-	supportsSteer: false,
-	supportsSlashCommands: true,
-	requiresApiKey: false,
-};
-
-const table: ProviderCapabilities[] = [claudeCaps, codexCaps, kimiCaps];
+const table: ProviderCapabilities[] = [claudeCaps, codexCaps];
 
 describe("findProviderCapabilities", () => {
 	it.each([
 		["claude", claudeCaps],
 		["codex", codexCaps],
-		["kimi", kimiCaps],
 	])("returns the row for %s", (provider, expected) => {
 		expect(findProviderCapabilities(table, provider)).toBe(expected);
 	});
@@ -65,7 +53,7 @@ describe("findProviderCapabilities", () => {
 		expect(findProviderCapabilities([], "claude")).toBeNull();
 	});
 
-	it("distinguishes Codex active-goal support from Claude / Kimi", () => {
+	it("distinguishes Codex active-goal support from Claude", () => {
 		// Regression gate for the composer's `/goal` interception
 		// switching from `provider === "codex"` to a capability check.
 		// If a future provider ever needs `supportsActiveGoal`, the
@@ -76,14 +64,12 @@ describe("findProviderCapabilities", () => {
 		expect(findProviderCapabilities(table, "claude")?.supportsActiveGoal).toBe(
 			false,
 		);
-		expect(findProviderCapabilities(table, "kimi")?.supportsActiveGoal).toBe(
-			false,
-		);
 	});
 
-	it("returns null for removed providers (cursor / opencode)", () => {
+	it("returns null for removed providers (cursor / opencode / kimi)", () => {
 		expect(findProviderCapabilities(table, "cursor")).toBeNull();
 		expect(findProviderCapabilities(table, "opencode")).toBeNull();
+		expect(findProviderCapabilities(table, "kimi")).toBeNull();
 	});
 });
 
@@ -101,7 +87,6 @@ describe("DEFAULT_PROVIDER_CAPABILITIES (cold-start initialData)", () => {
 		expect(DEFAULT_PROVIDER_CAPABILITIES.map((caps) => caps.provider)).toEqual([
 			"claude",
 			"codex",
-			"kimi",
 		]);
 	});
 
@@ -114,10 +99,6 @@ describe("DEFAULT_PROVIDER_CAPABILITIES (cold-start initialData)", () => {
 			findProviderCapabilities(DEFAULT_PROVIDER_CAPABILITIES, "claude")
 				?.supportsActiveGoal,
 		).toBe(false);
-		expect(
-			findProviderCapabilities(DEFAULT_PROVIDER_CAPABILITIES, "kimi")
-				?.supportsActiveGoal,
-		).toBe(false);
 	});
 
 	it("mirrors the Rust default rows for display name + key flags", () => {
@@ -126,17 +107,6 @@ describe("DEFAULT_PROVIDER_CAPABILITIES (cold-start initialData)", () => {
 			"codex",
 		);
 		expect(codex?.displayName).toBe("Codex");
-		// Kimi (ACP) must resolve to itself, not fall back to "Claude".
-		const kimi = findProviderCapabilities(
-			DEFAULT_PROVIDER_CAPABILITIES,
-			"kimi",
-		);
-		expect(kimi?.displayName).toBe("Kimi");
-		expect(kimi?.requiresApiKey).toBe(false);
-		expect(kimi?.supportsSlashCommands).toBe(true);
-		expect(kimi?.supportsPlanMode).toBe(false);
-		expect(kimi?.supportsContextUsage).toBe(false);
-		expect(kimi?.supportsSteer).toBe(false);
 	});
 
 	it("is wired as the query's initialData so the cold-start window is closed", () => {

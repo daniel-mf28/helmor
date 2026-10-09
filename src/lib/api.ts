@@ -160,7 +160,6 @@ export type DataInfo = {
 export type AgentProvider =
 	| "claude"
 	| "codex"
-	| "kimi"
 	// Custom Codex providers: `codex:<id>` per instance.
 	| `codex:${string}`;
 
@@ -897,12 +896,11 @@ export async function toggleMiniWindowMode(): Promise<boolean> {
 	return await invoke("toggle_mini_window_mode");
 }
 
-export type AgentLoginProvider = "claude" | "codex" | "kimi";
+export type AgentLoginProvider = "claude" | "codex";
 
 export type AgentLoginStatusResult = {
 	claude: boolean;
 	codex: boolean;
-	kimi: boolean;
 	codexProvider?: string | null;
 	codexAuthMethod?: "login" | "apiKey" | string | null;
 };
@@ -914,7 +912,6 @@ export async function getAgentLoginStatus(): Promise<AgentLoginStatusResult> {
 export type AgentVersionsResult = {
 	claude: string | null;
 	codex: string | null;
-	kimi: string | null;
 };
 
 export async function getAgentVersions(): Promise<AgentVersionsResult> {
@@ -1187,14 +1184,12 @@ export async function fetchProviderModels(
 	family: ProviderFamily,
 	baseUrl: string,
 	apiKey: string,
-	apiStyle?: string,
 ): Promise<CustomProviderModel[]> {
 	try {
 		return await invoke<CustomProviderModel[]>("fetch_provider_models", {
 			family,
 			baseUrl,
 			apiKey,
-			apiStyle,
 		});
 	} catch (error) {
 		// Surface the real reason (e.g. "models endpoint returned HTTP 401")
@@ -1246,16 +1241,6 @@ export const DEFAULT_PROVIDER_CAPABILITIES: ProviderCapabilities[] = [
 		supportsSlashCommands: true,
 		requiresApiKey: false,
 	},
-	{
-		provider: "kimi",
-		displayName: "Kimi",
-		supportsPlanMode: false,
-		supportsActiveGoal: false,
-		supportsContextUsage: false,
-		supportsSteer: false,
-		supportsSlashCommands: true,
-		requiresApiKey: false,
-	},
 ];
 
 /** Look up a single provider's capabilities from a previously-fetched
@@ -1269,34 +1254,6 @@ export function findProviderCapabilities(
 	// Custom Codex providers (`codex:<id>`) share the official Codex caps.
 	const normalized = isCodexProvider(provider) ? "codex" : provider;
 	return table.find((caps) => caps.provider === normalized) ?? null;
-}
-
-// ---------------------------------------------------------------------------
-// Kimi — model picker config. Custom-provider CRUD goes through the unified
-// `provider` commands (family = "kimi"); this read feeds the "Models" row.
-// ---------------------------------------------------------------------------
-
-export type KimiProviderInfo = {
-	id: string;
-	label: string;
-	modelCount: number;
-};
-/** `id` is the Kimi model alias (what the model picker / `session/set_model` use). */
-export type KimiModelInfo = { id: string; label: string; providerId: string };
-export type KimiProviderConfig = {
-	providers: KimiProviderInfo[];
-	models: KimiModelInfo[];
-};
-
-/** Parsed `~/.kimi-code/config.toml` → configured providers + models. */
-export async function getKimiProviderConfig(): Promise<KimiProviderConfig> {
-	try {
-		return await invoke<KimiProviderConfig>("get_kimi_provider_config");
-	} catch (error) {
-		throw new Error(
-			describeInvokeError(error, "Unable to read Kimi providers."),
-		);
-	}
 }
 
 export type SlashCommandEntry = {
@@ -2730,7 +2687,7 @@ export type UserQuestionStatus =
 	| "cancelled";
 /**
  * Normalized agent→user question card — one shape for Claude
- * AskUserQuestion, Codex `requestUserInput` and Kimi permission questions.
+ * AskUserQuestion, Codex `requestUserInput` questions.
  * `answers` maps question text → answer string (multi-select answers are
  * comma-joined labels; free-text answers pass through verbatim).
  */
@@ -2863,7 +2820,7 @@ export type AgentStreamEvent =
 			message: string;
 			/** Discriminated by `payload.kind`:
 			 *  - `ask-user-question` → canonical question card (Claude AskUserQuestion,
-			 *    Codex requestUserInput, Kimi question — normalized by Rust's
+			 *    Codex requestUserInput — normalized by Rust's
 			 *    `pipeline::user_question`, see `UserQuestionItem`)
 			 *  - `form` → JSON-Schema form (MCP form elicitation)
 			 *  - `url` → URL launcher (MCP url-mode elicitation)

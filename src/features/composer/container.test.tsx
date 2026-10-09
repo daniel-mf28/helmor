@@ -171,18 +171,6 @@ const MODEL_SECTIONS = [
 			},
 		],
 	},
-	{
-		id: "kimi",
-		label: "Kimi",
-		options: [
-			{
-				id: "kimi:kimi-for-coding",
-				provider: "kimi",
-				label: "Kimi for Coding",
-				cliModel: "kimi-code/kimi-for-coding",
-			},
-		],
-	},
 ] as const;
 
 const WORKSPACE_DETAIL = {
@@ -252,9 +240,9 @@ const WORKSPACE_SESSIONS = [
 		id: "session-3",
 		workspaceId: "workspace-1",
 		title: "Session 3",
-		agentType: "kimi",
+		agentType: "codex",
 		status: "idle",
-		model: "kimi:kimi-for-coding",
+		model: "gpt-5.4",
 		permissionMode: "default",
 		providerSessionId: null,
 		unreadCount: 0,

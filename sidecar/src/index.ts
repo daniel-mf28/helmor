@@ -14,7 +14,6 @@ import { isAbortError } from "./abort.js";
 import { ClaudeSessionManager } from "./claude/session-manager.js";
 import { CodexAppServerManager } from "./codex/app-server-manager.js";
 import { createSidecarEmitter } from "./emitter.js";
-import { KimiSessionManager } from "./kimi/session-manager.js";
 import { errorDetails, logger } from "./logger.js";
 import {
 	errorMessage,
@@ -39,11 +38,9 @@ import { TITLE_GENERATION_TIMEOUT_MS } from "./title.js";
 
 const claudeManager = new ClaudeSessionManager();
 const codexManager = new CodexAppServerManager();
-const kimiManager = new KimiSessionManager();
 const managers: Record<Provider, SessionManager> = {
 	claude: claudeManager,
 	codex: codexManager,
-	kimi: kimiManager,
 };
 
 // `parentGone` flips to true only when stdin EOFs — that's the
@@ -196,8 +193,7 @@ function parseTitleAttempts(raw: unknown): TitleAttempt[] {
 			const obj = item as Record<string, unknown>;
 			const provider =
 				obj.provider === "claude" ||
-				obj.provider === "codex" ||
-				obj.provider === "kimi"
+				obj.provider === "codex"
 					? obj.provider
 					: null;
 			if (!provider) continue;
@@ -520,11 +516,9 @@ for await (const line of rl) {
 				const message =
 					typeof params.message === "string" ? params.message : undefined;
 				logger.debug(`[${id}] permissionResponse`, { permissionId, behavior });
-				// Route by id prefix: `codex-`, `kimi-`, else Claude.
+				// Route by id prefix: `codex-`, else Claude.
 				if (permissionId.startsWith("codex-")) {
 					codexManager.resolvePermission(permissionId, behavior);
-				} else if (permissionId.startsWith("kimi-")) {
-					kimiManager.resolvePermission(permissionId, behavior);
 				} else {
 					claudeManager.resolvePermission(
 						permissionId,
@@ -565,8 +559,7 @@ for await (const line of rl) {
 							: { action: "cancel" };
 				const claimed =
 					claudeManager.resolveUserInput(userInputId, resolution) ||
-					codexManager.resolveUserInput(userInputId, resolution) ||
-					kimiManager.resolveUserInput(userInputId, resolution);
+					codexManager.resolveUserInput(userInputId, resolution);
 				if (!claimed) {
 					// No live waiter — the parked promise was lost (sidecar
 					// restart, session ended, or duplicate submit). Surface
@@ -596,7 +589,7 @@ for await (const line of rl) {
 	}
 }
 
-// Parent (Rust) is gone. Agent children (Codex app-server, Kimi ACP) can hold
+// Parent (Rust) is gone. Agent children (Codex app-server) can hold
 // live connections that keep our event loop alive, so falling off the end here
 // might NOT exit — tear the managers down and exit explicitly; a backstop
 // timer guards a stalled shutdown.

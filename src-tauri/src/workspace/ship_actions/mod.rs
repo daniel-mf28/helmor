@@ -103,7 +103,7 @@ struct OwnedSessionOverrides {
     model: Option<String>,
     effort_level: Option<String>,
     fast_mode: Option<bool>,
-    /// Provider pinned from the model pref so a namespaced provider (e.g. kimi)
+    /// Provider pinned from the model pref so a namespaced provider (e.g. a Codex custom provider)
     /// isn't misresolved from the bare model id.
     agent_type: Option<String>,
 }

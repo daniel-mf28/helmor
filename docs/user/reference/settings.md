@@ -21,8 +21,6 @@ Defaults for new sessions and app-wide behavior:
 
 Provider configuration:
 
-- **Kimi** — sign in, then choose which of your Kimi models to expose and
-  add custom providers (saved to `~/.kimi-code/config.toml`).
 - **Custom Claude-compatible providers** — base URL + API key for any endpoint
   speaking the Claude API.
 

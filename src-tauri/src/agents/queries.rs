@@ -79,7 +79,6 @@ fn build_title_attempts() -> Vec<Value> {
     let claude_custom = crate::provider::claude::configured_models()
         .into_iter()
         .next();
-    let kimi_custom = first_kimi_custom_model();
     let mut attempts: Vec<Value> = Vec::new();
     for provider in detect_title_providers() {
         // Custom Codex providers run through the Codex sidecar with the
@@ -115,14 +114,6 @@ fn build_title_attempts() -> Vec<Value> {
                     }));
                 }
             }
-            "kimi" => {
-                if let Some(model) = &kimi_custom {
-                    attempts.push(serde_json::json!({
-                        "provider": "kimi",
-                        "model": model,
-                    }));
-                }
-            }
             _ => {}
         }
         // Provider's own fast/default model. For claude this is the
@@ -130,18 +121,6 @@ fn build_title_attempts() -> Vec<Value> {
         attempts.push(serde_json::json!({ "provider": provider }));
     }
     attempts
-}
-
-/// First custom kimi model the user configured in `config.toml`, as the
-/// `provider/model` key kimi expects (e.g. `a8d84452/gpt-5.5`). `None` when no
-/// custom kimi provider is set up. The custom model is tried before the provider's session default.
-fn first_kimi_custom_model() -> Option<String> {
-    crate::provider::kimi::read_provider_config()
-        .ok()?
-        .models
-        .into_iter()
-        .next()
-        .map(|model| model.id)
 }
 
 fn can_replace_session_title(current_title: &str, title_seed: Option<&str>) -> bool {
@@ -269,8 +248,8 @@ pub async fn generate_session_title(
 
     // Cascade head: try the bundled local LLM first. On any failure
     // (server not running, timeout, parse mismatch) fall through to
-    // the sidecar's cloud cascade (custom-claude → claude → codex →
-    // kimi). `TITLE_TIMEOUT` inside `local_llm::title` caps the
+    // the sidecar's cloud cascade (custom-claude → claude →
+    // codex). `TITLE_TIMEOUT` inside `local_llm::title` caps the
     // attempt at ~15s so a stuck cold load can't block this path long.
     let local_result: Option<(String, Option<String>)> = {
         let user_message = request.user_message.clone();
@@ -321,7 +300,7 @@ pub async fn generate_session_title(
         } else {
             let request_id = Uuid::new_v4().to_string();
             // Build the provider/model attempt chain from the user's configured
-            // models (action → review → default, deduped); each claude/kimi
+            // models (action → review → default, deduped); the claude
             // step tries the custom model then the fast default, other providers
             // contribute their own fast/default pick. The sidecar walks the list
             // and stops at the first attempt that produces a title. Skip the
@@ -1367,32 +1346,28 @@ mod tests {
         assert_eq!(detect_title_providers(), vec!["claude".to_string()]);
 
         // default only → [its provider].
-        crate::settings::upsert_setting_value("app.default_model_id", "kimi-k2-turbo").unwrap();
-        assert_eq!(detect_title_providers(), vec!["kimi".to_string()]);
+        crate::settings::upsert_setting_value("app.default_model_id", "gpt-5.5").unwrap();
+        assert_eq!(detect_title_providers(), vec!["codex".to_string()]);
 
-        // review (codex) leads, default (kimi) follows.
-        crate::settings::upsert_setting_value("app.review_model_id", "gpt-5.5").unwrap();
+        // review (claude) leads, default (codex) follows.
+        crate::settings::upsert_setting_value("app.review_model_id", "sonnet").unwrap();
         assert_eq!(
             detect_title_providers(),
-            vec!["codex".to_string(), "kimi".to_string()]
+            vec!["claude".to_string(), "codex".to_string()]
         );
 
-        // action (claude) leads the deduped chain.
-        crate::settings::upsert_setting_value("app.pr_model_id", "sonnet").unwrap();
+        // action (codex) leads the deduped chain.
+        crate::settings::upsert_setting_value("app.pr_model_id", "gpt-5.4").unwrap();
         assert_eq!(
             detect_title_providers(),
-            vec![
-                "claude".to_string(),
-                "codex".to_string(),
-                "kimi".to_string()
-            ]
+            vec!["codex".to_string(), "claude".to_string()]
         );
 
         // Duplicate providers collapse: review → another claude model is skipped.
         crate::settings::upsert_setting_value("app.review_model_id", "haiku").unwrap();
         assert_eq!(
             detect_title_providers(),
-            vec!["claude".to_string(), "kimi".to_string()]
+            vec!["codex".to_string(), "claude".to_string()]
         );
 
         std::env::remove_var("HELMOR_DATA_DIR");
@@ -1429,69 +1404,19 @@ mod tests {
         std::env::set_var("HELMOR_DATA_DIR", dir.path());
         setup_test_db(dir.path());
 
-        // Isolate from the developer's real `~/.kimi-code/config.toml`, which
-        // may define custom kimi models.
-        let kimi_home = dir.path().join("kimi-home");
-        std::fs::create_dir_all(&kimi_home).unwrap();
-        std::env::set_var("KIMI_CODE_HOME", &kimi_home);
-
-        // pr=codex, default=kimi → providers [codex, kimi]; no custom set.
+        // pr=codex, default=claude → providers [codex, claude]; no custom set.
         crate::settings::upsert_setting_value("app.pr_model_id", "gpt-5.5").unwrap();
-        crate::settings::upsert_setting_value("app.default_model_id", "kimi-k2-turbo").unwrap();
+        crate::settings::upsert_setting_value("app.default_model_id", "sonnet").unwrap();
 
         let attempts = build_title_attempts();
         let chain: Vec<&str> = attempts
             .iter()
             .map(|a| a.get("provider").unwrap().as_str().unwrap())
             .collect();
-        assert_eq!(chain, vec!["codex", "kimi"]);
+        assert_eq!(chain, vec!["codex", "claude"]);
         // No custom configured → no attempt carries an explicit model.
         assert!(attempts.iter().all(|a| a.get("model").is_none()));
 
-        std::env::remove_var("KIMI_CODE_HOME");
-        std::env::remove_var("HELMOR_DATA_DIR");
-    }
-
-    #[test]
-    fn build_title_attempts_includes_kimi_custom_model() {
-        let dir = tempfile::tempdir().unwrap();
-        let _guard = crate::data_dir::TEST_ENV_LOCK.lock().unwrap();
-        std::env::set_var("HELMOR_DATA_DIR", dir.path());
-        setup_test_db(dir.path());
-
-        // Custom kimi provider lives in `$KIMI_CODE_HOME/config.toml` — NOT
-        // in settings.
-        let kimi_home = dir.path().join("kimi-home");
-        std::fs::create_dir_all(&kimi_home).unwrap();
-        std::fs::write(
-            kimi_home.join("config.toml"),
-            "[providers.acme]\ntype = \"openai\"\napi_key = \"sk-test\"\nbase_url = \"https://api.acme.test/v1\"\n\n[models.\"acme/gpt-5.5\"]\nprovider = \"acme\"\nmodel = \"gpt-5.5\"\nmax_context_size = 128000\n",
-        )
-        .unwrap();
-        std::env::set_var("KIMI_CODE_HOME", &kimi_home);
-
-        // Selecting a kimi model makes kimi a detected title provider.
-        crate::settings::upsert_setting_value(
-            "app.default_model_id",
-            r#"{"provider":"kimi","modelId":"kimi:acme/gpt-5.5"}"#,
-        )
-        .unwrap();
-
-        // Consistent with claude: the custom model (config key, no
-        // `kimi:` prefix) is tried first, then kimi's session default.
-        let attempts = build_title_attempts();
-        let chain: Vec<(&str, Option<&str>)> = attempts
-            .iter()
-            .map(|a| {
-                (
-                    a.get("provider").unwrap().as_str().unwrap(),
-                    a.get("model").and_then(serde_json::Value::as_str),
-                )
-            })
-            .collect();
-        assert_eq!(chain, vec![("kimi", Some("acme/gpt-5.5")), ("kimi", None)]);
-
-        std::env::remove_var("KIMI_CODE_HOME");
         std::env::remove_var("HELMOR_DATA_DIR");
     }
 

@@ -126,7 +126,6 @@ Sections observed:
   - `MiMo Code`
   - `Claude Code`
   - `Codex`
-  - `Kimi`
   - Provider actions include `Log in`, `Sync models`, `Fetch models`, `Add provider`, `Get your API key`
 - Shortcuts:
   - Full shortcut table including navigation, session, workspace, actions, system, composer, start surface, editor, and terminal.

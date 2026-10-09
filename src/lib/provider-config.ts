@@ -1,6 +1,6 @@
 // Pure provider-config domain types, shared across all three agent families.
 
-export type ProviderFamily = "claude" | "codex" | "kimi";
+export type ProviderFamily = "claude" | "codex";
 
 export const DEFAULT_CODEX_MODEL_IDS = [
 	"gpt-6-sol",
@@ -37,8 +37,7 @@ export type CustomProvider = {
 	presetKey?: string;
 	baseUrl: string;
 	apiKey: string;
-	/** Wire protocol / API style. Kimi:
-	 *  "openai" | "openai_responses" | "anthropic" | "kimi". Claude:
+	/** Wire protocol / API style. Claude:
 	 *  "anthropic" (default) | "vertex". Interpreted by the family's backend. */
 	apiStyle?: string;
 	/** Vertex-type Claude providers (`apiStyle === "vertex"`) only. */

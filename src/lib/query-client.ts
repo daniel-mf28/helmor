@@ -68,7 +68,6 @@ export const helmorQueryKeys = {
 	agentModelSections: ["agentModelSections"] as const,
 	allAgentModelSections: ["allAgentModelSections"] as const,
 	customProviders: (family: string) => ["customProviders", family] as const,
-	kimiProviderConfig: ["kimiProviderConfig"] as const,
 	agentLoginStatus: ["agentLoginStatus"] as const,
 	agentVersions: ["agentVersions"] as const,
 	providerCapabilities: ["providerCapabilities"] as const,
@@ -105,8 +104,6 @@ export const helmorQueryKeys = {
 		["workspaceChangeRequest", workspaceId] as const,
 	workspaceForge: (workspaceId: string) =>
 		["workspaceForge", workspaceId] as const,
-	forgeAccounts: (gitlabHosts: string[]) =>
-		["forgeAccounts", ...gitlabHosts] as const,
 	forgeAccountsAll: ["forgeAccounts"] as const,
 	workspaceAccountProfile: (workspaceId: string) =>
 		["workspaceAccountProfile", workspaceId] as const,
@@ -464,10 +461,10 @@ export function workspaceAccountProfileQueryOptions(
 	});
 }
 
-export function forgeAccountsQueryOptions(gitlabHosts: string[]) {
+export function forgeAccountsQueryOptions() {
 	return queryOptions<ForgeAccount[]>({
-		queryKey: helmorQueryKeys.forgeAccounts(gitlabHosts),
-		queryFn: () => listForgeAccounts(gitlabHosts),
+		queryKey: helmorQueryKeys.forgeAccountsAll,
+		queryFn: () => listForgeAccounts(),
 		// Same cache contract as `workspaceAccountProfileQueryOptions`:
 		// cache forever, refetch on every window focus. Backend
 		// throttles the underlying CLI calls.
@@ -920,7 +917,7 @@ export function workspaceForgeRefetchInterval(
 	data: ForgeDetection | undefined,
 ): number | false {
 	if (!data) return WORKSPACE_FORGE_REFETCH_INTERVAL;
-	return data.provider === "github" || data.provider === "gitlab"
+	return data.provider === "github"
 		? WORKSPACE_FORGE_REFETCH_INTERVAL
 		: false;
 }

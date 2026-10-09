@@ -1,7 +1,7 @@
 # Introduction
 
 Helmor is a desktop app for people who work *with* coding agents rather than
-just chatting with one. It runs Claude Code, OpenAI Codex, and Kimi Code
+just chatting with one. It runs Claude Code and OpenAI Codex
 side by side, gives each task its own isolated git workspace, and
 keeps the whole loop — prompt, review, test, merge — in a single window.
 

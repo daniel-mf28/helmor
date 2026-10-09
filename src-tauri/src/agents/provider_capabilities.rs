@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderCapabilities {
-    /// Stable provider id — `"claude"`, `"codex"`, `"kimi"`, …. Same
+    /// Stable provider id — `"claude"`, `"codex"`, …. Same
     /// string the rest of the codebase uses on `AgentModelOption`.
     pub provider: String,
     /// Human-readable label used in confirmation dialogs, status copy,
@@ -52,7 +52,7 @@ pub struct ProviderCapabilities {
     pub supports_slash_commands: bool,
     /// Provider authenticates via an in-app key entry rather than the
     /// embedded login terminal flow. False for every shipped provider
-    /// today (Claude, Codex, Kimi); kept for future key-based providers.
+    /// today (Claude, Codex); kept for future key-based providers.
     pub requires_api_key: bool,
 }
 
@@ -71,21 +71,6 @@ pub fn capabilities_for_provider(provider: &str) -> ProviderCapabilities {
             supports_context_usage: true,
             supports_steer: true,
             supports_slash_commands: true,
-            requires_api_key: false,
-        },
-        "kimi" => ProviderCapabilities {
-            provider: "kimi".into(),
-            display_name: "Kimi".into(),
-            // ACP exposes session modes + a usage signal, but v1 wires
-            // neither: no Plan toggle, no context ring. ACP allows only one
-            // foreground turn at a time, so there is no mid-turn steer.
-            supports_plan_mode: false,
-            supports_active_goal: false,
-            supports_context_usage: false,
-            supports_steer: false,
-            // ACP `available_commands_update` feeds the slash-command popup.
-            supports_slash_commands: true,
-            // Auth is the embedded `kimi login` device-code terminal, not a key.
             requires_api_key: false,
         },
         // Default arm covers "claude" and anything we haven't onboarded
@@ -108,7 +93,7 @@ pub fn capabilities_for_provider(provider: &str) -> ProviderCapabilities {
 /// Convenience: list every provider Helmor ships today. Frontends use
 /// this to render the capability table in settings (eventually), and
 /// tests use it to assert there are no holes in the matrix.
-pub const KNOWN_PROVIDERS: &[&str] = &["claude", "codex", "kimi"];
+pub const KNOWN_PROVIDERS: &[&str] = &["claude", "codex"];
 
 #[cfg(test)]
 mod tests {
@@ -160,28 +145,6 @@ mod tests {
         assert!(caps.supports_steer);
         assert!(caps.supports_slash_commands);
         assert!(!caps.requires_api_key, "Codex uses embedded login");
-    }
-
-    #[test]
-    fn kimi_capabilities() {
-        let caps = capabilities_for_provider("kimi");
-        assert_eq!(caps.provider, "kimi");
-        assert_eq!(caps.display_name, "Kimi", "must not fall back to Claude");
-        assert!(!caps.supports_plan_mode, "kimi plan mode not wired in v1");
-        assert!(!caps.supports_active_goal);
-        assert!(
-            !caps.supports_context_usage,
-            "kimi context ring not wired in v1"
-        );
-        assert!(!caps.supports_steer, "ACP allows one foreground turn");
-        assert!(
-            caps.supports_slash_commands,
-            "ACP available_commands_update feeds the popup"
-        );
-        assert!(
-            !caps.requires_api_key,
-            "kimi uses the embedded login terminal"
-        );
     }
 
     #[test]

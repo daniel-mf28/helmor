@@ -11,7 +11,6 @@ own servers.
 | --- | --- | --- |
 | **Claude Code** | Your existing Claude Code login (Claude subscription) or an Anthropic API key | The default provider. Supports skills, MCP servers, extended thinking |
 | **OpenAI Codex** | Your existing Codex login (ChatGPT) or an OpenAI API key | Supports goal tracking and skills |
-| **Kimi Code** | Your Kimi login (`kimi login`, from Settings → Models) | Models from your `~/.kimi-code` config, plus custom providers |
 
 If you are already signed in to Claude Code or Codex on this machine, Helmor
 picks the login up automatically. Otherwise, onboarding (or Settings) walks

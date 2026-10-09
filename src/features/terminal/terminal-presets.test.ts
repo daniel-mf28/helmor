@@ -11,7 +11,6 @@ describe("terminal agent specs", () => {
 		for (const key of ["claude", "codex"]) {
 			expect(findTerminalAgent(key), key).not.toBeNull();
 		}
-		expect(findTerminalAgent("kimi")).toBeNull();
 		expect(findTerminalAgent("openclaude")).toBeNull();
 		expect(findTerminalAgent(null)).toBeNull();
 	});
@@ -112,7 +111,6 @@ describe("terminal agent specs", () => {
 		expect(resumeBootCommand("claude", "abc-123")).toBe(
 			"claude --resume 'abc-123' --dangerously-skip-permissions\n",
 		);
-		expect(resumeBootCommand("kimi", "id")).toBeNull();
 		expect(resumeBootCommand("gemini", "id")).toBeNull();
 	});
 

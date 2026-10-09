@@ -7,7 +7,7 @@
 
 import type { SidecarEmitter } from "./emitter.js";
 
-export type Provider = "claude" | "codex" | "kimi";
+export type Provider = "claude" | "codex";
 
 /** Custom Codex provider injected per thread; never touches `~/.codex/config.toml`. */
 export interface CodexProviderConfig {

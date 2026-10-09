@@ -7,7 +7,6 @@ All paths are relative to the repo root. Line numbers drift — grep the named c
 
 - [Claude (claude-agent-sdk + claude-code)](#claude) — class A+B, **lockstep**
 - [Codex (@openai/codex)](#codex) — class B, layout descriptor
-- [Kimi](#kimi) — class C, GitHub release, ACP protocol
 - [Pi (@earendil-works/pi-*)](#pi) — class A, **dead code → prefer delete**
 - [gh / glab / llama.cpp](#supporting-tools) — class C, supporting binaries
 
@@ -54,35 +53,6 @@ is no `@openai/codex-sdk` dependency despite older doc wording). Code in `sideca
   bumps past 1 or new top-level keys appear, review `stageCodexFromVendorRoot` in `stage-vendor.ts`.
 - Rust pipeline consumes `item/`, `turn/`, `thread/` slash-form methods (see `pipeline/accumulator/codex.rs`
   `normalize_item_type`). New item types or renamed methods require Rust changes — the cargo gate catches drift.
-
----
-
-## Kimi
-
-**Integration:** the bundled `kimi` binary speaks ACP (`kimi acp`) over a hand-rolled protocol in
-`sidecar/src/kimi/`. Class C — GitHub-release binary, **not** an npm dep, **not** in `package.json`.
-
-**Pins (both in `vendor-platform.ts`):**
-- `KIMI_VERSION = "X"`.
-- `KIMI_SHA256["X"]` with **four** platform keys: `darwin-arm64`, `darwin-x64`, `win32-arm64`, `win32-x64`.
-
-**Version + SHA source:** repo `MoonshotAI/kimi-code`. Release tag is the scoped npm tag, url-encoded:
-`%40moonshot-ai/kimi-code%40X`. Assets: `kimi-code-<platform>.zip`. Get each SHA from the asset's
-`digest` field via the GitHub API (or the `.zip.sha256` sidecar):
-```bash
-curl -s "https://api.github.com/repos/MoonshotAI/kimi-code/releases/tags/%40moonshot-ai%2Fkimi-code%40X" \
-  | python3 -c 'import sys,json; r=json.load(sys.stdin); [print(a["name"], a.get("digest")) for a in r["assets"] if a["name"].endswith(".zip")]'
-```
-The `digest` is `sha256:<hex>` — pin the hex. (Verify by downloading + `shasum -a 256` if unsure; the
-build hard-fails on mismatch anyway.)
-
-**Gotchas:**
-- **ACP protocol version.** Helmor hard-enforces `ACP_PROTOCOL_VERSION` (`sidecar/src/kimi/acp-types.ts`)
-  at the handshake and throws on mismatch. Kimi patch releases have not changed it, but if a release
-  negotiates a different version, the connection breaks — smoke-test `kimi acp`'s `initialize` response.
-- Most kimi releases are TUI/web-only (no ACP changes) → often low-value bumps. Check release notes.
-- A changed SHA auto-forces re-download from `.bundle-cache`; a manual `sidecar/.bundle-cache` wipe is
-  belt-and-suspenders, not required.
 
 ---
 
