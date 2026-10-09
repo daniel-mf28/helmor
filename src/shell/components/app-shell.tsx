@@ -48,10 +48,7 @@ export function AppShell({
 				onExpandSidebar={() => panels.setSidebarCollapsed(false)}
 			/>
 		),
-		[
-			panels.sidebarCollapsed,
-			chrome.leftSidebarToggleShortcut,
-		],
+		[panels.sidebarCollapsed, chrome.leftSidebarToggleShortcut],
 	);
 	const headerActionsNode = useMemo(
 		() =>

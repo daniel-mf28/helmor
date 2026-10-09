@@ -49,7 +49,6 @@ sha2 = "0.10"
 hex = "0.4"
 tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "devtools"] }
 tempfile = "3"
-tauri = { version = "2", features = ["test"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
@@ -126,6 +125,8 @@ path = "src/bin/helmor-cli.rs"
 
 [dev-dependencies]
 anyhow = "1"
+# Mock runtime for tests only — kept out of shipped builds.
+tauri = { version = "2", features = ["test"] }
 insta = { version = "1", features = ["yaml", "glob"] }
 tempfile = "3"
 
