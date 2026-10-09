@@ -29,6 +29,7 @@ type ColorThemeOption = {
 	accent: string;
 	lightBg: string;
 	lightAccent: string;
+	mode?: "light" | "dark";
 };
 
 /// Swatch tints for the Color Theme picker. Two stops per side so each
@@ -50,22 +51,6 @@ const COLOR_THEME_OPTIONS: readonly ColorThemeOption[] = [
 		accent: "oklch(0.30 0.10 260)",
 		lightBg: "oklch(0.82 0.09 258)",
 		lightAccent: "oklch(0.46 0.20 255)",
-	},
-	{
-		id: "forest",
-		label: "forest",
-		bg: "oklch(0.58 0.13 150)",
-		accent: "oklch(0.28 0.08 155)",
-		lightBg: "oklch(0.80 0.09 152)",
-		lightAccent: "oklch(0.44 0.17 148)",
-	},
-	{
-		id: "ember",
-		label: "ember",
-		bg: "oklch(0.66 0.15 55)",
-		accent: "oklch(0.32 0.09 48)",
-		lightBg: "oklch(0.84 0.11 60)",
-		lightAccent: "oklch(0.52 0.19 50)",
 	},
 	{
 		id: "aurora",
@@ -92,20 +77,48 @@ const COLOR_THEME_OPTIONS: readonly ColorThemeOption[] = [
 		lightAccent: "oklch(0.55 0.13 235)",
 	},
 	{
-		id: "choco-mint",
-		label: "chocoMint",
-		bg: "oklch(0.62 0.12 175)",
-		accent: "oklch(0.26 0.04 50)",
-		lightBg: "oklch(0.84 0.02 65)",
-		lightAccent: "oklch(0.50 0.13 175)",
+		id: "ink-coral",
+		label: "inkCoral",
+		bg: "oklch(0.24 0.029 253)",
+		accent: "oklch(0.76 0.14 28)",
+		lightBg: "oklch(0.9 0.013 252)",
+		lightAccent: "oklch(0.52 0.16 25)",
 	},
 	{
-		id: "banana",
-		label: "banana",
-		bg: "oklch(0.80 0.13 70)",
-		accent: "oklch(0.30 0.06 75)",
-		lightBg: "oklch(0.92 0.04 90)",
-		lightAccent: "oklch(0.45 0.18 330)",
+		id: "catppuccin-latte",
+		label: "catppuccinLatte",
+		bg: "oklch(0.958 0.006 264.5)",
+		accent: "oklch(0.555 0.250 297)",
+		lightBg: "oklch(0.958 0.006 264.5)",
+		lightAccent: "oklch(0.555 0.250 297)",
+		mode: "light",
+	},
+	{
+		id: "catppuccin-frappe",
+		label: "catppuccinFrappe",
+		bg: "oklch(0.329 0.032 274.8)",
+		accent: "oklch(0.765 0.111 311.7)",
+		lightBg: "oklch(0.329 0.032 274.8)",
+		lightAccent: "oklch(0.765 0.111 311.7)",
+		mode: "dark",
+	},
+	{
+		id: "catppuccin-macchiato",
+		label: "catppuccinMacchiato",
+		bg: "oklch(0.279 0.035 276.9)",
+		accent: "oklch(0.772 0.126 303.9)",
+		lightBg: "oklch(0.279 0.035 276.9)",
+		lightAccent: "oklch(0.772 0.126 303.9)",
+		mode: "dark",
+	},
+	{
+		id: "catppuccin-mocha",
+		label: "catppuccinMocha",
+		bg: "oklch(0.243 0.030 283.9)",
+		accent: "oklch(0.787 0.119 304.8)",
+		lightBg: "oklch(0.243 0.030 283.9)",
+		lightAccent: "oklch(0.787 0.119 304.8)",
+		mode: "dark",
 	},
 ];
 
@@ -144,8 +157,11 @@ function ColorThemePicker({
 }) {
 	const { t } = useI18n();
 	const [open, setOpen] = useState(false);
+	const visibleOptions = COLOR_THEME_OPTIONS.filter(
+		(option) => !option.mode || option.mode === (isLight ? "light" : "dark"),
+	);
 	const current =
-		COLOR_THEME_OPTIONS.find((o) => o.id === value) ?? COLOR_THEME_OPTIONS[0];
+		visibleOptions.find((o) => o.id === value) ?? visibleOptions[0];
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
@@ -167,7 +183,7 @@ function ColorThemePicker({
 			</PopoverTrigger>
 			<PopoverContent align="end" sideOffset={4} className="w-[220px] p-1">
 				<div role="listbox" className="flex flex-col">
-					{COLOR_THEME_OPTIONS.map((opt) => {
+					{visibleOptions.map((opt) => {
 						const selected = opt.id === value;
 						return (
 							<button

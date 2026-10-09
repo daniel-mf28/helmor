@@ -1,0 +1,11 @@
+{
+	"items": [
+		{
+			"text": "Try Catppuccin and Ink & Coral in Appearance settings.",
+			"action": {
+				"label": "Open Appearance",
+				"value": { "type": "openSettings", "section": "appearance" }
+			}
+		}
+	]
+}
