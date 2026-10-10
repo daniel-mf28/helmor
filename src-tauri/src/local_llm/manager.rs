@@ -48,6 +48,9 @@ pub struct Manager {
     /// polls `status` while a slow cold-load is in flight.
     start_lock: Mutex<()>,
     server: Mutex<Option<server::ServerInstance>>,
+    /// Thinking mode the running server was started with; a change in
+    /// Settings restarts the server on the next start/turn.
+    server_thinking: Mutex<bool>,
     starting: Mutex<bool>,
     /// Arc so warmup/healthcheck threads can write back.
     last_error: Arc<Mutex<Option<String>>>,
@@ -221,19 +224,32 @@ impl Manager {
 
     fn ensure_started(&self, model: &str) -> Result<()> {
         let _start_guard = self.start_lock.lock().unwrap_or_else(|p| p.into_inner());
+        let thinking = load_settings().thinking;
         {
             let mut server = self.server.lock().unwrap_or_else(|p| p.into_inner());
+            let same_thinking = *self
+                .server_thinking
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                == thinking;
             if let Some(running) = server.as_mut() {
-                if running.model_path == model && server::child_is_running(&mut running.child) {
+                if running.model_path == model
+                    && same_thinking
+                    && server::child_is_running(&mut running.child)
+                {
                     return Ok(());
                 }
-                // Stale (different model or dead) — drop reaps it.
+                // Stale (different model, thinking mode, or dead) — drop reaps it.
                 let _ = server.take();
             }
         }
 
         let _starting = StartingFlag::new(&self.starting);
-        let instance = spawn_llm_server(model).inspect_err(|error| {
+        *self
+            .server_thinking
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = thinking;
+        let instance = spawn_llm_server(model, thinking).inspect_err(|error| {
             *self.last_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(format!("{error:#}"));
         })?;
         let endpoint = format!("http://127.0.0.1:{}", instance.port);
@@ -422,9 +438,9 @@ fn spawn_healthcheck(endpoint: String, token: String, last_error: Arc<Mutex<Opti
 /// Build the `llama-server` arg vector for the LLM brain and spawn it
 /// through the shared helper. Keeps the LLM-specific flags (alias,
 /// reasoning off, log-disable) in one place.
-fn spawn_llm_server(model: &str) -> Result<server::ServerInstance> {
+fn spawn_llm_server(model: &str, thinking: bool) -> Result<server::ServerInstance> {
     let context_size = resolve_context_for_path(model);
-    let args = llm_server_args(llama_model_args(model)?, context_size);
+    let args = llm_server_args(llama_model_args(model)?, context_size, thinking);
 
     let data_dir = crate::data_dir::data_dir()?.join("local-llm");
     server::spawn(server::SpawnArgs {
@@ -437,8 +453,12 @@ fn spawn_llm_server(model: &str) -> Result<server::ServerInstance> {
     })
 }
 
+pub(super) const NO_THINKING_TEMPLATE_KWARGS: &str =
+    r#"{"reasoning_effort":"none","enable_thinking":false}"#;
+const THINKING_TEMPLATE_KWARGS: &str = r#"{"reasoning_effort":"high","enable_thinking":true}"#;
+
 /// Append the fixed LLM-brain flags to the model args.
-fn llm_server_args(mut args: Vec<String>, context_size: u32) -> Vec<String> {
+fn llm_server_args(mut args: Vec<String>, context_size: u32, thinking: bool) -> Vec<String> {
     args.extend([
         "--alias".to_string(),
         API_MODEL.to_string(),
@@ -446,9 +466,9 @@ fn llm_server_args(mut args: Vec<String>, context_size: u32) -> Vec<String> {
         context_size.to_string(),
         "-ngl".to_string(),
         GPU_LAYERS.to_string(),
-        // Keeps hidden reasoning out of visible replies (titles + agent).
-        "--reasoning".to_string(),
-        REASONING_MODE.to_string(),
+    ]);
+    args.extend(reasoning_args(thinking));
+    args.extend([
         // One slot keeps the whole window for one request; the server's
         // automatic slot count would split `-c` between requests.
         "--parallel".to_string(),
@@ -458,6 +478,29 @@ fn llm_server_args(mut args: Vec<String>, context_size: u32) -> Vec<String> {
         "--log-disable".to_string(),
     ]);
     args
+}
+
+/// Reasoning flags. `--reasoning off` alone doesn't stop templates that
+/// force-open a `<think>` block on every reply (e.g. Nex N2.5): the model
+/// writes its plan into the visible answer followed by `</think>`. The
+/// template kwargs are the models' own thinking switches (Nex / gpt-oss
+/// style `reasoning_effort`, Qwen3 style `enable_thinking`); templates
+/// ignore keys they don't use. With thinking on, `deepseek` extraction
+/// returns the reasoning as separate thinking blocks, never in the answer.
+fn reasoning_args(thinking: bool) -> [String; 6] {
+    let (mode, kwargs) = if thinking {
+        ("on", THINKING_TEMPLATE_KWARGS)
+    } else {
+        (REASONING_MODE, NO_THINKING_TEMPLATE_KWARGS)
+    };
+    [
+        "--reasoning".to_string(),
+        mode.to_string(),
+        "--reasoning-format".to_string(),
+        "deepseek".to_string(),
+        "--chat-template-kwargs".to_string(),
+        kwargs.to_string(),
+    ]
 }
 
 /// Resolve `--model` (and `--mmproj` when a projector sits beside the weights).
@@ -535,7 +578,7 @@ mod tests {
 
     #[test]
     fn server_args_enable_tool_calling_and_single_slot() {
-        let args = llm_server_args(vec!["--model".into(), "/m/a.gguf".into()], 65_536);
+        let args = llm_server_args(vec!["--model".into(), "/m/a.gguf".into()], 65_536, false);
         let pos = |flag: &str| args.iter().position(|a| a == flag).unwrap();
         assert_eq!(args[0], "--model");
         assert!(args.iter().any(|a| a == "--jinja"));
@@ -543,6 +586,22 @@ mod tests {
         assert_eq!(args[pos("-c") + 1], "65536");
         assert_eq!(args[pos("--reasoning") + 1], "off");
         assert_eq!(args[pos("--parallel") + 1], "1");
+        let kwargs: serde_json::Value =
+            serde_json::from_str(&args[pos("--chat-template-kwargs") + 1]).unwrap();
+        assert_eq!(kwargs["reasoning_effort"], "none");
+        assert_eq!(kwargs["enable_thinking"], false);
+    }
+
+    #[test]
+    fn thinking_on_extracts_reasoning_separately() {
+        let args = llm_server_args(vec!["--model".into(), "/m/a.gguf".into()], 65_536, true);
+        let pos = |flag: &str| args.iter().position(|a| a == flag).unwrap();
+        assert_eq!(args[pos("--reasoning") + 1], "on");
+        assert_eq!(args[pos("--reasoning-format") + 1], "deepseek");
+        let kwargs: serde_json::Value =
+            serde_json::from_str(&args[pos("--chat-template-kwargs") + 1]).unwrap();
+        assert_eq!(kwargs["reasoning_effort"], "high");
+        assert_eq!(kwargs["enable_thinking"], true);
     }
 
     #[test]

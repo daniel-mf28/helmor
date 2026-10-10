@@ -282,12 +282,23 @@ pub async fn send_agent_message_stream(
     } else {
         None
     };
+    let local_settings = model.local.then(crate::local_llm::load_settings);
+    let instruction_excludes = if model.local {
+        local_turn::instruction_excludes_for_turn(
+            request.helmor_session_id.as_deref(),
+            &working_directory,
+        )
+    } else {
+        None
+    };
     let local = local_endpoint
         .as_ref()
         .zip(local_config_dir.as_deref())
         .map(|(endpoint, config_dir)| LocalTurn {
             endpoint,
             config_dir,
+            thinking: local_settings.as_ref().is_some_and(|s| s.thinking),
+            instruction_excludes: instruction_excludes.as_deref(),
         });
 
     stream_via_sidecar(

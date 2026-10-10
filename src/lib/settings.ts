@@ -79,6 +79,10 @@ export type LocalLlmSettings = {
 	 *  catalog default. Backend keeps this map in sync via
 	 *  `setLocalLlmContextOverride`. */
 	contextOverrides?: Record<string, number>;
+	/** Let the model reason before answering (slower, smarter). */
+	thinking: boolean;
+	/** Local agent turns in a project read its instruction files. */
+	readProjectInstructions: boolean;
 };
 
 /** Per-repo work mode on the start surface. `chat` is a top-level toggle
@@ -307,6 +311,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 		model: "",
 		autoStart: true,
 		contextOverrides: {},
+		thinking: false,
+		readProjectInstructions: true,
 	},
 	startSurfacePreferences: DEFAULT_START_SURFACE_PREFERENCES,
 	claudeAccounts: [],
@@ -754,6 +760,14 @@ function parseLocalLlmSettings(raw: string | undefined): LocalLlmSettings {
 					? parsed.autoStart
 					: DEFAULT_SETTINGS.localLlm.autoStart,
 			contextOverrides: overrides,
+			thinking:
+				typeof parsed.thinking === "boolean"
+					? parsed.thinking
+					: DEFAULT_SETTINGS.localLlm.thinking,
+			readProjectInstructions:
+				typeof parsed.readProjectInstructions === "boolean"
+					? parsed.readProjectInstructions
+					: DEFAULT_SETTINGS.localLlm.readProjectInstructions,
 		};
 	} catch {
 		return DEFAULT_SETTINGS.localLlm;
