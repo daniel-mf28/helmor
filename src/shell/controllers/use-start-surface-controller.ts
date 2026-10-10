@@ -594,6 +594,19 @@ export function useStartSurfaceController(
 				requestSidebarReconcile(queryClient);
 
 				if (outcome.shouldStream) {
+					// Claude chats (GUI and Terminal) run under the session's
+					// account, read by the backend when the turn / PTY starts. Pin
+					// the account shown in the start-page picker onto the (still
+					// message-less) session before anything streams; a failure
+					// keeps whatever the session was seeded with.
+					if (payload.model.provider === "claude") {
+						await setSessionClaudeConfigDir(
+							sessionId,
+							claudeConfigDirRef.current,
+						).catch((error) => {
+							console.warn("[start] failed to set Claude account:", error);
+						});
+					}
 					// Terminal-Mode start sends: convert the pipeline's GUI session
 					// into a Terminal session IN PLACE (no throwaway placeholder)
 					// and stage its boot before anything selects it. The panel's
@@ -602,21 +615,6 @@ export function useStartSurfaceController(
 					let terminalConverted = false;
 					if (payload.terminalMode) {
 						try {
-							// A Claude terminal runs under the session's account, which
-							// the backend reads when the PTY boots. Pin the composer's
-							// selection onto the (still message-less) session first; a
-							// failure keeps whatever the session was seeded with.
-							if (payload.model.provider === "claude") {
-								await setSessionClaudeConfigDir(
-									sessionId,
-									claudeConfigDirRef.current,
-								).catch((error) => {
-									console.warn(
-										"[start] failed to set terminal account:",
-										error,
-									);
-								});
-							}
 							await convertSessionToTerminal(sessionId, payload.model.provider);
 							// Layer 1 of the two-layer title (same as GUI): show a
 							// provisional title from the prompt immediately; the agent's

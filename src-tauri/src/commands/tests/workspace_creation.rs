@@ -2474,3 +2474,65 @@ fn list_branch_picker_entries_tags_local_and_remote_correctly() {
     // `wip/local-only`: local-only (we never fetched it into origin/).
     assert_eq!(by_name.get("wip/local-only"), Some(&(true, false)));
 }
+
+fn initial_session_config_dir(harness: &CreateTestHarness, session_id: &str) -> Option<String> {
+    Connection::open(harness.db_path())
+        .unwrap()
+        .query_row(
+            "SELECT claude_config_dir FROM sessions WHERE id = ?1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn new_workspace_initial_session_starts_on_last_picked_claude_account() {
+    let _guard = TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let harness = CreateTestHarness::new();
+
+    // No account picked yet -> default account (NULL).
+    let prepared = workspaces::prepare_workspace_from_repo_impl(
+        &harness.repo_id,
+        None,
+        WorkspaceBranchIntent::FromBranch,
+        WorkspaceStatus::InProgress,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        initial_session_config_dir(&harness, &prepared.initial_session_id),
+        None
+    );
+
+    // Start-page pick (e.g. Personal) must carry onto the new workspace's
+    // first chat; otherwise it silently runs on the default account.
+    crate::models::settings::upsert_setting_value(
+        crate::claude_accounts::session::LAST_CONFIG_DIR_KEY,
+        "/Users/me/.claude-personal",
+    )
+    .unwrap();
+
+    let worktree = workspaces::prepare_workspace_from_repo_impl(
+        &harness.repo_id,
+        None,
+        WorkspaceBranchIntent::FromBranch,
+        WorkspaceStatus::InProgress,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        initial_session_config_dir(&harness, &worktree.initial_session_id).as_deref(),
+        Some("/Users/me/.claude-personal")
+    );
+
+    let chat =
+        crate::workspace::lifecycle::prepare_chat_workspace_impl(WorkspaceStatus::InProgress, None)
+            .unwrap();
+    assert_eq!(
+        initial_session_config_dir(&harness, &chat.initial_session_id).as_deref(),
+        Some("/Users/me/.claude-personal")
+    );
+}

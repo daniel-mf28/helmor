@@ -286,6 +286,9 @@ pub(crate) fn insert_initializing_workspace_and_session_with_mode(
     status: WorkspaceStatus,
     timestamp: &str,
 ) -> Result<()> {
+    // The first chat starts on the Claude account the user last picked
+    // (None = default), same as `sessions::create_session`.
+    let claude_config_dir = crate::claude_accounts::session::last_used_config_dir();
     let mut connection = db::write_conn()?;
     let transaction = connection
         .transaction()
@@ -356,10 +359,11 @@ pub(crate) fn insert_initializing_workspace_and_session_with_mode(
               fast_mode,
               created_at,
               updated_at,
-              is_hidden
-            ) VALUES (?1, ?2, 'Untitled', 'idle', 'default', 0, 0, ?3, ?3, 0)
+              is_hidden,
+              claude_config_dir
+            ) VALUES (?1, ?2, 'Untitled', 'idle', 'default', 0, 0, ?3, ?3, 0, ?4)
             "#,
-            (session_id, workspace_id, timestamp),
+            (session_id, workspace_id, timestamp, &claude_config_dir),
         )
         .context("Failed to insert initial session")?;
 
@@ -384,6 +388,9 @@ pub(crate) fn insert_chat_workspace_and_session(
     status: WorkspaceStatus,
     timestamp: &str,
 ) -> Result<()> {
+    // The first chat starts on the Claude account the user last picked
+    // (None = default), same as `sessions::create_session`.
+    let claude_config_dir = crate::claude_accounts::session::last_used_config_dir();
     let mut connection = db::write_conn()?;
     let transaction = connection
         .transaction()
@@ -452,10 +459,11 @@ pub(crate) fn insert_chat_workspace_and_session(
               fast_mode,
               created_at,
               updated_at,
-              is_hidden
-            ) VALUES (?1, ?2, 'Untitled', 'idle', 'default', 0, 0, ?3, ?3, 0)
+              is_hidden,
+              claude_config_dir
+            ) VALUES (?1, ?2, 'Untitled', 'idle', 'default', 0, 0, ?3, ?3, 0, ?4)
             "#,
-            (session_id, workspace_id, timestamp),
+            (session_id, workspace_id, timestamp, &claude_config_dir),
         )
         .context("Failed to insert initial chat session")?;
 
