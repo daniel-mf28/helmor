@@ -37,7 +37,10 @@ impl Manager {
                     { "role": "user", "content": user_prompt }
                 ],
                 "temperature": 0.0,
-                "max_tokens": CHAT_MAX_TOKENS
+                "max_tokens": CHAT_MAX_TOKENS,
+                // Titles must stay short even when Settings > Local LLM >
+                // Thinking is on: the reasoning would eat the token budget.
+                "chat_template_kwargs": no_thinking_kwargs()
             }))
             .send()
             .context("call Local LLM chat endpoint")?;
@@ -141,5 +144,19 @@ mod tests {
     fn summarize_error_body_handles_empty() {
         assert_eq!(summarize_error_body(""), "<empty body>");
         assert_eq!(summarize_error_body("   \n  "), "<empty body>");
+    }
+}
+
+fn no_thinking_kwargs() -> serde_json::Value {
+    serde_json::from_str(super::manager::NO_THINKING_TEMPLATE_KWARGS).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod no_thinking_tests {
+    #[test]
+    fn title_requests_force_thinking_off() {
+        let kwargs = super::no_thinking_kwargs();
+        assert_eq!(kwargs["reasoning_effort"], "none");
+        assert_eq!(kwargs["enable_thinking"], false);
     }
 }

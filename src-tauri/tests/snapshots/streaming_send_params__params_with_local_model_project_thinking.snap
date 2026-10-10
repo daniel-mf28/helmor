@@ -1,0 +1,28 @@
+---
+source: tests/streaming_send_params.rs
+expression: "&params[\"claudeSettings\"]"
+---
+claudeMdExcludes:
+  - /Users/me/CLAUDE.md
+  - /Users/me/.claude/CLAUDE.md
+enableAllProjectMcpServers: false
+permissions:
+  deny:
+    - WebSearch
+    - WebFetch
+    - Agent
+    - AskUserQuestion
+    - CronCreate
+    - CronDelete
+    - CronList
+    - EnterPlanMode
+    - EnterWorktree
+    - ExitWorktree
+    - ListAgents
+    - NotebookEdit
+    - ReportFindings
+    - ScheduleWakeup
+    - SendMessage
+    - Skill
+    - TaskStop
+    - Workflow

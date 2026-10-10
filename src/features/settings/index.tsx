@@ -88,6 +88,7 @@ import type { SettingsSection } from "./types";
 const SECTION_LABEL_OVERRIDES: Partial<Record<SettingsSection, string>> = {
 	model: "models",
 	account: "accounts",
+	experimental: "localLlm",
 };
 
 /// Optional muted-caption next to the title in the dialog header.

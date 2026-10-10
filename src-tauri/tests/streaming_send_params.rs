@@ -315,6 +315,9 @@ fn local_turn_points_claude_agent_at_the_local_server_only() {
     input.local = Some(LocalTurn {
         endpoint: &endpoint,
         config_dir: "/data/local-llm/claude-home",
+        // Plain chat, thinking off: no instruction files, no thinking.
+        thinking: false,
+        instruction_excludes: None,
     });
 
     let mut params = build(input);
@@ -326,4 +329,39 @@ fn local_turn_points_claude_agent_at_the_local_server_only() {
     assert!(no_proxy.contains("127.0.0.1") && no_proxy.contains("localhost"));
     assert_eq!(params["claudeConfigDir"], "/data/local-llm/claude-home");
     assert_yaml_snapshot!("params_with_local_model", &params);
+}
+
+#[test]
+fn local_project_turn_reads_project_instructions_and_can_think() {
+    let env = TestEnv::new();
+    seed_workspace_session(&env.connection(), "w-lp", "s-lp", None);
+
+    let endpoint = helmor_lib::local_llm::AgentEndpoint {
+        url: "http://127.0.0.1:18777".to_string(),
+        token: "helmor-local-token".to_string(),
+        context_tokens: 65_536,
+    };
+    let excludes = vec![
+        "/Users/me/CLAUDE.md".to_string(),
+        "/Users/me/.claude/CLAUDE.md".to_string(),
+    ];
+    let mut input = base_input(Some("s-lp"));
+    input.cli_model = "helmor-local";
+    input.effort_level = None;
+    input.local = Some(LocalTurn {
+        endpoint: &endpoint,
+        config_dir: "/data/local-llm/claude-home",
+        thinking: true,
+        instruction_excludes: Some(&excludes),
+    });
+
+    let params = build(input);
+    let env_obj = params["claudeEnvironment"].as_object().unwrap();
+    // Project instructions on + thinking on: neither switch is set.
+    assert!(!env_obj.contains_key("CLAUDE_CODE_DISABLE_CLAUDE_MDS"));
+    assert!(!env_obj.contains_key("CLAUDE_CODE_DISABLE_THINKING"));
+    assert_yaml_snapshot!(
+        "params_with_local_model_project_thinking",
+        &params["claudeSettings"]
+    );
 }

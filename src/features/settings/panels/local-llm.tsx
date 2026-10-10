@@ -59,6 +59,7 @@ import { helmorQueryKeys } from "@/lib/query-client";
 import type { AppSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import { SettingsReleaseBadge } from "../components/release-marker";
+import { LocalLlmBehaviorSection } from "./local-llm-behavior";
 
 const LOCAL_LLM_STATUS_KEY = ["localLlmStatus"] as const;
 const LOCAL_LLM_CATALOG_KEY = ["localLlmCatalog"] as const;
@@ -439,6 +440,12 @@ export function LocalLlmPanel({
 							{status.lastError}
 						</NoticeBanner>
 					) : null}
+
+					<LocalLlmBehaviorSection
+						settings={settings}
+						updateSettings={updateSettings}
+						modelLoaded={hasModel}
+					/>
 
 					<ModelsSection
 						catalog={catalog}

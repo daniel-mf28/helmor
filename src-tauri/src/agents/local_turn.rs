@@ -109,6 +109,55 @@ fn history_dir_has(projects: &std::path::Path, conversation_id: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Which instruction files a local turn reads. Plain chats (and the
+/// "Read project instructions" setting off) read none. Project sessions read
+/// the project's own files and skip every instruction file in the folders
+/// above it — the user's home-folder files are written for cloud Claude
+/// (its tools, accounts, reply style) and only slow a local model down.
+pub fn instruction_excludes_for_turn(
+    helmor_session_id: Option<&str>,
+    working_directory: &std::path::Path,
+) -> Option<Vec<String>> {
+    if !crate::local_llm::load_settings().read_project_instructions {
+        return None;
+    }
+    if session_is_plain_chat(helmor_session_id) {
+        return None;
+    }
+    Some(ancestor_instruction_files(working_directory))
+}
+
+fn session_is_plain_chat(helmor_session_id: Option<&str>) -> bool {
+    let Some(hsid) = helmor_session_id else {
+        return false;
+    };
+    crate::models::db::read_conn()
+        .ok()
+        .and_then(|conn| {
+            conn.query_row(
+                "SELECT COALESCE(w.mode, 'worktree') FROM sessions s \
+                 JOIN workspaces w ON w.id = s.workspace_id WHERE s.id = ?1",
+                [hsid],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+        })
+        .is_some_and(|mode| mode == "chat")
+}
+
+/// Instruction-file paths in every folder strictly above `dir`.
+fn ancestor_instruction_files(dir: &std::path::Path) -> Vec<String> {
+    const NAMES: [&str; 3] = ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"];
+    dir.ancestors()
+        .skip(1)
+        .flat_map(|ancestor| {
+            NAMES
+                .iter()
+                .map(move |name| ancestor.join(name).display().to_string())
+        })
+        .collect()
+}
+
 /// Start (or reuse) the local model and wait until it can take a turn.
 pub async fn ensure_local_for_turn(
     app: &AppHandle,
@@ -170,6 +219,16 @@ mod tests {
         assert!(!history_dir_has(dir.path(), "zzz-999"));
         assert!(!history_dir_has(dir.path(), "../abc-123"));
         assert!(!history_dir_has(&dir.path().join("missing"), "abc-123"));
+    }
+
+    #[test]
+    fn excludes_cover_every_folder_above_the_project_only() {
+        let excludes = ancestor_instruction_files(std::path::Path::new("/Users/me/repo"));
+        assert!(excludes.contains(&"/Users/me/CLAUDE.md".to_string()));
+        assert!(excludes.contains(&"/Users/me/.claude/CLAUDE.md".to_string()));
+        assert!(excludes.contains(&"/Users/CLAUDE.local.md".to_string()));
+        assert!(excludes.contains(&"/CLAUDE.md".to_string()));
+        assert!(!excludes.iter().any(|p| p.starts_with("/Users/me/repo")));
     }
 
     #[test]

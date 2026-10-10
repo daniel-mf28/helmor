@@ -21,6 +21,14 @@ pub struct Settings {
     /// Absent entry = use the hardware-aware default.
     #[serde(default)]
     pub context_overrides: std::collections::HashMap<String, u32>,
+    /// Let the model reason before answering (slower, smarter). Its
+    /// reasoning is returned separately and shown as collapsible thinking.
+    #[serde(default)]
+    pub thinking: bool,
+    /// Local agent turns in a project workspace read that project's
+    /// instruction files (CLAUDE.md). Plain chats never do.
+    #[serde(default = "default_true")]
+    pub read_project_instructions: bool,
 }
 
 impl Default for Settings {
@@ -30,6 +38,8 @@ impl Default for Settings {
             model: String::new(),
             auto_start: true,
             context_overrides: std::collections::HashMap::new(),
+            thinking: false,
+            read_project_instructions: true,
         }
     }
 }
