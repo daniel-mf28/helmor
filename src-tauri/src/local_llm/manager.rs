@@ -437,6 +437,8 @@ fn spawn_llm_server(model: &str) -> Result<server::ServerInstance> {
     })
 }
 
+const NO_THINKING_TEMPLATE_KWARGS: &str = r#"{"reasoning_effort":"none","enable_thinking":false}"#;
+
 /// Append the fixed LLM-brain flags to the model args.
 fn llm_server_args(mut args: Vec<String>, context_size: u32) -> Vec<String> {
     args.extend([
@@ -449,6 +451,14 @@ fn llm_server_args(mut args: Vec<String>, context_size: u32) -> Vec<String> {
         // Keeps hidden reasoning out of visible replies (titles + agent).
         "--reasoning".to_string(),
         REASONING_MODE.to_string(),
+        // `--reasoning off` alone doesn't stop templates that force-open a
+        // `<think>` block on every reply (e.g. Nex N2.5): the model then
+        // writes its plan into the visible answer followed by `</think>`.
+        // These template switches are the models' own "no thinking" modes
+        // (Nex/gpt-oss style `reasoning_effort`, Qwen3 style
+        // `enable_thinking`); templates ignore keys they don't use.
+        "--chat-template-kwargs".to_string(),
+        NO_THINKING_TEMPLATE_KWARGS.to_string(),
         // One slot keeps the whole window for one request; the server's
         // automatic slot count would split `-c` between requests.
         "--parallel".to_string(),
@@ -543,6 +553,10 @@ mod tests {
         assert_eq!(args[pos("-c") + 1], "65536");
         assert_eq!(args[pos("--reasoning") + 1], "off");
         assert_eq!(args[pos("--parallel") + 1], "1");
+        let kwargs: serde_json::Value =
+            serde_json::from_str(&args[pos("--chat-template-kwargs") + 1]).unwrap();
+        assert_eq!(kwargs["reasoning_effort"], "none");
+        assert_eq!(kwargs["enable_thinking"], false);
     }
 
     #[test]

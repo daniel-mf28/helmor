@@ -165,6 +165,13 @@ pub fn local_agent_env(
         .to_string();
     let no_proxy = merge_no_proxy(existing_no_proxy);
     let mut env = serde_json::Map::new();
+    // Prompt-size switches: a local model reads the whole prompt on the first
+    // turn (~220 tokens/s on a laptop), so instruction files, auto-memory,
+    // skills, cron, workflows, background tasks, subagent listings and
+    // thinking are off. Measured: first-turn prompt 19,142 -> 2,645 tokens.
+    for key in LOCAL_AGENT_DISABLED_FEATURES {
+        env.insert((*key).to_string(), Value::from("1"));
+    }
     let pairs: [(&str, &str); 19] = [
         ("ANTHROPIC_BASE_URL", &endpoint.url),
         ("ANTHROPIC_AUTH_TOKEN", &endpoint.token),
@@ -193,11 +200,49 @@ pub fn local_agent_env(
     env
 }
 
-/// Inline `--settings` for local turns: web tools are denied (they reach
-/// Anthropic-hosted services) and project MCP servers are never auto-enabled.
+/// Agent features switched off for local turns (each is `<NAME>=1`).
+const LOCAL_AGENT_DISABLED_FEATURES: &[&str] = &[
+    "CLAUDE_CODE_DISABLE_CLAUDE_MDS",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
+    "CLAUDE_CODE_DISABLE_BUNDLED_SKILLS",
+    "CLAUDE_CODE_DISABLE_CRON",
+    "CLAUDE_CODE_DISABLE_WORKFLOWS",
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS",
+    "CLAUDE_CODE_DISABLE_THINKING",
+    "CLAUDE_CODE_DISABLE_ADVISOR_TOOL",
+    "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS",
+];
+
+/// Tools removed from local turns. Denied tools are dropped from the model's
+/// tool list entirely, which is most of the prompt: what's left is Bash,
+/// Read, Edit, Write and ExitPlanMode (plan mode). Web tools also reach
+/// Anthropic-hosted services, so they must never run locally.
+const LOCAL_AGENT_DENIED_TOOLS: &[&str] = &[
+    "WebSearch",
+    "WebFetch",
+    "Agent",
+    "AskUserQuestion",
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "EnterPlanMode",
+    "EnterWorktree",
+    "ExitWorktree",
+    "ListAgents",
+    "NotebookEdit",
+    "ReportFindings",
+    "ScheduleWakeup",
+    "SendMessage",
+    "Skill",
+    "TaskStop",
+    "Workflow",
+];
+
+/// Inline `--settings` for local turns: trimmed tool set (see
+/// [`LOCAL_AGENT_DENIED_TOOLS`]) and project MCP servers never auto-enabled.
 fn local_agent_settings() -> Value {
     serde_json::json!({
-        "permissions": { "deny": ["WebSearch", "WebFetch"] },
+        "permissions": { "deny": LOCAL_AGENT_DENIED_TOOLS },
         "enableAllProjectMcpServers": false,
     })
 }
