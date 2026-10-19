@@ -690,7 +690,9 @@ export function summaryToArchivedRow(summary: WorkspaceSummary): WorkspaceRow {
 export const LOCAL_MODEL_ID = "helmor-local";
 
 export function isLocalModelId(modelId: string | null | undefined): boolean {
-	return modelId === LOCAL_MODEL_ID;
+	return (
+		modelId === LOCAL_MODEL_ID || !!modelId?.startsWith(`${LOCAL_MODEL_ID}:`)
+	);
 }
 
 export function resolveSessionSelectedModelId({

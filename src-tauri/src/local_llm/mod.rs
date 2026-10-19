@@ -8,6 +8,7 @@ pub mod asset_provider;
 pub mod catalog;
 mod chat;
 mod context;
+pub mod discover;
 pub mod gguf;
 pub mod hardware;
 mod manager;
