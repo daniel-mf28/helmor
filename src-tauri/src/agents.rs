@@ -273,6 +273,14 @@ pub async fn send_agent_message_stream(
     // On-device model: load it (bounded, cancellable by Stop) before the
     // turn starts. A failure rejects the send — never a cloud fallback.
     let local_endpoint = if model.local {
+        // A picker choice naming a specific file switches the active model
+        // first; the server restarts onto it when it differs.
+        if let Some(path) = crate::local_llm::discover::path_from_model_id(&request.model_id) {
+            if !std::path::Path::new(path).is_file() {
+                return Err(anyhow::anyhow!("Local model file not found: {path}").into());
+            }
+            crate::local_llm::set_active_model_path(path.to_string())?;
+        }
         Some(local_turn::ensure_local_for_turn(&app, request.helmor_session_id.as_deref()).await?)
     } else {
         None

@@ -93,33 +93,69 @@ pub const LOCAL_MODEL_ID: &str = crate::local_llm::API_MODEL;
 /// Picker section id for on-device models.
 pub const LOCAL_SECTION_ID: &str = "local";
 
-/// The "On this Mac" picker section: present only while Local LLM is on and
-/// a GGUF is selected. Runs on the Claude agent pointed at the local server.
+/// The "On this Mac" picker section: present only while Local LLM is on.
+/// Lists every GGUF found on disk (Helmor's folder + LM Studio's) plus the
+/// model chosen in Settings, so switching is one click in the picker. Runs on
+/// the Claude agent pointed at the local server.
 fn local_model_section(settings: &crate::local_llm::Settings) -> Option<AgentModelSection> {
-    let path = settings.model.trim();
-    if !settings.enabled || path.is_empty() {
+    local_section_for(settings, &crate::local_llm::discover::discover_models())
+}
+
+fn local_section_for(
+    settings: &crate::local_llm::Settings,
+    discovered: &[std::path::PathBuf],
+) -> Option<AgentModelSection> {
+    let selected = settings.model.trim();
+    if !settings.enabled || (selected.is_empty() && discovered.is_empty()) {
         return None;
     }
-    let name = std::path::Path::new(path)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .filter(|stem| !stem.is_empty())
-        .unwrap_or("Local model");
+    let option = |id: String, path: &str| AgentModelOption {
+        id,
+        provider: "claude".to_string(),
+        label: format!("Local · {}", local_model_name(path)),
+        cli_model: LOCAL_MODEL_ID.to_string(),
+        provider_key: Some(LOCAL_SECTION_ID.to_string()),
+        effort_levels: Vec::new(),
+        supports_fast_mode: false,
+        supports_context_usage: true,
+    };
+    let mut options: Vec<AgentModelOption> = discovered
+        .iter()
+        .map(|path| {
+            let path = path.display().to_string();
+            option(
+                crate::local_llm::discover::model_id_for_path(std::path::Path::new(&path)),
+                &path,
+            )
+        })
+        .collect();
+    // A model picked in Settings from outside the scanned folders.
+    let selected_listed = discovered
+        .iter()
+        .any(|path| path.display().to_string() == selected);
+    if !selected.is_empty() && !selected_listed {
+        options.insert(0, option(LOCAL_MODEL_ID.to_string(), selected));
+    }
     Some(AgentModelSection {
         id: LOCAL_SECTION_ID.to_string(),
         label: "On this Mac".to_string(),
         status: AgentModelSectionStatus::Ready,
-        options: vec![AgentModelOption {
-            id: LOCAL_MODEL_ID.to_string(),
-            provider: "claude".to_string(),
-            label: format!("Local · {name}"),
-            cli_model: LOCAL_MODEL_ID.to_string(),
-            provider_key: Some(LOCAL_SECTION_ID.to_string()),
-            effort_levels: Vec::new(),
-            supports_fast_mode: false,
-            supports_context_usage: true,
-        }],
+        options,
     })
+}
+
+fn local_model_name(path: &str) -> &str {
+    std::path::Path::new(path)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("Local model")
+}
+
+/// Whether a Helmor model id names the on-device model (the bare id or a
+/// specific on-disk file).
+pub fn is_local_model_id(model_id: &str) -> bool {
+    model_id == LOCAL_MODEL_ID || crate::local_llm::discover::path_from_model_id(model_id).is_some()
 }
 
 /// Full unfiltered catalog for the Settings "Models" multi-selects. Custom
@@ -554,9 +590,9 @@ pub fn resolve_model(model_id: &str, provider_hint: Option<&str>) -> ResolvedMod
     // Checked first and unconditionally: a local session must never resolve
     // to a cloud model, even when Local LLM is off or its model was removed.
     // The local server endpoint is attached per turn by the streaming path.
-    if model_id == LOCAL_MODEL_ID {
+    if is_local_model_id(model_id) {
         return ResolvedModel {
-            id: LOCAL_MODEL_ID.to_string(),
+            id: model_id.to_string(),
             provider: "claude".to_string(),
             cli_model: LOCAL_MODEL_ID.to_string(),
             supports_effort: false,
@@ -1017,9 +1053,9 @@ mod tests {
 
     #[test]
     fn local_section_only_when_enabled_with_a_model() {
-        assert!(local_model_section(&local_settings(false, "/m/Nex-mini.gguf")).is_none());
-        assert!(local_model_section(&local_settings(true, "  ")).is_none());
-        let section = local_model_section(&local_settings(true, "/m/Nex-mini.gguf")).unwrap();
+        assert!(local_section_for(&local_settings(false, "/m/Nex-mini.gguf"), &[]).is_none());
+        assert!(local_section_for(&local_settings(true, "  "), &[]).is_none());
+        let section = local_section_for(&local_settings(true, "/m/Nex-mini.gguf"), &[]).unwrap();
         assert_eq!(section.id, "local");
         let option = &section.options[0];
         assert_eq!(option.id, "helmor-local");
@@ -1027,6 +1063,27 @@ mod tests {
         assert_eq!(option.provider, "claude");
         assert_eq!(option.label, "Local · Nex-mini");
         assert!(option.effort_levels.is_empty());
+    }
+
+    #[test]
+    fn local_section_lists_every_discovered_model() {
+        let found = vec![
+            std::path::PathBuf::from("/m/A-Q4.gguf"),
+            std::path::PathBuf::from("/m/B-Q4.gguf"),
+        ];
+        let section = local_section_for(&local_settings(true, "/m/A-Q4.gguf"), &found).unwrap();
+        let ids: Vec<_> = section.options.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["helmor-local:/m/A-Q4.gguf", "helmor-local:/m/B-Q4.gguf"]
+        );
+        assert!(section
+            .options
+            .iter()
+            .all(|o| o.cli_model == "helmor-local"));
+        let model = resolve_model("helmor-local:/m/B-Q4.gguf", Some("claude"));
+        assert!(model.local);
+        assert_eq!(model.cli_model, "helmor-local");
     }
 
     #[test]

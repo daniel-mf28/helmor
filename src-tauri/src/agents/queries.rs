@@ -26,8 +26,8 @@ pub(crate) fn is_local_title_request(
     request_model: Option<&str>,
     stored_model: Option<&str>,
 ) -> bool {
-    let local = super::catalog::LOCAL_MODEL_ID;
-    request_model == Some(local) || stored_model == Some(local)
+    request_model.is_some_and(super::catalog::is_local_model_id)
+        || stored_model.is_some_and(super::catalog::is_local_model_id)
 }
 
 #[derive(Debug, Clone, Serialize)]

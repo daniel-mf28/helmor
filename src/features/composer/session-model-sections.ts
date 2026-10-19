@@ -3,7 +3,7 @@ import type {
 	AgentModelSection,
 	WorkspaceSessionSummary,
 } from "@/lib/api";
-import { LOCAL_MODEL_ID } from "@/lib/workspace-helpers";
+import { isLocalModelId, LOCAL_MODEL_ID } from "@/lib/workspace-helpers";
 
 const HIDDEN_MODELS: Record<string, AgentModelOption> = {
 	"claude-opus-4-8[1m]": {
@@ -124,12 +124,11 @@ export function includeLocalModel(
 	session: Pick<WorkspaceSessionSummary, "model"> | null,
 	selection?: { modelId: string } | null,
 ): AgentModelSection[] {
-	const wantsLocal =
-		session?.model === LOCAL_MODEL_ID || selection?.modelId === LOCAL_MODEL_ID;
-	if (!wantsLocal) return sections;
+	const wantedId = [session?.model, selection?.modelId].find(isLocalModelId);
+	if (!wantedId) return sections;
 	if (
 		sections.some((section) =>
-			section.options.some((option) => option.id === LOCAL_MODEL_ID),
+			section.options.some((option) => option.id === wantedId),
 		)
 	) {
 		return sections;
@@ -140,7 +139,7 @@ export function includeLocalModel(
 			id: "local",
 			label: "On this Mac",
 			status: "ready",
-			options: [PINNED_LOCAL_MODEL],
+			options: [{ ...PINNED_LOCAL_MODEL, id: wantedId }],
 		},
 	];
 }
