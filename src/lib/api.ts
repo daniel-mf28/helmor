@@ -2914,6 +2914,20 @@ export function localLlmEntryTotalBytes(entry: LocalLlmCatalogEntry): number {
 	return entry.bytes + (entry.mmprojBytes ?? 0);
 }
 
+export type LocalLlmDiscoveredModel = {
+	path: string;
+	name: string;
+	bytes: number;
+};
+
+export async function listLocalLlmDiscoveredModels(): Promise<
+	LocalLlmDiscoveredModel[]
+> {
+	return await invoke<LocalLlmDiscoveredModel[]>(
+		"list_local_llm_discovered_models",
+	);
+}
+
 export async function listLocalLlmCatalog(): Promise<LocalLlmCatalogEntry[]> {
 	return await invoke<LocalLlmCatalogEntry[]>("list_local_llm_catalog");
 }

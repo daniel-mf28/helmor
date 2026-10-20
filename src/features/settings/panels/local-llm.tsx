@@ -46,6 +46,7 @@ import {
 	type LocalLlmDownloadEvent,
 	type LocalLlmDownloadStatus,
 	listLocalLlmCatalog,
+	listLocalLlmDiscoveredModels,
 	localLlmEntryTotalBytes,
 	pauseLocalLlmDownload,
 	setLocalLlmContextOverride,
@@ -94,6 +95,11 @@ export function LocalLlmPanel({
 		queryKey: LOCAL_LLM_CATALOG_KEY,
 		queryFn: listLocalLlmCatalog,
 		staleTime: Number.POSITIVE_INFINITY,
+	});
+	const discoveredQuery = useQuery({
+		queryKey: ["localLlmDiscovered"] as const,
+		queryFn: listLocalLlmDiscoveredModels,
+		staleTime: 0,
 	});
 	// Catalog is shared with Voice Pilot — filter out STT entries so the
 	// LLM panel only shows chat brains. `kind` is optional on legacy
@@ -458,6 +464,15 @@ export function LocalLlmPanel({
 						recommendedEntryId={recommendedEntryId}
 						downloads={downloads}
 						onSelect={setSelectedId}
+						discovered={discoveredQuery.data ?? []}
+						activePath={settings.localLlm.model}
+						onPickDiscovered={(path) => {
+							setSelectedId(CUSTOM_SLOT_ID);
+							void updateSettings({
+								localLlm: { ...settings.localLlm, model: path },
+							});
+							void startLocalLlm().catch(() => invalidateStatus());
+						}}
 						onDownload={handleDownload}
 						onResume={handleResume}
 						onCancel={handleCancel}
@@ -714,11 +729,17 @@ function ModelsSection({
 	recommendedEntryId,
 	downloads,
 	onSelect,
+	discovered,
+	activePath,
+	onPickDiscovered,
 	onDownload,
 	onResume,
 	onCancel,
 	onDelete,
 }: {
+	discovered: { path: string; name: string; bytes: number }[];
+	activePath: string;
+	onPickDiscovered: (path: string) => void;
 	catalog: LocalLlmCatalogEntry[];
 	loading: boolean;
 	selectedCatalogEntry: LocalLlmCatalogEntry | null;
@@ -873,6 +894,30 @@ function ModelsSection({
 								<I18nText source="useOwnGgufFileSetPath" />
 							</p>
 						</DropdownMenuItem>
+						{discovered.map((model) => (
+							<DropdownMenuItem
+								key={model.path}
+								onClick={() => onPickDiscovered(model.path)}
+								className="flex items-center justify-between gap-2 py-2"
+							>
+								<div className="flex min-w-0 items-center gap-1.5">
+									{model.path === activePath ? (
+										<Check className="size-3 shrink-0 text-foreground" />
+									) : (
+										<span className="size-3 shrink-0" />
+									)}
+									<span className="truncate font-medium text-foreground">
+										{model.name}
+									</span>
+									<span className="shrink-0 text-muted-foreground">
+										On this Mac
+									</span>
+								</div>
+								<span className="shrink-0 tabular-nums text-muted-foreground">
+									{formatBytes(model.bytes)}
+								</span>
+							</DropdownMenuItem>
+						))}
 						{catalog.map((entry) => {
 							const entryState = downloads[entry.id]?.state ?? "not_downloaded";
 							const entryActive = activeEntryId === entry.id;

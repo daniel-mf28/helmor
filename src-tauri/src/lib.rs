@@ -391,6 +391,7 @@ pub fn run() {
             commands::local_llm_commands::detect_local_llm_hardware,
             commands::local_llm_commands::get_local_llm_status,
             commands::local_llm_commands::list_local_llm_catalog,
+            commands::local_llm_commands::list_local_llm_discovered_models,
             commands::local_llm_commands::inspect_local_llm_model,
             commands::local_llm_commands::inspect_local_llm_catalog_entry,
             commands::local_llm_commands::list_local_llm_downloads,

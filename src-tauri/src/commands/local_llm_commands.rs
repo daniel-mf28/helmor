@@ -20,6 +20,34 @@ pub async fn list_local_llm_catalog() -> CmdResult<Vec<local_llm::CatalogEntry>>
     Ok(local_llm::catalog::catalog())
 }
 
+/// A GGUF already on disk (Helmor's models folder or LM Studio's).
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredLocalModel {
+    pub path: String,
+    pub name: String,
+    pub bytes: u64,
+}
+
+/// Every chat GGUF found on disk, for the settings dropdown.
+#[tauri::command]
+pub async fn list_local_llm_discovered_models() -> CmdResult<Vec<DiscoveredLocalModel>> {
+    run_blocking(|| {
+        Ok(local_llm::discover::discover_models()
+            .into_iter()
+            .map(|path| DiscoveredLocalModel {
+                name: path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                bytes: std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0),
+                path: path.display().to_string(),
+            })
+            .collect())
+    })
+    .await
+}
+
 /// Inspect an arbitrary `.gguf` file on disk and return its trained
 /// context window + estimated fp16 KV cache cost per token. The settings
 /// panel calls this for the user's Custom model path so the context
