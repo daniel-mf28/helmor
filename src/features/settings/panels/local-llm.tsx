@@ -297,11 +297,9 @@ export function LocalLlmPanel({
 	// separate `activateLocalLlmModel` action).
 	const defaultSelectedId = useMemo(() => {
 		if (activeEntryId) return activeEntryId;
-		if (customActive) return CUSTOM_SLOT_ID;
-		if (recommendedEntryId) return recommendedEntryId;
-		if (catalog.length > 0) return catalog[0].id;
-		return null;
-	}, [catalog, activeEntryId, customActive, recommendedEntryId]);
+		// Only models already on disk are offered, never the download list.
+		return CUSTOM_SLOT_ID;
+	}, [activeEntryId]);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const effectiveSelectedId = selectedId ?? defaultSelectedId;
 	const isCustomSelected = effectiveSelectedId === CUSTOM_SLOT_ID;
@@ -454,7 +452,6 @@ export function LocalLlmPanel({
 					/>
 
 					<ModelsSection
-						catalog={catalog}
 						loading={catalogQuery.isLoading}
 						selectedCatalogEntry={selectedEntry}
 						isCustomSelected={isCustomSelected}
@@ -719,7 +716,6 @@ function NoticeBanner({
 // ---------------------------------------------------------------------------
 
 function ModelsSection({
-	catalog,
 	loading,
 	selectedCatalogEntry,
 	isCustomSelected,
@@ -740,7 +736,6 @@ function ModelsSection({
 	discovered: { path: string; name: string; bytes: number }[];
 	activePath: string;
 	onPickDiscovered: (path: string) => void;
-	catalog: LocalLlmCatalogEntry[];
 	loading: boolean;
 	selectedCatalogEntry: LocalLlmCatalogEntry | null;
 	/// `true` when the picker is focused on the Custom slot rather than
@@ -918,47 +913,6 @@ function ModelsSection({
 								</span>
 							</DropdownMenuItem>
 						))}
-						{catalog.map((entry) => {
-							const entryState = downloads[entry.id]?.state ?? "not_downloaded";
-							const entryActive = activeEntryId === entry.id;
-							const entryRecommended = recommendedEntryId === entry.id;
-							const isThisRowChecked =
-								!isCustomSelected && entry.id === selectedCatalogEntry?.id;
-							return (
-								<DropdownMenuItem
-									key={entry.id}
-									onClick={() => onSelect(entry.id)}
-									className="flex flex-col items-start gap-0.5 py-2"
-								>
-									<div className="flex w-full items-center justify-between gap-2">
-										<div className="flex min-w-0 items-center gap-1.5">
-											{isThisRowChecked ? (
-												<Check className="size-3 shrink-0 text-foreground" />
-											) : (
-												<span className="size-3 shrink-0" />
-											)}
-											<span className="truncate font-medium text-foreground">
-												{entry.label}
-											</span>
-											<QuantBadge quant={entry.quant} />
-										</div>
-										<div className="flex shrink-0 items-center gap-2">
-											<StateIndicator
-												state={entryState}
-												active={entryActive}
-												recommended={entryRecommended}
-											/>
-											<span className="min-w-[3.5rem] text-right tabular-nums text-muted-foreground">
-												{formatBytes(localLlmEntryTotalBytes(entry))}
-											</span>
-										</div>
-									</div>
-									<p className="pl-[18px] text-[11px] leading-4 text-muted-foreground">
-										{entry.blurb}
-									</p>
-								</DropdownMenuItem>
-							);
-						})}
 					</DropdownMenuContent>
 				</DropdownMenu>
 				{/* Contextual download / delete buttons only apply to catalog
